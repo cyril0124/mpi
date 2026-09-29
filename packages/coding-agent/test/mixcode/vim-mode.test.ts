@@ -202,7 +202,7 @@ describe("vim modality", () => {
 		expect(host.recorded.jumps).toEqual([]);
 	});
 
-	it("passes tab, shift+tab, ctrl+o and ctrl+t through", () => {
+	it("passes tab, shift+tab, ctrl+o, ctrl+t and ctrl+q through", () => {
 		const host = makeHost();
 		const state = activeState();
 		state.topArmed = true;
@@ -211,6 +211,9 @@ describe("vim modality", () => {
 		expect(handleVimKey(activeState(), "\x1b[Z", host)).toBe(false);
 		expect(handleVimKey(activeState(), "\x0f", host)).toBe(false);
 		expect(handleVimKey(activeState(), "\x14", host)).toBe(false);
+		// app.quit defaults to ctrl+shift+q on Windows, so pin it for the raw ctrl+q byte.
+		host.keybindings.setUserBindings({ "app.quit": "ctrl+q" });
+		expect(handleVimKey(activeState(), "\x11", host)).toBe(false);
 	});
 
 	it("ignores every key while inactive", () => {

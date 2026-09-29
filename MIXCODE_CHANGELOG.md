@@ -251,6 +251,9 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Fixed
 
+- Vim mode swallowed `ctrl+q` (`app.quit`), so the quit confirmation could not be opened while the modal
+  surface was active. Quit now passes through, like tab switching and tool expansion. See
+  [Vim Mode](docs/vim-mode.md).
 - Vim mode could only be entered from an idle session: an empty-editor `ctrl+u` declined while the agent was
   streaming or compacting, so the key fell through to its non-vim handler and the confirming `u` was typed into
   the composer. Entry now needs only an empty composer and no queued message, so the modal reading surface can be

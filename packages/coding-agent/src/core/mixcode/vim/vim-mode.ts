@@ -61,13 +61,15 @@ export interface VimKeyHost {
 
 /**
  * Vim mode owns every key while active. These actions keep working, because a
- * modal surface that swallowed tab switching or tool expansion would be a trap.
+ * modal surface that swallowed tab switching, tool expansion or quitting would
+ * be a trap.
  */
 const VIM_PASSTHROUGH_ACTIONS = [
 	"app.tab.next",
 	"app.tab.previous",
 	"app.tools.expand",
 	"app.thinking.toggle",
+	"app.quit",
 ] as const;
 
 /**
@@ -82,7 +84,7 @@ function primaryKey(host: VimKeyHost, action: AppKeybinding): string {
  * Handle one chunk of input while vim mode is active.
  *
  * Returns true when the key was consumed. A false return must be routed to the
- * normal handler for that action (tab switching, tool expand, thinking toggle).
+ * normal handler for that action (tab switching, tool expand, thinking toggle, quit).
  */
 export function handleVimKey(state: VimTabState, data: string, host: VimKeyHost): boolean {
 	if (!state.active) return false;

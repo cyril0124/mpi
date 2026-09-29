@@ -44,8 +44,8 @@ Vim 模式开启期间输入框被锁定：边框改用强调色、忽略键入�
 | `app.vim.enterConfirm` | `u` | 确认预备进入 |
 
 Vim 模式是模态的：上表之外的键一律被吞掉，不会进入编辑器。`tab` / `shift+tab`（切换标签页）、
-`ctrl+o`（展开工具输出）、`ctrl+t`（thinking 块）仍然有效。Vim 模式下双击 `Esc` 不再打开会话树
-或 fork；唯一的退出方式是 `q`。
+`ctrl+o`（展开工具输出）、`ctrl+t`（thinking 块）、`ctrl+q`（退出应用）仍然有效。Vim 模式下双击
+`Esc` 不再打开会话树或 fork；离开模态界面只能按 `q`。
 
 ## 多标签页行为
 

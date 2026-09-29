@@ -48,9 +48,9 @@ Every key below is a configurable action: override it in `keybindings.json` unde
 | `app.vim.enterConfirm` | `u` | Confirm the armed keyboard entry |
 
 Vim mode is modal: any key that is not one of the above is swallowed so it cannot reach the editor.
-`tab` / `shift+tab` (tab switching), `ctrl+o` (tool expansion) and `ctrl+t` (thinking blocks) keep
-working. Double-`Esc` does not open the session tree or fork while vim mode is on; `q` is the only
-exit.
+`tab` / `shift+tab` (tab switching), `ctrl+o` (tool expansion), `ctrl+t` (thinking blocks) and
+`ctrl+q` (quit) keep working. Double-`Esc` does not open the session tree or fork while vim mode is
+on; `q` is the only way to leave the modal surface.
 
 ## Multi-tab behaviour
 
