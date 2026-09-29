@@ -10,6 +10,7 @@ commit that causes it.
 
 | Area | Upstream | This fork | Reason |
 | --- | --- | --- | --- |
+| `install.sh` | release archives via `scripts/build-binaries.sh` | installs a complete runtime in `<prefix>/lib/mpi/release.*/`, then atomically replaces `<prefix>/bin/mpi`; retains previous runtimes | failed upgrades preserve the working installation, and running processes keep their resources on NFS |
 | `app.thinking.cycle` default key | `shift+tab` | `alt+t` | `shift+tab` became `app.tab.previous` |
 | Agent tabs | one session per terminal | several concurrent tabs, each with its own `AgentSessionRuntime` | [Agent Tabs](tabs.md) |
 | Session deletion | deletes the selected session file | refuses while the owning tab has a turn in progress | another tab may still be writing that file |
@@ -72,6 +73,7 @@ Nothing upstream references them, so they can never conflict:
 - `MIXCODE.md` — fork rules
 - `MIXCODE_CHANGELOG.md` — fork change log
 - `UPSTREAM.json` — upstream version the fork sits on
+- `.agents/skills/` — fork-local agent skills, including [manual TUI demos](../.agents/skills/mixcode-manual-e2e/SKILL.md)
 - `docs/` — this directory
-- `test-all.sh`, `run.sh` — fork test runner and dev launcher
+- `test-all.sh`, `run.sh`, `install.sh` — fork test runner, dev launcher, and local installer
 - `packages/*/src/**/mixcode/`, `packages/*/test/mixcode/` — fork code and its tests

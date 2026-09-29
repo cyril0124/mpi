@@ -8,6 +8,7 @@
 
 | 方面 | 上游 | 本 fork | 原因 |
 | --- | --- | --- | --- |
+| `install.sh` | 通过 `scripts/build-binaries.sh` 构建发布归档 | 在 `<prefix>/lib/mpi/release.*/` 准备完整运行时后，原子替换 `<prefix>/bin/mpi`；保留旧运行时目录 | 升级失败时保留可用安装，NFS 上运行中的进程仍可访问自己的资源 |
 | `app.thinking.cycle` 默认键 | `shift+tab` | `alt+t` | `shift+tab` 改作 `app.tab.previous` |
 | Agent 标签页 | 一个终端一个会话 | 多个并发标签页，各自持有 `AgentSessionRuntime` | [Agent 标签页](tabs.zh.md) |
 | 会话删除 | 直接删除所选会话文件 | 所属标签页有对话进行中时拒绝 | 可能还有另一个标签页在写该文件 |
@@ -67,6 +68,7 @@
 - `MIXCODE.md` —— fork 规则
 - `MIXCODE_CHANGELOG.md` —— fork 改动记录
 - `UPSTREAM.json` —— fork 所基于的上游版本
+- `.agents/skills/` —— fork 专用 agent skill，包括[手动 TUI 演示](../.agents/skills/mixcode-manual-e2e/SKILL.md)
 - `docs/` —— 本目录
-- `test-all.sh`、`run.sh` —— fork 测试入口与开发启动脚本
+- `test-all.sh`、`run.sh`、`install.sh` —— fork 测试入口、开发启动脚本与本地安装脚本
 - `packages/*/src/**/mixcode/`、`packages/*/test/mixcode/` —— fork 代码及其测试
