@@ -37,7 +37,7 @@ describe("tab status timer", () => {
 		expect(tab.workingStartedAt).toBeUndefined();
 	});
 
-	it("holds the status/timer invariant across every transition out of work", () => {
+	it("keeps the status and timer consistent across every transition", () => {
 		const targets = ["idle", "running", "thinking", "error", "done"] as const;
 		const start = START.getTime();
 		for (const target of targets) {

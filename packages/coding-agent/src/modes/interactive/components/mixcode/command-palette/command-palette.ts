@@ -20,7 +20,7 @@ import {
 	type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 import { getSelectListTheme, theme } from "../../../theme/theme.ts";
-import { panel } from "../panel.ts";
+import { panel, panelContentWidth } from "../panel.ts";
 
 /** One runnable entry, addressed by its command name without the leading slash. */
 export interface CommandPaletteEntry {
@@ -36,7 +36,11 @@ const PALETTE_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 /** Rendered lines above the first command row: the top border, search row and separator. */
 const PALETTE_LINES_ABOVE_ROWS = 3;
 
-/** Rows the panel spends on its own chrome: frame, search row, separator, blank line, hint, marker. */
+/**
+ * Rows the panel spends on chrome, leaving `rowBudget - PALETTE_FRAME_ROWS` for list
+ * rows: the two border rows, the search row, the separator, the blank line, the hint,
+ * and the row the list keeps for its scroll indicator.
+ */
 const PALETTE_FRAME_ROWS = 7;
 
 /** Display label for a command row, e.g. `model` -> `/model`. */
@@ -57,7 +61,7 @@ function subsequenceIndices(token: string, text: string): number[] | undefined {
 	return indices;
 }
 
-/** The digits/letters transposition the list's matcher also accepts, e.g. `4gpt` for `gpt-4`. */
+/** The letters/digits transposition pi-tui's `fuzzyFilter` also accepts, e.g. `4gpt` for `gpt-4`. */
 function transposedToken(token: string): string | undefined {
 	const lettersFirst = token.match(/^([a-z]+)([0-9]+)$/);
 	if (lettersFirst) return `${lettersFirst[2]}${lettersFirst[1]}`;
@@ -67,8 +71,12 @@ function transposedToken(token: string): string | undefined {
 }
 
 /**
- * Indices in `text` where the query matched, tokenized the way the list filters: every token must
- * appear in order, and a token made of letters and digits may match transposed.
+ * Indices in `text` where the query matched, tokenising exactly as pi-tui's `fuzzyFilter`
+ * does (`packages/tui/src/fuzzy.ts`): tokens split on whitespace and slashes, every
+ * token must appear in order, and a token of letters and digits may match transposed.
+ * `FuzzyMatch` exposes only `{matches, score}` and no match positions, so this copy
+ * exists to know which characters to highlight; a change to the library's matching
+ * rules must be mirrored here.
  */
 function matchedIndices(query: string, text: string): Set<number> {
 	const haystack = text.toLowerCase();
@@ -164,8 +172,7 @@ export class CommandPaletteComponent implements Component {
 	}
 
 	render(width: number): string[] {
-		const innerWidth = Math.max(1, width - 2);
-		const contentWidth = Math.max(1, innerWidth - 2);
+		const contentWidth = panelContentWidth(width);
 		const rows = this.selectList.render(contentWidth);
 		this.lastRowCount = rows.length;
 

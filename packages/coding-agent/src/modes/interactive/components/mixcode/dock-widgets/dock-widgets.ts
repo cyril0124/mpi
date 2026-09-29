@@ -11,18 +11,17 @@
  * The budget is per frame, because a terminal resize reaches nothing in this
  * mode: each slot measures the widgets it can see at the width it is rendered
  * with, and renders each of them once. Nothing is cached across frames, so a
- * widget that updates itself in place cannot go stale. The slots replace the
- * containers that used to hold the widgets, so they also forward mouse rows to
- * the widget row they came from.
+ * widget that updates itself in place cannot go stale. A slot also forwards
+ * mouse rows to the widget row they came from.
  */
 import {
 	type Component,
-	dispatchMouseEvent,
 	type TuiMouseDispatchResult,
 	type TuiMouseEvent,
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
+import { dispatchToRegion, type MouseRegion, regionAtRow } from "../mouse-regions.ts";
 
 /**
  * Rows the editor keeps when widgets are docked. This is the editor's own layout
@@ -57,7 +56,7 @@ export interface DockWidgetSources {
 /** One slot's rows, with the row range each widget owns for mouse dispatch. */
 interface DockSlotPlan {
 	lines: string[];
-	hits: Array<{ component: Component; start: number; height: number }>;
+	hits: MouseRegion[];
 }
 
 /** Shared by both slots, and only ever read. */
@@ -156,10 +155,8 @@ export class DockWidgetSlot implements Component {
 
 	/** Mouse rows are in this slot's row space; hand them to the widget there. */
 	handleMouse(event: TuiMouseEvent): TuiMouseDispatchResult | undefined {
-		const row = Math.floor(event.y);
-		const hit = this.hits.find((entry) => row >= entry.start && row < entry.start + entry.height);
-		if (!hit) return undefined;
-		return dispatchMouseEvent(hit.component, { ...event, y: row - hit.start, height: hit.height });
+		const region = regionAtRow(this.hits, event);
+		return region ? dispatchToRegion(region, event) : undefined;
 	}
 }
 
@@ -190,5 +187,5 @@ function sliceSlot(plan: DockSlotPlan, count: number): DockSlotPlan {
 }
 
 function markerLine(width: number): string {
-	return ` ${truncateToWidth(theme.fg("muted", TRUNCATION_MARKER), Math.max(1, width - 1), "…")}`;
+	return ` ${truncateToWidth(theme.fg("dim", TRUNCATION_MARKER), Math.max(1, width - 1), "…")}`;
 }

@@ -15,6 +15,7 @@ export interface DeleteSessionResult {
 	error?: string;
 }
 
+/** Delete a session file, through the `trash` CLI when installed and an unlink otherwise. */
 export async function deleteSessionFile(sessionPath: string): Promise<DeleteSessionResult> {
 	const existed = existsSync(sessionPath);
 	const done = (method: "trash" | "unlink"): DeleteSessionResult => ({ ok: true, method, removed: existed });

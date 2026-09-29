@@ -27,9 +27,9 @@ export interface ToastHost {
 	toast?: ToastNotification;
 }
 
-/** The confirmation a successful copy reports, counting characters. */
-export function copyConfirmation(chars: number): string {
-	return `Copied ${chars} chars.`;
+/** The confirmation a successful copy reports, counting grapheme clusters. */
+export function copyConfirmation(graphemes: number): string {
+	return `Copied ${graphemes} chars.`;
 }
 
 /** The message a failed copy reports, carrying the clipboard's own reason. */

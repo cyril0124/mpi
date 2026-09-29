@@ -10,6 +10,16 @@ export const TAB_COLOR_NAMES = ["red", "green", "yellow", "blue", "magenta", "cy
 
 export type TabColorName = (typeof TAB_COLOR_NAMES)[number];
 
+/** True while a tab's agent is working: streaming a reply or compacting. */
+export function isWorkingStatus(status: TabStatus): boolean {
+	return status === "running" || status === "thinking";
+}
+
+/** Default title for the agent tab at 1-based position `index`: `Agent-NN`. */
+export function defaultAgentTitle(index: number): string {
+	return `Agent-${String(index).padStart(2, "0")}`;
+}
+
 const TAB_COLOR_SET: ReadonlySet<string> = new Set(TAB_COLOR_NAMES);
 
 /** True for a known tab color name; validates `/color` arguments. */
@@ -21,7 +31,7 @@ export function isTabColorName(value: unknown): value is TabColorName {
 export function nextAvailableAgentTitle(usedTitles: Iterable<string>): string {
 	const used = new Set(usedTitles);
 	for (let index = 1; ; index += 1) {
-		const title = `Agent-${String(index).padStart(2, "0")}`;
+		const title = defaultAgentTitle(index);
 		if (!used.has(title)) return title;
 	}
 }

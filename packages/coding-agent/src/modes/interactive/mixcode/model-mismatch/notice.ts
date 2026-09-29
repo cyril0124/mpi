@@ -4,75 +4,14 @@
  * transcript says so under that reply instead of leaving the swap invisible.
  */
 import type { AssistantMessage } from "@earendil-works/pi-ai/compat";
-import { CURSOR_MARKER, stripTerminalSequences } from "@earendil-works/pi-tui";
-
-const SGR_SEQUENCE = /^\x1b\[[0-9;:]*m$/;
+import { stripTerminalSequences } from "@earendil-works/pi-tui";
+import { sanitizeTerminalText } from "../../components/mixcode/terminal-text.ts";
 
 /**
- * Drop raw control bytes and escape sequences from provider-supplied text, so a
- * gateway cannot paint or move the cursor through a model name. Newlines,
- * carriage returns and tabs survive for the caller to collapse; colour sequences
- * and the cursor marker survive for `stripTerminalSequences`. An unterminated
- * escape sequence ends the text there rather than leaving a half-parsed one.
+ * A name safe to print: terminal controls removed, whitespace collapsed. Colours
+ * and the cursor marker that {@link sanitizeTerminalText} keeps are stripped
+ * afterwards, because a model name carries no styling of its own.
  */
-function sanitizeTerminalText(text: string): string {
-	let output = "";
-	for (let index = 0; index < text.length; index++) {
-		const char = text[index]!;
-		if (char !== "\x1b") {
-			if (isPrintableOrWhitespace(char)) output += char;
-			continue;
-		}
-
-		const next = text[index + 1];
-		if (next === "[") {
-			const end = findCsiEnd(text, index + 2);
-			if (end === -1) break;
-			const sequence = text.slice(index, end + 1);
-			if (SGR_SEQUENCE.test(sequence)) output += sequence;
-			index = end;
-			continue;
-		}
-
-		if (next === "]" || next === "P" || next === "X" || next === "^" || next === "_") {
-			const end = findStringControlEnd(text, index + 2);
-			if (end === -1) break;
-			const sequence = text.slice(index, end + 1);
-			if (sequence === CURSOR_MARKER) output += sequence;
-			index = end;
-			continue;
-		}
-
-		if (next !== undefined) index++;
-	}
-	return output;
-}
-
-/** Bytes at or above the space, plus the whitespace the caller collapses. */
-function isPrintableOrWhitespace(char: string): boolean {
-	const code = char.charCodeAt(0);
-	return code >= 0x20 || char === "\n" || char === "\r" || char === "\t";
-}
-
-/** Index of the byte that ends a CSI sequence, or -1 when it never ends. */
-function findCsiEnd(text: string, start: number): number {
-	for (let index = start; index < text.length; index++) {
-		const code = text.charCodeAt(index);
-		if (code >= 0x40 && code <= 0x7e) return index;
-	}
-	return -1;
-}
-
-/** Index of the byte that ends an OSC or APC string, or -1 when it never ends. */
-function findStringControlEnd(text: string, start: number): number {
-	for (let index = start; index < text.length; index++) {
-		if (text[index] === "\x07") return index;
-		if (text[index] === "\x1b" && text[index + 1] === "\\") return index + 1;
-	}
-	return -1;
-}
-
-/** A name safe to print: terminal controls removed, whitespace collapsed. */
 function toDisplayName(name: string): string {
 	return stripTerminalSequences(sanitizeTerminalText(name)).replace(/\s+/g, " ").trim();
 }

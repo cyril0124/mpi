@@ -25,6 +25,7 @@ export interface MixCodeSettings {
 	};
 }
 
+/** Path of `mixcode_settings.json`, the fork's own settings file. */
 export function mixcodeSettingsFilePath(): string {
 	return join(mixcodeRootStateDir(), MIXCODE_SETTINGS_FILENAME);
 }

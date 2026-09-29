@@ -724,11 +724,11 @@ export class SettingsSelectorComponent extends Container {
 				submenu: (currentValue, done) =>
 					new ThemeSubmenu(currentValue, config.terminalTheme, config.availableThemes, callbacks, done),
 			},
-			// Mixcode's own settings file, kept in a section below pi's entries.
+			// MixCode's own settings file, kept in a section below pi's entries.
 			{
 				id: "inline-widgets",
 				label: "Inline widgets",
-				section: "Mixcode",
+				section: "MixCode",
 				description:
 					"Render extension widgets in the scrollable chat transcript instead of the fixed dock above the editor",
 				currentValue: config.inlineWidgets ? "true" : "false",

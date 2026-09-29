@@ -11,6 +11,14 @@ export const TAB_ACTIVE_SHIMMER_SWEEP_MS = 2000;
 /** Repaint cadence while a wave is sweeping; fine enough to read as motion. */
 const TAB_ACTIVE_SHIMMER_REDRAW_INTERVAL_MS = 50;
 
+/**
+ * Cell distance from the wave center where each brightness step ends: the peak,
+ * then its shoulder, then the tail that fades into the plain title.
+ */
+const SHIMMER_PEAK_CELLS = 0.6;
+const SHIMMER_SHOULDER_CELLS = 1.6;
+const SHIMMER_TAIL_CELLS = 2.8;
+
 /** Brightness steps of the wave, from the lit peak outwards. */
 export interface TabShimmerStyles {
 	peak: (text: string) => string;
@@ -41,10 +49,6 @@ export const COLORED_SHIMMER_STYLES: TabShimmerStyles = {
  * Apply the wave to an active tab title at `now`. A brightness peak travels to
  * the right edge and back within `TAB_ACTIVE_SHIMMER_SWEEP_MS`, then the title
  * is returned unchanged for the rest of `TAB_ACTIVE_SHIMMER_PERIOD_MS`.
- *
- * Each leg eases out so the wave decelerates into its turnaround, and the
- * brightness falls off over 3 steps so the lit region reads as a moving peak
- * rather than a block.
  */
 export function applyActiveTabShimmer(
 	text: string,
@@ -71,9 +75,9 @@ export function applyActiveTabShimmer(
 	return chars
 		.map((char, index) => {
 			const distance = Math.abs(index - waveCenter);
-			if (distance < 0.6) return styles.peak(char);
-			if (distance < 1.6) return styles.shoulder(char);
-			if (distance < 2.8) return styles.tail(char);
+			if (distance < SHIMMER_PEAK_CELLS) return styles.peak(char);
+			if (distance < SHIMMER_SHOULDER_CELLS) return styles.shoulder(char);
+			if (distance < SHIMMER_TAIL_CELLS) return styles.tail(char);
 			return char;
 		})
 		.join("");

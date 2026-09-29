@@ -15,8 +15,12 @@ export type CustomEditorOptions = EditorOptions & {
 };
 
 /**
- * What an app action handler may return: `false` declines the key, everything else handles it.
- * The raw key data is passed so a handler can distinguish keys the binding folds together.
+ * What an app action handler returns. Only `false` has a meaning: it declines the
+ * key, so the editor below still sees it (Home binds the arrow and enter keys,
+ * which the composer still needs whenever Home is not the active surface). Any
+ * other value counts as handled, so the type cannot narrow the contract further.
+ * The raw key data is passed so a handler can distinguish keys the binding folds
+ * together.
  */
 export type AppActionHandler = (data: string) => unknown;
 

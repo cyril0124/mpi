@@ -8,8 +8,8 @@ import { createInteractiveTui } from "../../src/modes/interactive/interactive-mo
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../../src/utils/ansi.ts";
 
-/** Widget stand-in: a fixed number of rows plus a render counter. */
-class Body implements Component {
+/** Widget stand-in: a fixed number of keyed body rows plus a render counter. */
+class WidgetBody implements Component {
 	renders = 0;
 	private readonly key: string;
 	private readonly rows: number;
@@ -21,7 +21,7 @@ class Body implements Component {
 
 	render(_width: number): string[] {
 		this.renders += 1;
-		return Array.from({ length: this.rows }, (_, index) => `${this.key}-row-${index}`);
+		return Array.from({ length: this.rows }, (_, index) => `${this.key}-body-${index}`);
 	}
 
 	invalidate(): void {}
@@ -88,18 +88,18 @@ function makeBudget(options: {
 
 describe("dock widget budget", () => {
 	it("renders every row when the stack fits the budget", () => {
-		const budget = makeBudget({ above: [new Body("a", 2)], below: [new Body("b", 3)], viewport: 24 });
+		const budget = makeBudget({ above: [new WidgetBody("a", 2)], below: [new WidgetBody("b", 3)], viewport: 24 });
 		const above = budget.above.render(40).map(stripAnsi);
 		const below = budget.below.render(40).map(stripAnsi);
 
-		expect(above).toEqual(["", "a-row-0", "a-row-1"]);
-		expect(below).toEqual(["b-row-0", "b-row-1", "b-row-2"]);
+		expect(above).toEqual(["", "a-body-0", "a-body-1"]);
+		expect(below).toEqual(["b-body-0", "b-body-1", "b-body-2"]);
 	});
 
 	it("keeps above-editor rows first and marks the cut below them", () => {
 		const budget = makeBudget({
-			above: [new Body("a", 5)],
-			below: [new Body("b", 10)],
+			above: [new WidgetBody("a", 5)],
+			below: [new WidgetBody("b", 10)],
 			viewport: 24,
 		});
 		const above = budget.above.render(40).map(stripAnsi);
@@ -108,39 +108,43 @@ describe("dock widget budget", () => {
 		// Budget 11 = 10 content rows + the marker row, and the above rows go first.
 		expect(above).toHaveLength(6);
 		expect(above[0]).toBe("");
-		expect(above[5]).toBe("a-row-4");
-		expect(below).toEqual(["b-row-0", "b-row-1", "b-row-2", "b-row-3", "b-row-4", " … (widgets truncated)"]);
+		expect(above[5]).toBe("a-body-4");
+		expect(below).toEqual(["b-body-0", "b-body-1", "b-body-2", "b-body-3", "b-body-4", " … (widgets truncated)"]);
 	});
 
 	it("marks the cut in the above slot when there are no below rows", () => {
-		const budget = makeBudget({ above: [new Body("a", 20)], viewport: 24 });
+		const budget = makeBudget({ above: [new WidgetBody("a", 20)], viewport: 24 });
 		const above = budget.above.render(40).map(stripAnsi);
 
 		expect(above[0]).toBe("");
-		expect(above[10]).toBe("a-row-9");
+		expect(above[10]).toBe("a-body-9");
 		expect(above[11]).toBe(" … (widgets truncated)");
 		expect(budget.below.render(40)).toEqual([]);
 	});
 
 	it("drops every widget row when the budget is gone", () => {
-		const budget = makeBudget({ above: [new Body("a", 4)], viewport: 12 });
+		const budget = makeBudget({ above: [new WidgetBody("a", 4)], viewport: 12 });
 		expect(budget.above.render(40).map(stripAnsi)).toEqual([""]);
 		expect(budget.below.render(40)).toEqual([]);
 	});
 
 	it("leaves the widgets uncapped without a terminal size", () => {
-		const budget = makeBudget({ above: [new Body("a", 30)], viewport: undefined });
+		const budget = makeBudget({ above: [new WidgetBody("a", 30)], viewport: undefined });
 		expect(budget.above.render(40)).toHaveLength(31);
 	});
 
 	it("renders nothing in either slot while the tab is in inline mode", () => {
-		const budget = makeBudget({ above: [new Body("a", 2)], below: [new Body("b", 2)], widgetsHidden: true });
+		const budget = makeBudget({
+			above: [new WidgetBody("a", 2)],
+			below: [new WidgetBody("b", 2)],
+			widgetsHidden: true,
+		});
 		expect(budget.above.render(40)).toEqual([]);
 		expect(budget.below.render(40)).toEqual([]);
 	});
 
 	it("renders each widget once per frame, so an in-place update cannot go stale", () => {
-		const widget = new Body("a", 2);
+		const widget = new WidgetBody("a", 2);
 		const budget = makeBudget({ above: [widget], viewport: 24 });
 
 		budget.above.render(40);
@@ -190,8 +194,8 @@ describe("dock widget budget in a real frame", () => {
 			terminal,
 		}) as TuiAltScreen;
 
-		const aboveWidget = new Body("tall", 14);
-		const belowWidget = new Body("short", 6);
+		const aboveWidget = new WidgetBody("tall", 14);
+		const belowWidget = new WidgetBody("short", 6);
 		const budget = new DockWidgetBudget({
 			widgets: () => ({
 				above: new Map([["tall", aboveWidget]]),

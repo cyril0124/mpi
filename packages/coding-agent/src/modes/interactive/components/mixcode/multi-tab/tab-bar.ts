@@ -1,7 +1,12 @@
 /**
- * Tab bar for the multi-tab workspace: a status glyph per chip, recency-based
- * emphasis, an optional per-tab color, a focus mark on the active chip,
- * click-to-focus, wrapping rows, overflow counts, and a separator rule.
+ * Tab bar for the multi-tab workspace: one chip per open tab, packed into rows.
+ *
+ * A chip's text carries its own SGR sequences, so a painter that wraps it has to
+ * re-open its own sequence after every inner reset (see {@link chipPaint}).
+ *
+ * When the chips do not fit, {@link TabBar.findWindow} picks the window that
+ * keeps the most of them around the active tab and the rest collapse into dim
+ * overflow counts.
  */
 import {
 	type Component,
@@ -10,7 +15,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
-import type { TabColorName, TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
+import { isWorkingStatus, type TabColorName, type TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
 import { theme } from "../../../theme/theme.ts";
 import { applyActiveTabShimmer, COLORED_SHIMMER_STYLES, THEME_SHIMMER_STYLES } from "../tab-shimmer.ts";
 
@@ -19,7 +24,11 @@ export interface TabBarItem {
 	title: string;
 	status: TabStatus;
 	unread: boolean;
-	/** MRU rank: 0/1 are the two most recently focused inactive tabs; -1 = other. */
+	/**
+	 * MRU rank among the tabs the bar does not show as active: 0 is the most
+	 * recently focused one. -1 marks the active surface and every tab without a
+	 * rank.
+	 */
 	recentRank: number;
 	color?: TabColorName;
 	/** Non-persisted: when this tab last took focus, starting its title shimmer. */
@@ -57,6 +66,8 @@ const ELLIPSIS = "\u2026";
 const HOME_PIN_FULL_MAX_RATIO = 0.15;
 /** Abbreviated pinned Home chip. */
 const HOME_COMPACT_LABEL = " H ";
+/** MRU ranks the bar paints as recently focused. */
+const RECENT_CHIP_RANKS = 2;
 
 /** ANSI 16-color background/foreground pairs. */
 const TAB_COLOR_SGR: Record<TabColorName, { bg: number; fg: number }> = {
@@ -101,10 +112,6 @@ export function tabColorPaint(color: TabColorName): (text: string) => string {
 	return paint;
 }
 
-function glyphFor(item: TabBarItem): string {
-	return tabStatusGlyph(item.status, item.unread);
-}
-
 /** Status glyph shared by the tab chips and the Home roster cards. */
 export function tabStatusGlyph(status: TabStatus, unread: boolean): string {
 	if (unread && status !== "error") return GLYPHS.done;
@@ -114,7 +121,7 @@ export function tabStatusGlyph(status: TabStatus, unread: boolean): string {
 function glyphPainter(item: TabBarItem): ((text: string) => string) | undefined {
 	if (item.status === "error") return (text) => theme.fg("error", text);
 	if (item.unread) return (text) => theme.fg("success", text);
-	if (item.status === "running" || item.status === "thinking") return (text) => theme.fg("accent", text);
+	if (isWorkingStatus(item.status)) return (text) => theme.fg("accent", text);
 	return undefined;
 }
 
@@ -156,7 +163,7 @@ function chipTitle(item: TabBarItem, active: boolean, completed: boolean): strin
 }
 
 function renderChip(item: TabBarItem, active: boolean, markPainter: (text: string) => string): string {
-	const glyph = glyphFor(item);
+	const glyph = tabStatusGlyph(item.status, item.unread);
 	const glyphPaint = glyphPainter(item);
 	const completed = glyph === GLYPHS.done;
 	const body = ` ${glyph} ${chipTitle(item, active, completed)} `;
@@ -182,7 +189,7 @@ function renderChip(item: TabBarItem, active: boolean, markPainter: (text: strin
 		return paintChip(paint, marked, glyph, glyphPaint);
 	}
 
-	const recent = item.recentRank === 0 || item.recentRank === 1;
+	const recent = item.recentRank >= 0 && item.recentRank < RECENT_CHIP_RANKS;
 	const paint = (text: string) => theme.bg("toolPendingBg", theme.fg(recent ? "text" : "muted", text));
 	return paintChip(paint, body, glyph, glyphPaint);
 }
@@ -190,6 +197,28 @@ function renderChip(item: TabBarItem, active: boolean, markPainter: (text: strin
 interface Chip {
 	id: string;
 	text: string;
+}
+
+/** A chip window that fits, with the counts that ranked it against other windows. */
+interface WindowFit {
+	rows: Chip[][];
+	/** Chips the window keeps visible. */
+	visible: number;
+	hiddenLeft: number;
+	hiddenRight: number;
+}
+
+/**
+ * Whether `candidate` beats `best`: more visible chips first, then the smaller
+ * left/right imbalance, then fewer hidden on the left.
+ */
+function prefersWindow(candidate: WindowFit, best: WindowFit | undefined): boolean {
+	if (!best) return true;
+	if (candidate.visible !== best.visible) return candidate.visible > best.visible;
+	const candidateImbalance = Math.abs(candidate.hiddenLeft - candidate.hiddenRight);
+	const bestImbalance = Math.abs(best.hiddenLeft - best.hiddenRight);
+	if (candidateImbalance !== bestImbalance) return candidateImbalance < bestImbalance;
+	return candidate.hiddenLeft < best.hiddenLeft;
 }
 
 /** Greedy row packing; a chip is never split. Undefined when a chip cannot fit its row. */
@@ -220,9 +249,14 @@ function packRows(
 	return rows.length > 0 ? rows : undefined;
 }
 
-function hintWidth(kind: "left" | "right", count: number): number {
-	if (count <= 0) return 0;
-	return kind === "left" ? 1 + visibleWidth(`+${count} ${ELLIPSIS} `) : visibleWidth(` ${ELLIPSIS} +${count}`);
+function overflowHint(side: "left" | "right", count: number): string | undefined {
+	if (count <= 0) return undefined;
+	return side === "left" ? ` +${count} ${ELLIPSIS} ` : ` ${ELLIPSIS} +${count}`;
+}
+
+/** Columns one overflow hint takes, its leading separator included. */
+function overflowHintWidth(side: "left" | "right", count: number): number {
+	return visibleWidth(overflowHint(side, count) ?? "");
 }
 
 /** Whether the full Home label would take more of the row than the pinned budget allows. */
@@ -306,7 +340,7 @@ export class TabBar implements Component {
 
 		// Wrapped rows indent to the column where the first agent chip starts: past
 		// the Home chip, its gutter, and any left-overflow hint.
-		const indent = Math.max(0, Math.min(prefix + hintWidth("left", hiddenLeft), width - 1));
+		const indent = Math.max(0, Math.min(prefix + overflowHintWidth("left", hiddenLeft), width - 1));
 
 		if (!rows) {
 			// Nothing fits: keep the active chip alone, truncated if needed.
@@ -338,10 +372,10 @@ export class TabBar implements Component {
 				this.hitRegions.push({ id: home!.id, row: 0, start: 0, end: Math.max(0, visibleWidth(homeText) - 1) });
 				x += visibleWidth(homeText);
 			}
-			if (isFirst && hiddenLeft > 0) {
-				const hint = `+${hiddenLeft} ${ELLIPSIS} `;
-				line += ` ${theme.fg("dim", hint)}`;
-				x += hintWidth("left", hiddenLeft);
+			const leftHint = overflowHint("left", hiddenLeft);
+			if (isFirst && leftHint !== undefined) {
+				line += theme.fg("dim", leftHint);
+				x += visibleWidth(leftHint);
 			}
 			if (isFirst && homeText !== undefined && rowChips.length > 0) {
 				line += " ";
@@ -358,9 +392,8 @@ export class TabBar implements Component {
 				line += chip.text;
 				x += chipWidth;
 			}
-			if (isLast && hiddenRight > 0) {
-				line += theme.fg("dim", ` ${ELLIPSIS} +${hiddenRight}`);
-			}
+			const rightHint = overflowHint("right", hiddenRight);
+			if (isLast && rightHint !== undefined) line += theme.fg("dim", rightHint);
 			lines.push(truncateToWidth(line, width, ""));
 		}
 		lines.push(markPainter(RULE_CHAR.repeat(width)));
@@ -391,31 +424,23 @@ export class TabBar implements Component {
 		width: number,
 		maxRows: number,
 		prefix = 0,
-	): { rows: Chip[][]; hiddenLeft: number; hiddenRight: number } | undefined {
-		let best: { rows: Chip[][]; hiddenLeft: number; hiddenRight: number } | undefined;
+	): WindowFit | undefined {
+		let best: WindowFit | undefined;
 		for (let start = 0; start <= preferred; start += 1) {
 			for (let end = preferred; end < chips.length; end += 1) {
 				const hiddenLeft = start;
 				const hiddenRight = chips.length - 1 - end;
-				const left = hintWidth("left", hiddenLeft);
-				const right = hintWidth("right", hiddenRight);
 				// Home, its gutter, and the left hint occupy the first row, and the
 				// wrapped rows indent to that same column, so every row shares one
 				// budget. The right hint is reserved on every row so the last row fits.
-				const budget = Math.max(1, width - prefix - left - right);
+				const budget = Math.max(
+					1,
+					width - prefix - overflowHintWidth("left", hiddenLeft) - overflowHintWidth("right", hiddenRight),
+				);
 				const rows = packRows(chips.slice(start, end + 1), () => budget, maxRows);
 				if (!rows) continue;
-				const visible = end - start + 1;
-				if (
-					!best ||
-					visible > best.rows.flat().length ||
-					(visible === best.rows.flat().length &&
-						(Math.abs(hiddenLeft - hiddenRight) < Math.abs(best.hiddenLeft - best.hiddenRight) ||
-							(Math.abs(hiddenLeft - hiddenRight) === Math.abs(best.hiddenLeft - best.hiddenRight) &&
-								hiddenLeft < best.hiddenLeft)))
-				) {
-					best = { rows, hiddenLeft, hiddenRight };
-				}
+				const candidate: WindowFit = { rows, visible: end - start + 1, hiddenLeft, hiddenRight };
+				if (prefersWindow(candidate, best)) best = candidate;
 			}
 		}
 		return best;

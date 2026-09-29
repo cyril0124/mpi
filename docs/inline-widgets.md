@@ -25,7 +25,7 @@ simply the newest rows while you are at the bottom. The mode is on by default.
 | Where | Effect |
 | --- | --- |
 | `ui.inlineWidgets` in `mixcode_settings.json` | Global default for new tabs; changing it from `/settings` also switches every open tab immediately |
-| `/settings` → `Inline widgets` (Mixcode section) | Same as editing the file, without leaving the TUI |
+| `/settings` → `Inline widgets` (MixCode section) | Same as editing the file, without leaving the TUI |
 | `/toggle-inline-widgets` | Toggles the active tab only |
 
 The per-tab mode and the collapse state below are session-only: a restored session starts from the

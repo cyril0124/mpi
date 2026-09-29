@@ -126,8 +126,20 @@ function toPrintOutputMode(appMode: AppMode): Exclude<Mode, "rpc"> {
 	return appMode === "json" ? "json" : "text";
 }
 
+/**
+ * Whether the invocation only prints runtime metadata and exits: `--help` or
+ * `--list-models` without a real print request.
+ *
+ * On a TTY both run as "interactive", so they are excluded whatever `--mode`
+ * says: their output is the command's result, not something the TUI renders.
+ */
+function printsRuntimeMetadata(parsed: Args): boolean {
+	return !parsed.print && (parsed.help === true || parsed.listModels !== undefined);
+}
+
+/** The same metadata commands, when `--mode` does not name a mode either. */
 function isPlainRuntimeMetadataCommand(parsed: Args): boolean {
-	return !parsed.print && parsed.mode === undefined && (parsed.help === true || parsed.listModels !== undefined);
+	return parsed.mode === undefined && printsRuntimeMetadata(parsed);
 }
 
 async function runAuthCommand(args: string[]): Promise<boolean> {
@@ -637,20 +649,14 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	let appMode = resolveAppMode(parsed, process.stdin.isTTY, process.stdout.isTTY);
-	const plainRuntimeMetadataCommand = isPlainRuntimeMetadataCommand(parsed);
-	const shouldTakeOverStdout = appMode !== "interactive" && !plainRuntimeMetadataCommand;
+	const shouldTakeOverStdout = appMode !== "interactive" && !isPlainRuntimeMetadataCommand(parsed);
 	if (shouldTakeOverStdout) {
 		takeOverStdout();
 	}
 	// Interactive mode paints its own frames onto stdout, so console output has to
 	// be relocated onto that surface. Install here, before the runtime loads any
 	// extension, so an extension's first log line does not land on the raw tty.
-	//
-	// `--help` and `--list-models` print a payload and exit before any TUI exists,
-	// and on a TTY they run as "interactive", so they are excluded whatever --mode
-	// says: their output is the command's result, not something the TUI renders.
-	const printsRuntimeMetadata = !parsed.print && (parsed.help === true || parsed.listModels !== undefined);
-	if (appMode === "interactive" && !printsRuntimeMetadata) {
+	if (appMode === "interactive" && !printsRuntimeMetadata(parsed)) {
 		installConsoleTuiBridge();
 	}
 

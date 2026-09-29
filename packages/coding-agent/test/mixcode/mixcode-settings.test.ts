@@ -6,7 +6,6 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { KeybindingsManager } from "../../src/core/keybindings.ts";
 import type { MixCodeSettings } from "../../src/core/mixcode/mixcode-settings.ts";
 import {
-	DEFAULT_INLINE_WIDGETS,
 	loadMixCodeSettings,
 	mixcodeSettingsFilePath,
 	writeInlineWidgetsSetting,
@@ -40,7 +39,6 @@ describe("mixcode_settings.json", () => {
 	it("defaults inline widgets to on when the file is missing", () => {
 		const file = join(tempDir(), "mixcode_settings.json");
 		expect(loadMixCodeSettings(file).ui.inlineWidgets).toBe(true);
-		expect(DEFAULT_INLINE_WIDGETS).toBe(true);
 	});
 
 	it("reads an explicit off value", () => {
@@ -160,10 +158,10 @@ describe("/settings inline widgets row", () => {
 
 		list.selectItem("inline-widgets");
 		const rendered = stripAnsi(list.render(120).join("\n"));
-		expect(rendered).toContain("Mixcode");
+		expect(rendered).toContain("MixCode");
 		expect(rendered).toContain("Inline widgets");
 		// The section heading sits above the row it groups.
-		expect(rendered.indexOf("Mixcode")).toBeLessThan(rendered.indexOf("Inline widgets"));
+		expect(rendered.indexOf("MixCode")).toBeLessThan(rendered.indexOf("Inline widgets"));
 
 		list.handleInput("\r");
 		expect(onInlineWidgetsChange.mock.calls.flat()).toEqual([false]);
@@ -171,7 +169,7 @@ describe("/settings inline widgets row", () => {
 		expect(onInlineWidgetsChange.mock.calls.flat()).toEqual([false, true]);
 	});
 
-	it("registers a new tab's mode from the global default and flips open tabs together", () => {
+	it("flips every open tab and writes the global default to disk", () => {
 		const dir = tempDir();
 		const previous = process.env.PI_CODING_AGENT_DIR;
 		process.env.PI_CODING_AGENT_DIR = dir;

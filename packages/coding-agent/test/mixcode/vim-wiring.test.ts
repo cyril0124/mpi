@@ -72,6 +72,43 @@ function transcriptBlocks(pairs: number): Component[] {
 	return blocks;
 }
 
+/**
+ * The stub `this` the real vim wiring runs against. Callers that need a
+ * different renderer mode or transcript pass those in; everything else is shared.
+ */
+function makeWiringContext(options: {
+	renderer: VimWiringContext["renderer"];
+	transcript: ScrollView;
+	windowedTranscript: WindowedTranscript;
+	tab: { vim: VimTabState };
+	notices: string[];
+	requestRender: () => void;
+}): VimWiringContext {
+	const context: VimWiringContext = {
+		renderer: options.renderer,
+		transcriptScrollView: options.transcript,
+		windowedTranscript: options.windowedTranscript,
+		tabManager: { getActive: () => options.tab },
+		fallbackVimState: createVimTabState(),
+		keybindings: new KeybindingsManager(),
+		ui: { requestRender: options.requestRender },
+		editor: { borderColor: undefined },
+		showStatus: () => {},
+		updateEditorBorderColor: () => {},
+		notifyToast: (type, message) => {
+			options.notices.push(`${type} ${message}`);
+		},
+		refreshVimChrome: () => proto.refreshVimChrome.call(context),
+		viewportTui: () => proto.viewportTui.call(context),
+		createVimHost: () => proto.createVimHost.call(context),
+		vimTabState: () => proto.vimTabState.call(context),
+		enterActiveTabVimMode: () => proto.enterActiveTabVimMode.call(context),
+		leaveVimModeIfUnavailable: () => proto.leaveVimModeIfUnavailable.call(context),
+		handleVimKeyInput: (data) => proto.handleVimKeyInput.call(context, data),
+	};
+	return context;
+}
+
 async function bootFullscreen(columns = 40, rows = 12) {
 	const terminal = new VirtualTerminal(columns, rows);
 	const tui = createInteractiveTui({
@@ -96,29 +133,14 @@ async function bootFullscreen(columns = 40, rows = 12) {
 
 	const tab = { vim: createVimTabState() };
 	const notices: string[] = [];
-	const context: VimWiringContext = {
+	const context = makeWiringContext({
 		renderer: tui,
-		transcriptScrollView: transcript,
+		transcript,
 		windowedTranscript,
-		tabManager: { getActive: () => tab },
-		fallbackVimState: createVimTabState(),
-		keybindings: new KeybindingsManager(),
-		ui: { requestRender: () => tui.requestRender() },
-		editor: { borderColor: undefined },
-		showStatus: () => {},
-		updateEditorBorderColor: () => {},
-		notifyToast: (type, message) => {
-			notices.push(`${type} ${message}`);
-		},
-		refreshVimChrome: () => {},
-		viewportTui: () => proto.viewportTui.call(context),
-		createVimHost: () => proto.createVimHost.call(context),
-		vimTabState: () => proto.vimTabState.call(context),
-		enterActiveTabVimMode: () => proto.enterActiveTabVimMode.call(context),
-		leaveVimModeIfUnavailable: () => proto.leaveVimModeIfUnavailable.call(context),
-		handleVimKeyInput: (data) => proto.handleVimKeyInput.call(context, data),
-	};
-	context.refreshVimChrome = () => proto.refreshVimChrome.call(context);
+		tab,
+		notices,
+		requestRender: () => tui.requestRender(),
+	});
 
 	const painted = async () => {
 		tui.requestRender();
@@ -239,28 +261,14 @@ describe("vim mode against the real transcript viewport", () => {
 		});
 		const tab = { vim: createVimTabState() };
 		const notices: string[] = [];
-		const context: VimWiringContext = {
+		const context = makeWiringContext({
 			renderer: tui,
-			transcriptScrollView: new ScrollView(new Text("x", 0, 0), {}),
+			transcript: new ScrollView(new Text("x", 0, 0), {}),
 			windowedTranscript: new WindowedTranscript({ blocks: () => [] }),
-			tabManager: { getActive: () => tab },
-			fallbackVimState: createVimTabState(),
-			keybindings: new KeybindingsManager(),
-			ui: { requestRender: vi.fn() },
-			editor: { borderColor: undefined },
-			showStatus: () => {},
-			updateEditorBorderColor: () => {},
-			notifyToast: (type, message) => {
-				notices.push(`${type} ${message}`);
-			},
-			refreshVimChrome: () => {},
-			viewportTui: () => proto.viewportTui.call(context),
-			createVimHost: () => proto.createVimHost.call(context),
-			vimTabState: () => proto.vimTabState.call(context),
-			enterActiveTabVimMode: () => proto.enterActiveTabVimMode.call(context),
-			leaveVimModeIfUnavailable: () => proto.leaveVimModeIfUnavailable.call(context),
-			handleVimKeyInput: (data) => proto.handleVimKeyInput.call(context, data),
-		};
+			tab,
+			notices,
+			requestRender: vi.fn(),
+		});
 
 		context.enterActiveTabVimMode();
 

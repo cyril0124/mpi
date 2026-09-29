@@ -11,7 +11,7 @@ import { bashExecutionToText } from "../../../../../core/messages.ts";
 import type { TabColorName, TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
 import { formatTokens } from "../../../components/footer.ts";
 
-/** Longest transcript text the card summary normalizes; longer text keeps its tail. */
+/** Longest transcript text the card summary keeps, in UTF-16 code units. */
 export const HOME_PREVIEW_TEXT_LIMIT = 16_384;
 
 /** Roster card height including its trailing blank row. */
@@ -99,19 +99,15 @@ export function mapHomeMessages(messages: readonly AgentMessage[]): HomeChatMess
 	return mapped;
 }
 
-/** `MIXCODE_DISPLAY_WORKDIR` masks the workdir the way `MIXCODE_DISPLAY_MODEL` masks the model. */
-export function displayWorkdir(): string | undefined {
-	return process.env.MIXCODE_DISPLAY_WORKDIR?.trim() || undefined;
-}
-
 // ---------------------------------------------------------------------------
 // Text normalization
 // ---------------------------------------------------------------------------
 
 /**
  * Collapse transcript text to one line: terminal sequences stripped, whitespace
- * runs folded to single spaces, and only the newest 16 KiB of a long message
- * kept so a multi-megabyte reply cannot enter a width cache.
+ * runs folded to single spaces, and only the newest {@link HOME_PREVIEW_TEXT_LIMIT}
+ * code units of a long message kept, so a multi-megabyte reply cannot enter a
+ * width cache.
  */
 export function singleLinePreview(text: string | undefined): string {
 	const source = text ?? "";
@@ -209,6 +205,18 @@ export function formatToolCallPreview(count: number, width: number): string {
 	return truncateToWidth(`${dots}  ${countText}`, width, "");
 }
 
+/** Newest message matching `predicate`, or undefined. */
+function lastMatching(
+	messages: readonly HomeChatMessage[],
+	predicate: (message: HomeChatMessage) => boolean,
+): HomeChatMessage | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index]!;
+		if (predicate(message)) return message;
+	}
+	return undefined;
+}
+
 /**
  * Newest chat text to show on a card. Prefers assistant output, then a system
  * line, then the user's own text; `No output yet` when nothing matches.
@@ -233,35 +241,45 @@ export function latestOutputPreview(messages: readonly HomeChatMessage[], width:
 // Per-tab caches (the Home page re-renders every frame)
 // ---------------------------------------------------------------------------
 
-/** Newest message matching `predicate`, or undefined. */
-function lastMatching(
+/**
+ * One cached value per tab, keyed by the width it was computed at plus the
+ * transcript tail it was computed from, so a streaming tail invalidates and an
+ * unchanged frame reuses the result.
+ */
+interface PreviewCacheEntry<T> {
+	width: number;
+	/** Second layout input, for values that also depend on a row count. */
+	rows: number | undefined;
+	messageCount: number;
+	lastText: string;
+	value: T;
+}
+
+function cachedPreview<T>(
+	cache: Map<string, PreviewCacheEntry<T>>,
+	tabId: string,
 	messages: readonly HomeChatMessage[],
-	predicate: (message: HomeChatMessage) => boolean,
-): HomeChatMessage | undefined {
-	for (let index = messages.length - 1; index >= 0; index--) {
-		const message = messages[index]!;
-		if (predicate(message)) return message;
+	key: { width: number; rows?: number },
+	compute: () => T,
+): T {
+	const lastText = messages[messages.length - 1]?.text ?? "";
+	const cached = cache.get(tabId);
+	if (
+		cached &&
+		cached.width === key.width &&
+		cached.rows === key.rows &&
+		cached.messageCount === messages.length &&
+		cached.lastText === lastText
+	) {
+		return cached.value;
 	}
-	return undefined;
+	const value = compute();
+	cache.set(tabId, { width: key.width, rows: key.rows, messageCount: messages.length, lastText, value });
+	return value;
 }
 
-interface SummaryCacheEntry {
-	width: number;
-	messageCount: number;
-	lastText: string;
-	preview: string;
-}
-
-interface BlockCacheEntry {
-	width: number;
-	rows: number;
-	messageCount: number;
-	lastText: string;
-	lines: string[];
-}
-
-const summaryCache = new Map<string, SummaryCacheEntry>();
-const blockCache = new Map<string, BlockCacheEntry>();
+const summaryCache = new Map<string, PreviewCacheEntry<string>>();
+const blockCache = new Map<string, PreviewCacheEntry<string[]>>();
 
 /** Drop a closed tab's cached previews so the maps stay bounded by open tabs. */
 export function clearHomeTabCache(tabId: string): void {
@@ -269,27 +287,17 @@ export function clearHomeTabCache(tabId: string): void {
 	blockCache.delete(tabId);
 }
 
+/** One tab's newest output line, recomputed only when its transcript tail moved. */
 export function cachedOutputPreview(
 	tabId: string,
 	messages: readonly HomeChatMessage[],
 	width: number,
 	compute: () => string,
 ): string {
-	const last = messages[messages.length - 1]?.text ?? "";
-	const cached = summaryCache.get(tabId);
-	if (cached && cached.width === width && cached.messageCount === messages.length && cached.lastText === last) {
-		return cached.preview;
-	}
-	const preview = compute();
-	summaryCache.set(tabId, { width, messageCount: messages.length, lastText: last, preview });
-	return preview;
+	return cachedPreview(summaryCache, tabId, messages, { width }, compute);
 }
 
-/**
- * Cache a whole preview block for a tab. The key is the newest message plus its
- * count, so a streaming tail invalidates and an unchanged frame reuses the
- * wrapped lines instead of re-wrapping the transcript.
- */
+/** One tab's wrapped preview block, recomputed only when its tail or row count moved. */
 export function cachedPreviewBlock(
 	tabId: string,
 	messages: readonly HomeChatMessage[],
@@ -297,20 +305,7 @@ export function cachedPreviewBlock(
 	rows: number,
 	compute: () => string[],
 ): string[] {
-	const last = messages[messages.length - 1]?.text ?? "";
-	const cached = blockCache.get(tabId);
-	if (
-		cached &&
-		cached.width === width &&
-		cached.rows === rows &&
-		cached.messageCount === messages.length &&
-		cached.lastText === last
-	) {
-		return cached.lines;
-	}
-	const lines = compute();
-	blockCache.set(tabId, { width, rows, messageCount: messages.length, lastText: last, lines });
-	return lines;
+	return cachedPreview(blockCache, tabId, messages, { width, rows }, compute);
 }
 
 /** Hard-wrap one preview message to `width`, keeping its newest `rows` lines. */

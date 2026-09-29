@@ -22,7 +22,7 @@
 | 位置 | 作用范围 |
 | --- | --- |
 | `mixcode_settings.json` 的 `ui.inlineWidgets` | 新建标签页的全局默认值；在 `/settings` 里改动时也会立即作用于所有已打开的标签页 |
-| `/settings` → `Inline widgets`（Mixcode 分组） | 等同于直接改文件，无需离开 TUI |
+| `/settings` → `Inline widgets`（MixCode 分组） | 等同于直接改文件，无需离开 TUI |
 | `/toggle-inline-widgets` | 只切换当前标签页 |
 
 按标签页的模式和下面的折叠状态都**只存在于会话内**：恢复的会话从全局默认值开始，与 vim 模式一致。

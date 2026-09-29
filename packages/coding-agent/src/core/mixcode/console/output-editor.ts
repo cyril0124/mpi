@@ -2,7 +2,9 @@
  * Which editor reads command output such as `/console-history`.
  *
  * The output is meant to be read, not edited, so the text goes to an external
- * editor when one is available and falls back to an in-app view otherwise.
+ * editor when one is available and falls back to an in-app view otherwise. Any
+ * read-only output surface can use it, so the module and its entry point are
+ * named for the capability rather than for `/console-history`, the first caller.
  *
  * Order: the `externalEditor` setting (project scope before global), then
  * `$VISUAL`, then `$EDITOR`, then `nvim`, then `vim`. A candidate has to answer
@@ -16,8 +18,8 @@ import { spawnSync } from "node:child_process";
 const PROBE_TIMEOUT_MS = 1_000;
 const FALLBACK_EDITORS = ["nvim", "vim"] as const;
 
-/** Editor to open read-only text in, or undefined when none answers the probe. */
-export function resolveHistoryEditor(
+/** Editor to open read-only command output in, or undefined when none answers the probe. */
+export function resolveOutputEditor(
 	configured: string | undefined,
 	probe: (editor: string) => boolean = isEditorAvailable,
 ): string | undefined {

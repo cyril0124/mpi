@@ -184,9 +184,7 @@ describe("command palette", () => {
 			() => {},
 			() => {},
 		);
-		const highlightCharacter = (character: string) =>
-			theme.bg("searchMatchBg", theme.fg("searchMatchText", character));
-		expect(palette.render(80).join("\n")).not.toContain(highlightCharacter("t"));
+		expect(palette.render(80).join("\n")).not.toContain(highlight("t"));
 
 		palette.handleInput("t");
 		palette.handleInput("r");

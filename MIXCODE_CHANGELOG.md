@@ -9,6 +9,13 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ## [Unreleased] — base pi v0.87.1
 
+### Breaking Changes
+
+- pi-tui's `ClipboardResult` reports the copied length as `graphemes` instead of `chars`, and the
+  count is grapheme clusters rather than UTF-16 code units. The `WindowedWindow` type is renamed
+  `RenderedLineWindow`. Both are exported from `@earendil-works/pi-tui`, so an importer of either
+  needs the new name.
+
 ### Added
 
 - Toast notifications: a typed card in the top-right corner of the transcript, with a rounded frame,
@@ -102,7 +109,7 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 - Inline widget mode: extension widgets render at the tail of the chat instead of the editor
   dock, behind a viewport-derived row budget that collapses whole widgets to `▸ Inline · <key>`
   headers. `ui.inlineWidgets` in `mixcode_settings.json` sets the global default (on), `/settings`
-  has an `Inline widgets` row in its own `Mixcode` section, `/toggle-inline-widgets` switches one
+  has an `Inline widgets` row in its own `MixCode` section, `/toggle-inline-widgets` switches one
   tab, and `/widgets expand|collapse|toggle [key]` steers the collapse state. See
   [Inline Widgets](docs/inline-widgets.md).
 - A dock row budget for extension widgets: the slots above and below the editor share one budget
@@ -148,12 +155,27 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 - `CustomEditor.onAction` handlers may return `false` to decline a key, which then reaches the
   editor. Existing handlers are unaffected; the Home bindings rely on it.
 - pi-tui's `SettingItem` gained an optional `section`; consecutive items sharing one render under
-  a heading row, which is how the `Mixcode` group stays apart from pi's own settings.
+  a heading row, which is how the `MixCode` group stays apart from pi's own settings.
 - The dock's widget slots are `DockWidgetBudget` components instead of plain containers, so the
   slots decide per frame what fits and forward mouse rows to the widget they came from.
+- The fork code went through a readability pass, because most of it was written in one burst and
+  the same helper had been written twice in several places. The duplicated terminal-text
+  sanitizer, the per-tab Home caches, the transcript-notice and external-editor paths, the tab
+  bar's overflow hints and the scroll-box assembly in pi-tui's layout now each have one
+  implementation, and names, comments and magic numbers were brought back in line with what the
+  code does. No behaviour change beyond the fixes below and the renames above.
 
 ### Fixed
 
+- The copy confirmation counted UTF-16 code units, so an emoji or a combining sequence was
+  reported as two or more characters. It counts grapheme clusters now, the unit the terminal
+  paints as one character.
+- The fork's settings group was labelled `Mixcode` while the rest of the UI says `MixCode`.
+- The dock's truncation marker painted the muted colour while the feature describes one `dim` row;
+  it paints `dim` now.
+- The vim entry and top-jump notices name the keys bound to those actions instead of the shipped
+  defaults, so a rebind no longer leaves a notice naming a key that does nothing. The `/vim`
+  command description no longer names the leave key at all, for the same reason.
 - `install.sh` prepares each runtime in a separate directory and activates it only after
   compilation and all resource copies succeed. Failed installs leave the current version
   usable; previous runtimes remain intact for running processes, including on NFS. Wrapper

@@ -34,6 +34,7 @@ import {
 	CombinedAutocompleteProvider,
 	type Component,
 	Container,
+	countGraphemes,
 	getCapabilities,
 	hyperlink,
 	Markdown,
@@ -101,7 +102,7 @@ import {
 	unwireConsoleSink,
 	wireConsoleSink,
 } from "../../core/mixcode/console/console-tui-bridge.ts";
-import { resolveHistoryEditor } from "../../core/mixcode/console/history-editor.ts";
+import { resolveOutputEditor } from "../../core/mixcode/console/output-editor.ts";
 import { runWithConsoleTab } from "../../core/mixcode/console-scope.ts";
 import {
 	adjustHomeSelectionAfterClose,
@@ -109,12 +110,12 @@ import {
 	createHomeSelection,
 	HOME_TAB_ID,
 	homeSelectedTab,
-	homeVisibleTabIndices,
 	moveHomeSelection,
 	nextTabId,
 	selectHomeTabById,
 	syncHomeSelectionToTab,
 	toggleHomeNonIdleOnly,
+	visibleRosterIndices,
 } from "../../core/mixcode/home/home-state.ts";
 import {
 	DEFAULT_INLINE_WIDGETS,
@@ -134,7 +135,12 @@ import {
 	upsertWorkspace,
 } from "../../core/mixcode/multi-tab/mixcode-state.ts";
 import { type AgentTab, TabManager, tabBusyPhrase, tabBusyReason } from "../../core/mixcode/multi-tab/tab-manager.ts";
-import { isTabColorName, nextAvailableAgentTitle, TAB_COLOR_NAMES } from "../../core/mixcode/multi-tab/types.ts";
+import {
+	isTabColorName,
+	isWorkingStatus,
+	nextAvailableAgentTitle,
+	TAB_COLOR_NAMES,
+} from "../../core/mixcode/multi-tab/types.ts";
 import { deleteSessionFile } from "../../core/mixcode/session-delete.ts";
 import {
 	activeToast,
@@ -216,7 +222,6 @@ import { ConsoleNotice, consoleNoticeOverlayOptions } from "./components/mixcode
 import { DockWidgetBudget } from "./components/mixcode/dock-widgets/dock-widgets.ts";
 import {
 	clearHomeTabCache,
-	displayWorkdir,
 	type HomeCard,
 	type HomeSnapshot,
 	homePreviewOf,
@@ -258,7 +263,7 @@ import { TreeSelectorComponent } from "./components/tree-selector.ts";
 import { TrustSelectorComponent } from "./components/trust-selector.ts";
 import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
-import { editInExternalEditor } from "./external-editor.ts";
+import { type ExternalEditorResult, editInExternalEditor } from "./external-editor.ts";
 import { type CommandSource, collectSlashCommands, type TabArgumentOption } from "./mixcode/command-list.ts";
 import { responseModelNoticeText } from "./mixcode/model-mismatch/notice.ts";
 import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
@@ -503,6 +508,15 @@ export interface InteractiveModeOptions {
 
 /** Share of the terminal height the command-palette overlay may take. */
 const COMMAND_PALETTE_HEIGHT_PERCENT = 80;
+/** Share of the terminal width the command-palette overlay may take. */
+const COMMAND_PALETTE_WIDTH_PERCENT = 78;
+/** Fixed width of the quit dialog: one sentence and two buttons. */
+const QUIT_CONFIRM_WIDTH = 72;
+/**
+ * Share of the terminal rows the tab bar may take before its chips collapse into
+ * the overflow counts; the bar must not push the transcript off the screen.
+ */
+const TAB_BAR_MAX_ROWS_SHARE = 0.1;
 
 // The command list the editor's autocomplete and the command palette share lives in
 // `./mixcode/command-list.ts`, next to the palette that also reads it.
@@ -784,15 +798,12 @@ export class InteractiveMode {
 		this.loadedResourcesContainer = new Container();
 		this.chatContainer = new Container();
 		this.documentContainer = new Container();
-		this.documentContainer.addChild(this.headerContainer);
-		this.documentContainer.addChild(this.loadedResourcesContainer);
-		this.documentContainer.addChild(this.chatContainer);
 		this.inlineWidgets = new InlineWidgetsComponent({
 			widgets: () => ({ above: this.extensionWidgetsAbove, below: this.extensionWidgetsBelow }),
 			state: () => this.inlineWidgetState(),
 			viewportRows: () => this.inlineViewportRows(),
 		});
-		this.documentContainer.addChild(this.inlineWidgets);
+		this.buildDocumentChildren();
 		// The fullscreen transcript is the same document, but the scroll view's child
 		// is windowed: only visible message blocks render, the rest contribute an
 		// estimated height so the scroll range still spans the whole conversation.
@@ -904,7 +915,7 @@ export class InteractiveMode {
 			loginProviders: () => mode.getLoginProviderOptions(),
 			tabArguments: () => mode.getTabArgumentOptions(),
 			workspaceNames: () => mode.getWorkspaceNames(),
-			widgetKeys: () => mode.widgetKeys(),
+			widgetKeys: () => mode.getWidgetKeys(),
 		};
 	}
 
@@ -1060,7 +1071,8 @@ export class InteractiveMode {
 		}
 
 		// Keep one component tree and remount it when changing renderers.
-		this.renderWidgets(); // Initialize with default spacer
+		// Initialize with the default spacer.
+		this.requestWidgetRender();
 		const viewport = createChatViewport({
 			document: this.windowedTranscript,
 			pendingMessages: this.pendingMessagesContainer,
@@ -2268,6 +2280,8 @@ export class InteractiveMode {
 				title: tab.title,
 				status: tab.status,
 				unread: tab.unread,
+				// The active surface may be Home, so the agent tab the manager holds focused
+				// keeps its rank while Home is shown.
 				recentRank: tab.id === activeId ? -1 : manager.recentRank(tab.id),
 				color: tab.color,
 				// Drives the active chip's title shimmer from the instant this tab took focus.
@@ -2278,7 +2292,7 @@ export class InteractiveMode {
 			rulePainter: theme.getThinkingBorderColor(this.session.thinkingLevel || "off"),
 			// The bar may wrap, but it must not push the transcript out of the
 			// viewport; the surplus collapses into the overflow counts.
-			maxRows: Math.max(1, Math.floor(this.ui.terminal.rows * 0.1)),
+			maxRows: Math.max(1, Math.floor(this.ui.terminal.rows * TAB_BAR_MAX_ROWS_SHARE)),
 		};
 	}
 
@@ -2334,7 +2348,7 @@ export class InteractiveMode {
 			this.updateEditorBorderColor();
 			this.parkFooterForHome();
 			this.hideStatusForHome();
-			this.renderWidgets();
+			this.requestWidgetRender();
 			this.documentContainer.clear();
 			if (this.homeView) this.documentContainer.addChild(this.homeView);
 			// The transcript's blocks are a different set now; drop the windowed height table.
@@ -2353,17 +2367,25 @@ export class InteractiveMode {
 		this.setEditorText("");
 		this.updateEditorBorderColor();
 		this.restoreFooterAfterHome();
-		this.renderWidgets();
+		this.requestWidgetRender();
 		this.restoreStatusAfterHome();
+		this.buildDocumentChildren();
+		// Back to the agent transcript: the windowed height table describes Home now.
+		this.windowedTranscript?.invalidate();
+	}
+
+	/**
+	 * Rebuild the transcript in paint order. Every surface that puts the transcript
+	 * back goes through here, so the inline widget block cannot be dropped from one
+	 * of them; Home clears the container and mounts its own view instead.
+	 */
+	private buildDocumentChildren(): void {
 		this.documentContainer.clear();
 		this.documentContainer.addChild(this.headerContainer);
 		this.documentContainer.addChild(this.loadedResourcesContainer);
 		this.documentContainer.addChild(this.chatContainer);
-		// The inline block is the document's last child, so a surface that rebuilds the
-		// document puts it back too.
+		// The inline block is the document's last child.
 		this.documentContainer.addChild(this.inlineWidgets);
-		// Back to the agent transcript: the windowed height table describes Home now.
-		this.windowedTranscript?.invalidate();
 	}
 
 	/** Home shows no footer: cwd, usage, and extension statuses are per-agent chrome. */
@@ -2463,12 +2485,16 @@ export class InteractiveMode {
 	// MixCode Home surface
 	// -----------------------------------------------------------------------
 
+	private displayWorkdir(fallback: string): string {
+		return process.env.MIXCODE_DISPLAY_WORKDIR?.trim() || fallback;
+	}
+
 	private getHomeViewModel(): HomeViewModel {
 		const tabs = this.tabManager?.list() ?? [];
 		return {
 			version: this.version,
-			workdir: displayWorkdir() ?? this.tabsWorkdir,
-			workingCount: tabs.filter((tab) => tab.status === "running" || tab.status === "thinking").length,
+			workdir: this.displayWorkdir(this.tabsWorkdir),
+			workingCount: tabs.filter((tab) => isWorkingStatus(tab.status)).length,
 			inputCount: 0,
 			agents: tabs.map((tab) => {
 				const snapshot = this.homeSnapshotFor(tab);
@@ -2494,7 +2520,7 @@ export class InteractiveMode {
 			color: tab.color,
 			workingStartedAt: tab.workingStartedAt,
 			lastWorkedAt: tab.lastWorkedAt,
-			workdir: displayWorkdir() ?? tab.runtime.cwd,
+			workdir: this.displayWorkdir(tab.runtime.cwd),
 			model: override || (modelId ? (modelId.split("/").pop() ?? modelId) : undefined),
 			tokens: snapshot.tokens,
 			contextWindow: snapshot.contextWindow,
@@ -2676,7 +2702,7 @@ export class InteractiveMode {
 	/** True when the non-idle filter hides the selected row, so Home cannot act on it. */
 	private homeSelectionIsHidden(tabs: readonly AgentTab[]): boolean {
 		if (!this.homeSelection.nonIdleOnly) return false;
-		return !homeVisibleTabIndices(this.homeSelection, tabs).includes(this.homeSelection.selectedIndex);
+		return !visibleRosterIndices(this.homeSelection.nonIdleOnly, tabs).includes(this.homeSelection.selectedIndex);
 	}
 
 	/**
@@ -2823,7 +2849,7 @@ export class InteractiveMode {
 		this.setExtensionHeader(ui?.headerFactory);
 		this.setCustomEditorComponent(ui?.editorFactory);
 		this.setupAutocompleteProvider();
-		this.renderWidgets();
+		this.requestWidgetRender();
 		this.footer.invalidate();
 	}
 
@@ -2838,7 +2864,7 @@ export class InteractiveMode {
 				this.headerContainer.children[index] = this.builtInHeader;
 			}
 		}
-		this.renderWidgets();
+		this.requestWidgetRender();
 	}
 
 	/** Dispose and forget a closed tab's extension UI. */
@@ -3764,7 +3790,7 @@ export class InteractiveMode {
 		removeExisting(this.extensionWidgetsBelow);
 
 		if (content === undefined) {
-			this.renderWidgets();
+			this.requestWidgetRender();
 			return;
 		}
 
@@ -3787,7 +3813,7 @@ export class InteractiveMode {
 
 		const targetMap = placement === "belowEditor" ? this.extensionWidgetsBelow : this.extensionWidgetsAbove;
 		targetMap.set(key, component);
-		this.renderWidgets();
+		this.requestWidgetRender();
 	}
 
 	private clearExtensionWidgets(): void {
@@ -3799,7 +3825,7 @@ export class InteractiveMode {
 		}
 		this.extensionWidgetsAbove.clear();
 		this.extensionWidgetsBelow.clear();
-		this.renderWidgets();
+		this.requestWidgetRender();
 	}
 
 	private resetExtensionUI(): void {
@@ -3839,10 +3865,10 @@ export class InteractiveMode {
 	private static readonly MAX_WIDGET_LINES = 10;
 
 	/**
-	 * Refresh the widget slots. What they render, and whether they render at all, is
-	 * the dock budget's decision per frame, so this only has to ask for the frame.
+	 * Ask for a frame after the widget set changed. What the slots render, and
+	 * whether they render at all, is the dock budget's decision per frame.
 	 */
-	private renderWidgets(): void {
+	private requestWidgetRender(): void {
 		this.ui.requestRender();
 	}
 
@@ -3893,7 +3919,7 @@ export class InteractiveMode {
 	/** Re-render the chat tail and the dock after the active tab's mode changed. */
 	private refreshInlineWidgets(): void {
 		this.windowedTranscript?.invalidate();
-		this.renderWidgets();
+		this.requestWidgetRender();
 	}
 
 	/** `/toggle-inline-widgets`: switch the active tab between tail and docked widgets. */
@@ -3905,7 +3931,7 @@ export class InteractiveMode {
 	}
 
 	/** Widget keys registered in the active tab, above-editor widgets first. */
-	private widgetKeys(): string[] {
+	private getWidgetKeys(): string[] {
 		return [...this.extensionWidgetsAbove.keys(), ...this.extensionWidgetsBelow.keys()];
 	}
 
@@ -3927,7 +3953,7 @@ export class InteractiveMode {
 		const action = match?.[1] ?? "toggle";
 		// The remainder is an exact widget key, including spaces.
 		const key = match ? match[2]?.trim() : input;
-		const widgets = key ? this.widgetKeys().filter((widgetKey) => widgetKey === key) : this.widgetKeys();
+		const widgets = key ? this.getWidgetKeys().filter((widgetKey) => widgetKey === key) : this.getWidgetKeys();
 		if (widgets.length === 0) {
 			this.showError(key ? `Unknown widget: ${key}` : "No widgets in this tab");
 			return;
@@ -4528,7 +4554,7 @@ export class InteractiveMode {
 
 	/** Report a clipboard result the alternate screen handed over instead of flashing its own line. */
 	private notifyCopyResult(result: ClipboardResult): void {
-		if (result.ok) this.notifyToast("success", copyConfirmation(result.chars));
+		if (result.ok) this.notifyToast("success", copyConfirmation(result.graphemes));
 		else this.notifyToast("error", copyFailure(result.detail ?? "clipboard unavailable"));
 	}
 
@@ -5936,14 +5962,9 @@ export class InteractiveMode {
 	 * rebuild derives the notice from the persisted metadata again.
 	 */
 	private maybeShowResponseModelNotice(message: AssistantMessage): void {
-		if (!this.settingsManager.getShowCacheMissNotices()) return;
+		if (!this.transcriptNoticesEnabled()) return;
 		const text = responseModelNoticeText(message);
-		if (text) this.addResponseModelNotice(text);
-	}
-
-	private addResponseModelNotice(text: string): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("warning", text), 1, 0));
+		if (text) this.addTranscriptNotice(text);
 	}
 
 	/**
@@ -5952,11 +5973,26 @@ export class InteractiveMode {
 	 * a model switch, or an idle gap past the cache TTL.
 	 */
 	private maybeShowCacheMissNotice(message: AssistantMessage): void {
-		if (!this.settingsManager.getShowCacheMissNotices()) return;
+		if (!this.transcriptNoticesEnabled()) return;
 
 		// Entries don't contain `message` yet: message_end fires before persistence.
 		const miss = detectCacheMiss(this.sessionManager.getEntries(), message, this.session.modelRuntime);
 		if (miss) this.addCacheMissNotice(miss);
+	}
+
+	/**
+	 * Whether transcript notices are on. One pi setting governs them all: the
+	 * cache-miss notice and the model-mismatch notice share it, and the fork added
+	 * no second switch.
+	 */
+	private transcriptNoticesEnabled(): boolean {
+		return this.settingsManager.getShowCacheMissNotices();
+	}
+
+	/** Append one warning notice under a blank row of the transcript. */
+	private addTranscriptNotice(text: string): void {
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("warning", text), 1, 0));
 	}
 
 	private addCacheMissNotice(miss: CacheMiss): void {
@@ -5970,9 +6006,8 @@ export class InteractiveMode {
 		} else if (miss.idleMs >= CACHE_TTL_MS) {
 			label = `Cache miss after ${Math.round(miss.idleMs / 60_000)}m idle`;
 		}
-		const text = theme.fg("warning", `${label}: ${reBilled}`);
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(text, 1, 0));
+		const text = `${label}: ${reBilled}`;
+		this.addTranscriptNotice(text);
 	}
 
 	renderInitialMessages(): void {
@@ -6379,22 +6414,17 @@ export class InteractiveMode {
 		this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
 	}
 
+	/**
+	 * Hand the composer's draft to the configured external editor and take its
+	 * result back. A failure leaves the draft untouched in the composer, so it is
+	 * not reported here; only the console-output path reports the editor error,
+	 * where silence would read as if the output had been handed over.
+	 */
 	private async handleOpenExternalEditor(): Promise<void> {
 		const editorCmd = this.settingsManager.getExternalEditorCommand();
 		const content = this.editor.getExpandedText?.() ?? this.editor.getText();
-		this.ui.stop();
-		try {
-			const result = await editInExternalEditor({
-				command: editorCmd,
-				content,
-			});
-			if (result.status === "complete") {
-				this.editor.setText(result.content);
-			}
-		} finally {
-			this.ui.start();
-			this.ui.requestRender(true);
-		}
+		const result = await this.runExternalEditor(editorCmd, content);
+		if (result.status === "complete") this.editor.setText(result.content);
 	}
 
 	// =========================================================================
@@ -6418,11 +6448,6 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	/**
-	 * Append a bridged console line to the transcript. Consecutive lines share one
-	 * block, so a burst from one extension reads as a single entry; any other
-	 * transcript output in between starts a new block.
-	 */
 	/**
 	 * Paint a bridged console line in the notice panel above the composer. Consecutive
 	 * lines grow the open panel; a dismissed one is gone, so the next line opens a new
@@ -6493,9 +6518,12 @@ export class InteractiveMode {
 	private async handleConsoleHistoryCommand(): Promise<void> {
 		const history = getConsoleHistory();
 		const text = history.length > 0 ? history.join("\n") : "No console history in this process.";
-		const editor = resolveHistoryEditor(this.configuredHistoryEditor());
+		const editor = resolveOutputEditor(this.configuredHistoryEditor());
 		if (editor) {
-			await this.openInExternalEditor(editor, text);
+			// The text is handed over to be read, not edited, so only a failure is
+			// reported; the content the editor wrote back is dropped.
+			const result = await this.runExternalEditor(editor, text);
+			if (result.status === "failed") this.showError(`External editor "${editor}" exited with an error.`);
 			return;
 		}
 		this.renderConsoleHistoryBlock(text);
@@ -6508,20 +6536,19 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Show `text` in `editor`, with the TUI down so the editor owns the terminal.
-	 * `ui.stop()`/`start()` is this checkout's path for that; the editor's result is
-	 * ignored because the text is handed over to be read, not edited.
+	 * Show `text` in `editor` with the TUI down, so the editor owns the terminal,
+	 * and return what it produced. Only the console-output path reports a failure:
+	 * its text went over to be read, so silence would look as if it had been shown,
+	 * while a failed composer draft is still sitting in the composer.
 	 */
-	private async openInExternalEditor(editor: string, text: string): Promise<void> {
-		let failed = false;
+	private async runExternalEditor(editor: string, text: string): Promise<ExternalEditorResult> {
 		this.ui.stop();
 		try {
-			failed = (await editInExternalEditor({ command: editor, content: text })).status === "failed";
+			return await editInExternalEditor({ command: editor, content: text });
 		} finally {
 			this.ui.start();
+			this.ui.requestRender(true);
 		}
-		if (failed) this.showError(`External editor "${editor}" exited with an error.`);
-		this.ui.requestRender(true);
 	}
 
 	private renderConsoleHistoryBlock(text: string): void {
@@ -6835,7 +6862,7 @@ export class InteractiveMode {
 		);
 		handle = this.ui.showOverlay(palette, {
 			anchor: "center",
-			width: "78%",
+			width: `${COMMAND_PALETTE_WIDTH_PERCENT}%`,
 			maxHeight: `${COMMAND_PALETTE_HEIGHT_PERCENT}%`,
 			margin: 1,
 		});
@@ -6874,7 +6901,7 @@ export class InteractiveMode {
 			hide();
 			void this.shutdown();
 		}, hide);
-		handle = this.ui.showOverlay(overlay, { anchor: "center", width: 72, margin: 1 });
+		handle = this.ui.showOverlay(overlay, { anchor: "center", width: QUIT_CONFIRM_WIDTH, margin: 1 });
 	}
 
 	private showSettingsSelector(): void {
@@ -7680,7 +7707,7 @@ export class InteractiveMode {
 				}
 				try {
 					await copyToClipboard(text);
-					this.notifyToast("success", copyConfirmation(text.length));
+					this.notifyToast("success", copyConfirmation(countGraphemes(text)));
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					this.showError(message);
@@ -8545,7 +8572,7 @@ export class InteractiveMode {
 
 		try {
 			await copyToClipboard(text);
-			this.notifyToast("success", copyConfirmation(text.length));
+			this.notifyToast("success", copyConfirmation(countGraphemes(text)));
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			this.showError(message);

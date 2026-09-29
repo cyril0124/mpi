@@ -9,7 +9,7 @@
 import { type Component, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { ToastType } from "../../../../../core/mixcode/toast/toast.ts";
 import { type ThemeColor, theme } from "../../../theme/theme.ts";
-import { panel } from "../panel.ts";
+import { PANEL_CHROME_COLUMNS, panel, panelContentWidth } from "../panel.ts";
 
 /** Narrowest card that still reads as a box. */
 const TOAST_MIN_BOX_WIDTH = 24;
@@ -29,7 +29,7 @@ const WRAP_BUDGET_ROWS = TOAST_MAX_MESSAGE_ROWS + 1;
  * wide, or undefined when the card cannot fit and must not be painted.
  */
 export function toastBoxWidth(type: ToastType, message: string, termWidth: number): number | undefined {
-	const preferred = visibleWidth(`${toastIcon(type)} ${message}`) + 4;
+	const preferred = visibleWidth(`${toastIcon(type)} ${message}`) + PANEL_CHROME_COLUMNS;
 	const maxBoxWidth = Math.min(
 		termWidth - TOAST_MARGIN,
 		Math.max(TOAST_MIN_BOX_WIDTH, Math.min(TOAST_MAX_BOX_WIDTH, Math.floor(termWidth * TOAST_MAX_WIDTH_RATIO))),
@@ -40,7 +40,7 @@ export function toastBoxWidth(type: ToastType, message: string, termWidth: numbe
 
 /** Rows the card occupies for `message` at `boxWidth`, borders included. */
 export function toastCardRows(type: ToastType, message: string, boxWidth: number): number {
-	return 1 + toastMessageRows(type, message, cardContentWidth(boxWidth)).length + 1;
+	return 1 + toastMessageRows(type, message, panelContentWidth(boxWidth)).length + 1;
 }
 
 /**
@@ -78,7 +78,7 @@ export class ToastCardComponent implements Component {
 
 	render(width: number): string[] {
 		const boxWidth = Math.max(1, Math.floor(width));
-		const rows = toastMessageRows(this.type, this.message, cardContentWidth(boxWidth)).map((row, index) =>
+		const rows = toastMessageRows(this.type, this.message, panelContentWidth(boxWidth)).map((row, index) =>
 			styleToastRow(row, index === 0 ? this.type : undefined),
 		);
 		return panel("", rows, boxWidth, {
@@ -87,11 +87,6 @@ export class ToastCardComponent implements Component {
 			backgroundColor: "panelBg",
 		});
 	}
-}
-
-/** Content columns inside the frame: both borders and their padding take four. */
-function cardContentWidth(boxWidth: number): number {
-	return Math.max(1, Math.floor(boxWidth) - 4);
 }
 
 /** Paint the leading icon of the first row in the type color, the rest of that row in the text color. */

@@ -202,7 +202,7 @@ type CopyCommandOptions = { preferSelection?: boolean };
 
 type CopyCommandPrototype = {
 	handleCopyCommand(this: CopyCommandContext, options?: CopyCommandOptions): Promise<void>;
-	notifyCopyResult(this: CopyCommandContext, result: { ok: boolean; detail?: string; chars: number }): void;
+	notifyCopyResult(this: CopyCommandContext, result: { ok: boolean; detail?: string; graphemes: number }): void;
 };
 
 const copyCommandPrototype = InteractiveMode.prototype as unknown as CopyCommandPrototype;

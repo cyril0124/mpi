@@ -14,14 +14,14 @@
  */
 import {
 	type Component,
-	dispatchMouseEvent,
 	type TuiMouseDispatchResult,
 	type TuiMouseEvent,
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
-import { sanitizeTerminalText } from "./terminal-text.ts";
+import { dispatchToRegion, type MouseRegion, regionAtRow } from "../mouse-regions.ts";
+import { sanitizeTerminalText } from "../terminal-text.ts";
 
 /** Share of the chat viewport the inline widget block may occupy. */
 const INLINE_TAIL_SHARE = 0.7;
@@ -31,10 +31,22 @@ const INLINE_TAIL_MAX_BUDGET = 24;
 const INLINE_TAIL_HOLD_DEADBAND_ROWS = 2;
 /** Consecutive frames the fully expanded block must fit before decisions are dropped. */
 const INLINE_TAIL_EXPAND_STREAK = 2;
-/** `▸ Inline · ` plus one label character and the space before the rule. */
-const INLINE_HEADER_PREFIX_WIDTH = 13;
+/** Slash command that owns inline widgets, and the form that expands one of them. */
+const INLINE_WIDGET_COMMAND = "/widgets";
+const INLINE_WIDGET_EXPAND_COMMAND = "/widgets expand";
+/** Header prefix of every inline widget row. */
+const INLINE_WIDGET_HEADER_PREFIX = "▸ Inline · ";
+/** Marker that ends a key too long for its header. */
+const INLINE_LABEL_ELLIPSIS = "...";
+/** Marker that ends a whole header row too long for the block. */
+const INLINE_ROW_ELLIPSIS = "…";
+/**
+ * Columns a header spends before its label: the prefix, one label character and
+ * the space before the rule.
+ */
+const INLINE_HEADER_PREFIX_WIDTH = visibleWidth(INLINE_WIDGET_HEADER_PREFIX) + 2;
 /** Room kept for ` · /widgets expand` on the one-line summary row. */
-const INLINE_SUMMARY_COMMAND_WIDTH = 18;
+const INLINE_SUMMARY_COMMAND_WIDTH = visibleWidth(` · ${INLINE_WIDGET_EXPAND_COMMAND}`);
 
 /** Widget keys the user owns outright: `true` collapsed, `false` pinned open. */
 type InlineWidgetManualState = Map<string, boolean>;
@@ -58,6 +70,7 @@ export interface InlineWidgetTabState {
 	autoFitStreak?: number;
 }
 
+/** Fresh per-tab inline-widget state, starting from the global default. */
 export function createInlineWidgetTabState(enabled: boolean): InlineWidgetTabState {
 	return { enabled, collapsed: new Map(), autoCollapsed: new Set() };
 }
@@ -98,13 +111,6 @@ interface InlineWidgetPlan {
 	autoCollapsed: Set<string>;
 }
 
-/** Rows of the visible block occupied by the widget painted on them. */
-interface InlineWidgetHit {
-	component: Component;
-	start: number;
-	height: number;
-}
-
 /** Soft row target for the inline block: a clamped share of the chat viewport. */
 export function inlineTailBudget(viewportRows: number): number {
 	const viewport = Math.max(0, viewportRows);
@@ -120,7 +126,7 @@ export class InlineWidgetsComponent implements Component {
 	private readonly stamps = new Map<string, { component: Component; stamp: number }>();
 	private nextStamp = 1;
 	/** Row ranges of the last render, so mouse events reach the widget under them. */
-	private hits: InlineWidgetHit[] = [];
+	private hits: MouseRegion[] = [];
 
 	constructor(options: InlineWidgetsOptions) {
 		this.options = options;
@@ -152,14 +158,11 @@ export class InlineWidgetsComponent implements Component {
 		if (plan.bodyRows.size === 0) return [` ${inlineWidgetSummaryLine(entries.length, bodyWidth)}`];
 
 		const lines: string[] = [];
-		const hits: InlineWidgetHit[] = [];
+		const hits: MouseRegion[] = [];
 		for (const [index, entry] of entries.entries()) {
 			const body = plannedBodyRows(entries, plan.bodyRows, index);
 			const collapsed = body === 0;
-			const previousCollapsed = index > 0 && plannedBodyRows(entries, plan.bodyRows, index - 1) === 0;
-			// Collapsed widgets stack their headers densely; an expanded neighbour
-			// keeps its separating blank row.
-			if (index > 0 && !(collapsed && previousCollapsed)) lines.push("");
+			if (separatorBefore(entries, plan.bodyRows, index)) lines.push("");
 			lines.push(
 				` ${inlineWidgetSectionHeader(entry.key, bodyWidth, collapsed, plan.autoCollapsed.has(entry.key))}`,
 			);
@@ -176,10 +179,8 @@ export class InlineWidgetsComponent implements Component {
 
 	/** Mouse rows are in this component's own row space; hand them to the widget there. */
 	handleMouse(event: TuiMouseEvent): TuiMouseDispatchResult | undefined {
-		const row = Math.floor(event.y);
-		const hit = this.hits.find((entry) => row >= entry.start && row < entry.start + entry.height);
-		if (!hit) return undefined;
-		return dispatchMouseEvent(hit.component, { ...event, y: row - hit.start, height: hit.height });
+		const region = regionAtRow(this.hits, event);
+		return region ? dispatchToRegion(region, event) : undefined;
 	}
 
 	/** Above-editor widgets render above below-editor ones, each in registration order. */
@@ -343,13 +344,28 @@ function compareInlinePriority(a: InlineWidgetEntry, b: InlineWidgetEntry): numb
 function inlineWidgetRows(entries: readonly InlineWidgetEntry[], bodyRows: ReadonlyMap<string, number>): number {
 	let rows = 0;
 	for (let index = 0; index < entries.length; index += 1) {
-		const body = plannedBodyRows(entries, bodyRows, index);
-		const previousCollapsed = index > 0 && plannedBodyRows(entries, bodyRows, index - 1) === 0;
-		if (index > 0 && !(body === 0 && previousCollapsed)) rows += 1;
+		if (separatorBefore(entries, bodyRows, index)) rows += 1;
 		rows += 1;
-		rows += body;
+		rows += plannedBodyRows(entries, bodyRows, index);
 	}
 	return rows;
+}
+
+/**
+ * Whether a blank separator row precedes the widget at `index`. Collapsed
+ * widgets stack their headers densely; an expanded neighbour keeps its
+ * separating row. Rendering and row counting both read it, so the painted block
+ * keeps the height the budget planned for.
+ */
+function separatorBefore(
+	entries: readonly InlineWidgetEntry[],
+	bodyRows: ReadonlyMap<string, number>,
+	index: number,
+): boolean {
+	if (index === 0) return false;
+	const collapsed = plannedBodyRows(entries, bodyRows, index) === 0;
+	const previousCollapsed = plannedBodyRows(entries, bodyRows, index - 1) === 0;
+	return !(collapsed && previousCollapsed);
 }
 
 /** Body rows planned for one entry; an entry that is missing or collapsed plans none. */
@@ -369,10 +385,14 @@ function plannedBodyRows(
 function inlineWidgetSectionHeader(key: string, bodyWidth: number, collapsed = false, autoCollapsed = false): string {
 	const safeKey = sanitizeWidgetLine(key).trim();
 	const hint = collapsed ? inlineWidgetHint(safeKey, bodyWidth, autoCollapsed) : "";
-	const label = truncateToWidth(safeKey, Math.max(1, bodyWidth - 16 - visibleWidth(hint)), "...");
-	const inlineLabel = `▸ Inline · ${label}`;
+	const labelWidth = Math.max(
+		1,
+		bodyWidth - INLINE_HEADER_PREFIX_WIDTH - visibleWidth(INLINE_LABEL_ELLIPSIS) - visibleWidth(hint),
+	);
+	const label = truncateToWidth(safeKey, labelWidth, INLINE_LABEL_ELLIPSIS);
+	const inlineLabel = `${INLINE_WIDGET_HEADER_PREFIX}${label}`;
 	const rule = "─".repeat(Math.max(0, bodyWidth - visibleWidth(inlineLabel) - visibleWidth(hint) - 1));
-	return theme.fg("dim", truncateToWidth(`${inlineLabel} ${rule}${hint}`, bodyWidth, "…"));
+	return theme.fg("dim", truncateToWidth(`${inlineLabel} ${rule}${hint}`, bodyWidth, INLINE_ROW_ELLIPSIS));
 }
 
 /**
@@ -384,8 +404,13 @@ function inlineWidgetSectionHeader(key: string, bodyWidth: number, collapsed = f
 function inlineWidgetHint(key: string, bodyWidth: number, autoCollapsed: boolean): string {
 	const budget = bodyWidth - INLINE_HEADER_PREFIX_WIDTH;
 	const candidates = autoCollapsed
-		? [` (auto) /widgets expand ${key}`, ` /widgets expand ${key}`, " /widgets expand", " /widgets"]
-		: [` /widgets expand ${key}`, " /widgets expand", " /widgets"];
+		? [
+				` (auto) ${INLINE_WIDGET_EXPAND_COMMAND} ${key}`,
+				` ${INLINE_WIDGET_EXPAND_COMMAND} ${key}`,
+				` ${INLINE_WIDGET_EXPAND_COMMAND}`,
+				` ${INLINE_WIDGET_COMMAND}`,
+			]
+		: [` ${INLINE_WIDGET_EXPAND_COMMAND} ${key}`, ` ${INLINE_WIDGET_EXPAND_COMMAND}`, ` ${INLINE_WIDGET_COMMAND}`];
 	return candidates.find((candidate) => visibleWidth(candidate) <= budget) ?? "";
 }
 
@@ -394,11 +419,11 @@ function inlineWidgetSummaryLine(widgetCount: number, bodyWidth: number): string
 	// Same staging as a collapsed header: the command is the actionable part, so
 	// it outranks the count and the label.
 	const prefix = truncateToWidth(
-		`▸ Inline · ${widgetCount} widgets`,
+		`${INLINE_WIDGET_HEADER_PREFIX}${widgetCount} widgets`,
 		Math.max(1, bodyWidth - INLINE_SUMMARY_COMMAND_WIDTH),
-		"…",
+		INLINE_ROW_ELLIPSIS,
 	);
-	const candidates = [`${prefix} · /widgets expand`, `${prefix} · /widgets`, prefix];
+	const candidates = [`${prefix} · ${INLINE_WIDGET_EXPAND_COMMAND}`, `${prefix} · ${INLINE_WIDGET_COMMAND}`, prefix];
 	const text = candidates.find((candidate) => visibleWidth(candidate) <= bodyWidth) ?? prefix;
 	return theme.fg("dim", text);
 }

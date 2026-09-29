@@ -29,6 +29,7 @@ export interface HomeSelectionState {
 	nonIdleOnly: boolean;
 }
 
+/** Initial Home selection: inactive, on the first tab, filter off. */
 export function createHomeSelection(): HomeSelectionState {
 	return { active: false, selectedIndex: 0, nonIdleOnly: false };
 }
@@ -47,11 +48,6 @@ export function visibleRosterIndices(nonIdleOnly: boolean, tabs: readonly HomeRo
 	return tabs.flatMap((tab, index) => (isTabNonIdle(tab) ? [index] : []));
 }
 
-/** Roster indices to render for a selection state. */
-export function homeVisibleTabIndices(state: HomeSelectionState, tabs: readonly HomeRosterTab[]): number[] {
-	return visibleRosterIndices(state.nonIdleOnly, tabs);
-}
-
 /**
  * Clamp the selection to a valid index after a tab mutation. With the filter on
  * a hidden selection snaps forward to the next visible tab, or back to the last
@@ -63,14 +59,14 @@ export function clampHomeSelectedTabIndex(state: HomeSelectionState, tabs: reado
 		return;
 	}
 	state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, tabs.length - 1));
-	const visible = homeVisibleTabIndices(state, tabs);
+	const visible = visibleRosterIndices(state.nonIdleOnly, tabs);
 	if (visible.length === 0 || visible.includes(state.selectedIndex)) return;
 	state.selectedIndex = visible.find((index) => index >= state.selectedIndex) ?? visible[visible.length - 1]!;
 }
 
 /** Move the selection by `delta` within the visible roster, wrapping around. */
 export function moveHomeSelection(state: HomeSelectionState, tabs: readonly HomeRosterTab[], delta: number): void {
-	const visible = homeVisibleTabIndices(state, tabs);
+	const visible = visibleRosterIndices(state.nonIdleOnly, tabs);
 	if (visible.length === 0) return;
 	const position = Math.max(0, visible.indexOf(state.selectedIndex));
 	// `%` keeps the dividend's sign, so a delta larger than the list would index backwards.

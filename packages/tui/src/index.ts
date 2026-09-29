@@ -78,11 +78,11 @@ export { type RenderLatexOptions, renderLatex } from "./latex.ts";
 // Windowed layout content (components that render only a line window)
 export {
 	getWindowedNode,
+	type RenderedLineWindow,
 	WINDOWED_NODE,
 	type WindowedLayoutComponent,
 	type WindowedLayoutNode,
 	type WindowedLayoutState,
-	type WindowedWindow,
 } from "./layout-node.ts";
 // Native platform integration
 export { getNativeClipboard, type NativeClipboard } from "./native-platform.ts";
@@ -158,6 +158,7 @@ export { type ClipboardResult, TuiAltScreen, type TuiAltScreenOptions } from "./
 export { TuiMainScreen, type TuiMainScreenRenderState } from "./tui-main-screen.ts";
 // Utilities
 export {
+	countGraphemes,
 	getOsc8LinkAtColumn,
 	sliceByColumn,
 	stripTerminalSequences,

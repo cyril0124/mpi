@@ -26,7 +26,7 @@ describe("alternate screen clipboard report", () => {
 		terminal.sendInput("\x1b[<0;4;2m");
 		await terminal.waitForRender();
 
-		assert.deepStrictEqual(results, [{ ok: true, detail: undefined, chars: 10 }]);
+		assert.deepStrictEqual(results, [{ ok: true, detail: undefined, graphemes: 10 }]);
 		assert.ok(
 			terminal.getViewport().every((line) => !line.includes("Copied")),
 			"the host owns the confirmation, so the screen writes none",
@@ -52,7 +52,7 @@ describe("alternate screen clipboard report", () => {
 		terminal.sendInput("\x1b[<0;4;2m");
 		await terminal.waitForRender();
 
-		assert.deepStrictEqual(results, [{ ok: false, detail: "clipboard unavailable", chars: 10 }]);
+		assert.deepStrictEqual(results, [{ ok: false, detail: "clipboard unavailable", graphemes: 10 }]);
 		assert.ok(
 			terminal.getViewport().every((line) => !line.includes("clipboard unavailable")),
 			"the host owns the failure text, so the screen writes none",

@@ -9,7 +9,7 @@
  */
 import { type Component, type OverlayOptions, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
-import { panel } from "../panel.ts";
+import { PANEL_CHROME_COLUMNS, panel, panelContentWidth } from "../panel.ts";
 
 export const CONSOLE_NOTICE_TITLE = "Notice";
 /** Keys the panel answers, spelled out in its hint line. */
@@ -20,6 +20,8 @@ const MAX_HEIGHT_RATIO = 0.6;
 const MIN_BOX_WIDTH = 24;
 /** Panel chrome: top border, blank separator, hint line, bottom border. */
 const PANEL_CHROME_LINES = 4;
+/** Rows to lift the panel clear of the composer dock: the input box and the footer below it. */
+const COMPOSER_DOCK_CLEARANCE_ROWS = 4;
 
 /** Tallest the panel may grow, in rows, for the current terminal. */
 export function consoleNoticeMaxHeight(): number {
@@ -35,18 +37,18 @@ export function consoleNoticeMaxHeight(): number {
 export function consoleNoticeOverlayOptions(text: string): OverlayOptions {
 	const columns = Math.max(1, process.stdout.columns || 80);
 	const cap = Math.max(MIN_BOX_WIDTH, Math.floor(columns * MAX_WIDTH_RATIO));
-	// +4: two border columns and one space of inner padding on each side.
+	// Wide enough for the longest row once the frame spends its chrome columns.
 	const longestLine = Math.max(
-		visibleWidth(CONSOLE_NOTICE_TITLE) + 4,
-		visibleWidth(CONSOLE_NOTICE_HINT) + 4,
-		...text.split(/\r?\n/).map((line) => visibleWidth(line) + 4),
+		visibleWidth(CONSOLE_NOTICE_TITLE) + PANEL_CHROME_COLUMNS,
+		visibleWidth(CONSOLE_NOTICE_HINT) + PANEL_CHROME_COLUMNS,
+		...text.split(/\r?\n/).map((line) => visibleWidth(line) + PANEL_CHROME_COLUMNS),
 	);
 	return {
 		anchor: "bottom-center",
 		width: Math.min(cap, Math.max(MIN_BOX_WIDTH, longestLine)),
 		maxHeight: consoleNoticeMaxHeight(),
 		margin: 1,
-		offsetY: -4,
+		offsetY: -COMPOSER_DOCK_CLEARANCE_ROWS,
 		nonCapturing: true,
 	};
 }
@@ -56,7 +58,7 @@ export function consoleNoticeOverlayOptions(text: string): OverlayOptions {
  * dropped with a dim indicator when the wrapped text cannot fit `maxHeight`.
  */
 export function renderConsoleNotice(text: string, width: number, maxHeight: number): string[] {
-	const innerWidth = Math.max(1, width - 4);
+	const innerWidth = panelContentWidth(width);
 	const wrapped = text.split(/\r?\n/).flatMap((line) => {
 		const rows = wrapTextWithAnsi(line, innerWidth);
 		return rows.length > 0 ? rows : [""];
@@ -94,7 +96,9 @@ export class ConsoleNotice implements Component {
 		return this.text;
 	}
 
-	invalidate(): void {}
+	invalidate(): void {
+		// Stateless: `render` reads `text` directly, so there is no cached output to drop.
+	}
 
 	render(width: number): string[] {
 		return renderConsoleNotice(this.text, width, consoleNoticeMaxHeight());

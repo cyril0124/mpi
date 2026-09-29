@@ -3,7 +3,9 @@
  * autocomplete and by the command palette so the two cannot drift apart.
  *
  * `CommandSource` is what the list needs from the interactive mode: the session,
- * settings, the skill-command map it fills in, and two helpers the mode owns.
+ * settings, the skill-command map it fills in, and the helpers the mode owns
+ * (command descriptions, login providers, and the tab, workspace and widget
+ * argument lists).
  */
 import { type AutocompleteItem, fuzzyFilter, type SlashCommand } from "@earendil-works/pi-tui";
 import type { AgentSession } from "../../../core/agent-session.ts";
@@ -138,7 +140,6 @@ function formatLoginProviderCompletionDescription(provider: LoginProviderComplet
  * (never shadowing a builtin) and skill commands.
  */
 export function collectSlashCommands(source: CommandSource): SlashCommand[] {
-	// Define commands for autocomplete
 	const slashCommands: SlashCommand[] = BUILTIN_SLASH_COMMANDS.map((command) => ({
 		name: command.name,
 		description: command.description,
@@ -155,7 +156,6 @@ export function collectSlashCommands(source: CommandSource): SlashCommand[] {
 
 			if (models.length === 0) return null;
 
-			// Create items with provider/id format
 			const items = models.map((m) => ({
 				id: m.id,
 				provider: m.provider,

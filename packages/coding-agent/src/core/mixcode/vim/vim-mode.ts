@@ -6,7 +6,7 @@
  * (see `AgentTab.vim`); the controller is supplied by `InteractiveMode`, which
  * owns the transcript scroll view.
  */
-import type { KeybindingsManager } from "../../keybindings.ts";
+import type { AppKeybinding, KeybindingsManager } from "../../keybindings.ts";
 import type { ToastType } from "../toast/toast.ts";
 
 /** How long an empty-editor `ctrl+u` keeps the vim-entry confirmation open. */
@@ -23,6 +23,7 @@ export interface VimTabState {
 	enterArmedAt: number | undefined;
 }
 
+/** Fresh per-tab vim state: inactive, with nothing armed. */
 export function createVimTabState(): VimTabState {
 	return { active: false, topArmed: false, enterArmedAt: undefined };
 }
@@ -70,6 +71,14 @@ const VIM_PASSTHROUGH_ACTIONS = [
 ] as const;
 
 /**
+ * First key bound to `action`, for the notices that name the key to press next.
+ * These are one-off hints, so the raw key id is enough.
+ */
+function primaryKey(host: VimKeyHost, action: AppKeybinding): string {
+	return host.keybindings.getKeys(action)[0] ?? action;
+}
+
+/**
  * Handle one chunk of input while vim mode is active.
  *
  * Returns true when the key was consumed. A false return must be routed to the
@@ -104,7 +113,7 @@ export function handleVimKey(state: VimTabState, data: string, host: VimKeyHost)
 			return true;
 		}
 		state.topArmed = true;
-		host.notify("Press g again to jump to the oldest message");
+		host.notify(`Press ${primaryKey(host, "app.vim.topPrefix")} again to jump to the oldest message`);
 		return true;
 	}
 
@@ -175,6 +184,7 @@ export function enterVimMode(state: VimTabState, host: VimKeyHost): boolean {
 	return true;
 }
 
+/** Leave vim mode, clearing the armed jump and the entry timer with it. */
 export function exitVimMode(state: VimTabState): void {
 	resetVimTabState(state);
 }
@@ -214,7 +224,7 @@ export function handleVimEnterArmKey(
 		return { armed: false, entered: false, consumed: false };
 	}
 	state.enterArmedAt = now;
-	host.notify("Again: u or ctrl+u → vim");
+	host.notify(`Again: ${primaryKey(host, "app.vim.enterConfirm")} or ${primaryKey(host, "app.vim.enter")} → vim`);
 	return { armed: true, entered: false, consumed: true };
 }
 

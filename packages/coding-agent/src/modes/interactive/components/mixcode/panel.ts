@@ -8,6 +8,14 @@ import { type ThemeBg, type ThemeColor, theme } from "../../theme/theme.ts";
 
 const PANEL_PADDING_X = 1;
 
+/** Columns the frame spends on chrome: both borders plus the body padding on each side. */
+export const PANEL_CHROME_COLUMNS = 2 + PANEL_PADDING_X * 2;
+
+/** Content columns a panel `width` columns wide leaves for its body. */
+export function panelContentWidth(width: number): number {
+	return Math.max(1, width - PANEL_CHROME_COLUMNS);
+}
+
 export interface PanelOptions {
 	/** Round the corners instead of squaring them. */
 	rounded?: boolean;
@@ -27,12 +35,13 @@ interface PanelCorners {
 const SQUARE_CORNERS: PanelCorners = { topLeft: "┌", topRight: "┐", bottomLeft: "└", bottomRight: "┘" };
 const ROUND_CORNERS: PanelCorners = { topLeft: "╭", topRight: "╮", bottomLeft: "╰", bottomRight: "╯" };
 
+/** Frame `body` in a box `width` columns wide, with `title` set into the top border. */
 export function panel(title: string, body: string[], width: number, options: PanelOptions = {}): string[] {
 	const corners = options.rounded === true ? ROUND_CORNERS : SQUARE_CORNERS;
 	const borderColor = options.borderColor ?? "border";
 	const border = (text: string) => theme.fg(borderColor, text);
 	const innerWidth = Math.max(1, width - 2);
-	const contentWidth = Math.max(1, innerWidth - PANEL_PADDING_X * 2);
+	const contentWidth = panelContentWidth(width);
 	const label = truncateToWidth(title ? ` ${title} ` : "", innerWidth, "");
 	const fill = "─".repeat(Math.max(0, innerWidth - visibleWidth(label)));
 
@@ -45,6 +54,7 @@ export function panel(title: string, body: string[], width: number, options: Pan
 	const topBorder = label
 		? border(corners.topLeft) + theme.bold(theme.fg("accent", label)) + border(`${fill}${corners.topRight}`)
 		: border(`${corners.topLeft}${fill}${corners.topRight}`);
+
 	const framed = [topBorder, ...lines, border(`${corners.bottomLeft}${"─".repeat(innerWidth)}${corners.bottomRight}`)];
 
 	if (options.backgroundColor === undefined) return framed;

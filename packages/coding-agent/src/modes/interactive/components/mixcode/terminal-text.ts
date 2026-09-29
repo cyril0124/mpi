@@ -1,17 +1,20 @@
 /**
- * Terminal-text guard for extension-supplied widget text.
+ * Terminal-text guard for text the fork prints that it did not author: extension
+ * widget rows and provider-supplied names.
  *
- * A widget renders into the chat frame, so a line it returns must stay on its own
- * row: an escape sequence it did not intend to colour with could move the cursor,
- * clear the screen, or break the column arithmetic the layout already did.
- * SGR colour sequences are the one exception, because styling a widget body is
- * what the sequence is normally there for.
+ * Such text must stay on its own row and inside its columns: an escape sequence
+ * it did not intend to colour with could move the cursor, clear the screen, or
+ * break the column arithmetic the layout already did. SGR colour sequences are
+ * the one exception, because styling is what the sequence is normally there for;
+ * the cursor marker is the second, because the renderer reads it back out.
  */
 import { CURSOR_MARKER } from "@earendil-works/pi-tui";
 
 /**
- * Keep printable text and SGR colour sequences; drop every other escape
- * sequence and control character.
+ * Keep printable text, SGR colour sequences and the cursor marker; drop every
+ * other escape sequence and control character. Newlines, carriage returns and
+ * tabs survive for the caller to collapse. An unterminated escape sequence ends
+ * the text there rather than leaving a half-parsed one.
  */
 export function sanitizeTerminalText(text: string): string {
 	let output = "";

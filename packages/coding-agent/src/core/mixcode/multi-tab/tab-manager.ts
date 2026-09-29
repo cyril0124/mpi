@@ -19,7 +19,20 @@ import { deleteSessionFile } from "../session-delete.ts";
 import type { ToastNotification } from "../toast/toast.ts";
 import { createVimTabState, transferVimMode, type VimTabState } from "../vim/vim-mode.ts";
 import { setTabStatus } from "./tab-state.ts";
-import { nextAvailableAgentTitle, TAB_COLOR_NAMES, type TabColorName, type TabStatus, uniquifyTitle } from "./types.ts";
+import {
+	isWorkingStatus,
+	nextAvailableAgentTitle,
+	TAB_COLOR_NAMES,
+	type TabColorName,
+	type TabStatus,
+	uniquifyTitle,
+} from "./types.ts";
+
+/**
+ * How many recently focused tabs the manager remembers. Past this depth the bar
+ * paints every tab the same, so a longer list would only cost lookups.
+ */
+const RECENT_TAB_MEMORY = 3;
 
 export interface AgentTab {
 	readonly id: string;
@@ -57,15 +70,16 @@ export function tabBusyPhrase(tab: AgentTab): string | undefined {
 	return undefined;
 }
 
+/** `<title> (<why>)` for a notice that names the tab, or undefined when the tab is idle. */
 export function tabBusyReason(tab: AgentTab): string | undefined {
 	const phrase = tabBusyPhrase(tab);
 	return phrase ? `${tab.title} (${phrase})` : undefined;
 }
 
+/** Refuse a close or delete while the tab is busy: its runtime would be torn down mid-turn. */
 function assertTabIdle(tab: AgentTab, action: "close" | "delete"): void {
-	const session = tab.runtime.session;
-	if (session.isStreaming) throw new Error(`Cannot ${action} a session while the agent is streaming`);
-	if (session.isCompacting) throw new Error(`Cannot ${action} a session while compaction is running`);
+	const phrase = tabBusyPhrase(tab);
+	if (phrase) throw new Error(`Cannot ${action} a session while ${phrase}`);
 }
 
 export interface TabManagerOptions {
@@ -176,12 +190,7 @@ export class TabManager {
 			sessionManager,
 			sessionStartEvent: { type: "session_start", reason: "new" },
 		});
-		const title = options.title?.trim()
-			? uniquifyTitle(
-					options.title.trim(),
-					this.tabs.map((tab) => tab.title),
-				)
-			: nextAvailableAgentTitle(this.tabs.map((tab) => tab.title));
+		const title = this.resolveTabTitle(options.title);
 		const tab = this.attachTab(title, runtime);
 		this.setActive(tab);
 		this.notifyLayoutChanged();
@@ -200,17 +209,22 @@ export class TabManager {
 			sessionManager,
 			sessionStartEvent: { type: "session_start", reason: "resume" },
 		});
-		const title = options.title?.trim()
-			? uniquifyTitle(
-					options.title.trim(),
-					this.tabs.map((tab) => tab.title),
-				)
-			: nextAvailableAgentTitle(this.tabs.map((tab) => tab.title));
+		const title = this.resolveTabTitle(options.title);
 		const tab = this.attachTab(title, runtime);
 		this.setActive(tab);
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
 		return tab;
+	}
+
+	/**
+	 * Title for a new tab: the caller's title made unique, or the next free
+	 * `Agent-NN` when the caller has none.
+	 */
+	private resolveTabTitle(title: string | undefined): string {
+		const used = this.tabs.map((tab) => tab.title);
+		const wanted = title?.trim();
+		return wanted ? uniquifyTitle(wanted, used) : nextAvailableAgentTitle(used);
 	}
 
 	/**
@@ -288,7 +302,7 @@ export class TabManager {
 	markDone(id: string): void {
 		const tab = this.get(id);
 		if (!tab) throw new Error(`Unknown tab: ${id}`);
-		if (tab.status === "running" || tab.status === "thinking") {
+		if (isWorkingStatus(tab.status)) {
 			throw new Error("Agent is still working; /mark-done is only allowed when idle");
 		}
 		tab.status = "done";
@@ -340,7 +354,7 @@ export class TabManager {
 		const index = this.recentIds.indexOf(id);
 		if (index >= 0) this.recentIds.splice(index, 1);
 		this.recentIds.unshift(id);
-		if (this.recentIds.length > 3) this.recentIds.length = 3;
+		if (this.recentIds.length > RECENT_TAB_MEMORY) this.recentIds.length = RECENT_TAB_MEMORY;
 	}
 
 	private forgetRecent(id: string): void {

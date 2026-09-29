@@ -26,7 +26,7 @@ commit that causes it.
 | Interactive console output | `console.log` and the other console methods write to the tty | painted into a bottom-centered `Notice` panel (not the transcript); `/console-history` opens the last 1,000 lines in the external editor with timestamp and emitting tab | [Console History](console-history.md) |
 | Footer on Home | n/a (no Home surface) | the footer stays visible and keeps showing the bound session's model and context | the footer here is per-runtime chrome, not per-surface, so hiding it would need its own design |
 | Extension widgets | fixed dock above/below the editor | at the chat tail by default, with a row budget and `/widgets`, since [`ui.inlineWidgets`](inline-widgets.md) defaults to on | a tall widget otherwise steals rows from the whole editor dock |
-| Per-tab settings | none | `Inline widgets` also reads and writes `mixcode_settings.json`, shown in its own `Mixcode` section of `/settings` | MixCode settings stay out of pi's `settings.json` and out of its section |
+| Per-tab settings | none | `Inline widgets` also reads and writes `mixcode_settings.json`, shown in its own `MixCode` section of `/settings` | MixCode settings stay out of pi's `settings.json` and out of its section |
 | Settings list rows | one flat list of settings | `SettingItem` gained an optional `section` that renders a heading row | same as above |
 | Docked widget stack | no cap; the layout shrinks the slots when space runs out | the above and below slots share a row budget, cut whole rows are marked `… (widgets truncated)` | a tall widget stack otherwise squeezes the chat and the dock chrome |
 
@@ -68,12 +68,15 @@ that calls into `mixcode/` code:
   Responses streams as `AssistantMessage.responseModel`
 - `packages/tui/src/layout-node.ts`: windowed layout node and scroll line provider
 - `packages/tui/src/components/settings-list.ts`: optional `section` heading on `SettingItem`
-- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `Mixcode` section item
+- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section item
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`: `getSettingsListTheme` heading style
 - `packages/tui/src/layout.ts`: windowed scroll child, line provider on the scroll box
 - `packages/tui/src/tui-alt-screen.ts`: reads content lines through the provider; public `scrollToPrompt`;
-  an `onCopyResult` option lets the host confirm a clipboard write instead of the screen's own flash
-- `packages/tui/src/index.ts`: exports for the windowed node and mouse dispatch
+  an `onCopyResult` option lets the host confirm a clipboard write instead of the screen's own flash,
+  and reports the copied text as a grapheme count
+- `packages/tui/src/utils.ts`: `countGraphemes`, moved there from the alternate screen so the
+  coding-agent toast can report a copy in the same unit
+- `packages/tui/src/index.ts`: exports for the windowed node, mouse dispatch, and the grapheme counter
 - `AGENTS.md`, `.gitignore`
 
 The fork also adds keys to upstream's `keybindings.ts`, while

@@ -1,5 +1,5 @@
 /**
- * Shared per-workdir tab state.
+ * Shared per-workdir tab state, and the cross-agent lock that guards it.
  *
  * pi and mixcode-pi (`mpi`) read the same agent directory, so keeping the same
  * layout on disk lets tabs opened in one agent appear in the other:
@@ -8,13 +8,16 @@
  *     open_tabs.json     { version, sessionIds: string[], updatedAt }  (open set and order)
  *     mixcode_state.json { children, workdirs, tab_titles, tab_colors, startup_workdir, unseen_done }
  *     workspaces.json    named layouts (snake_case fields)
+ *
+ * The module also resolves a session id to its file in a session directory, and
+ * holds the pid lock both agents take before writing.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "../../../config.ts";
 import { stripBom } from "../../../utils/text.ts";
-import { isTabColorName, type TabColorName } from "./types.ts";
+import { defaultAgentTitle, isTabColorName, type TabColorName } from "./types.ts";
 
 export const OPEN_TABS_VERSION = 1;
 
@@ -34,19 +37,17 @@ export function scopedStateDir(workdir: string): string {
 	return join(mixcodeRootStateDir(), "workdirs", digest);
 }
 
+/** `open_tabs.json`: the open session ids and their order. */
 export function openTabsFilePath(workdir: string): string {
 	return join(scopedStateDir(workdir), "open_tabs.json");
 }
 
+/** `mixcode_state.json`: titles, colors, workdirs and unread badges per tab. */
 export function stateFilePath(workdir: string): string {
 	return join(scopedStateDir(workdir), "mixcode_state.json");
 }
 
-/** Default tab title for a 1-based position: `Agent-NN`. */
-export function defaultAgentTitle(index: number): string {
-	return `Agent-${String(index).padStart(2, "0")}`;
-}
-
+/** `workspaces.json`: the named layouts of `mixcode-pi`. */
 export function workspacesFilePath(workdir: string): string {
 	return join(scopedStateDir(workdir), "workspaces.json");
 }
@@ -57,7 +58,7 @@ function ensureDir(filePath: string): void {
 
 function atomicWrite(filePath: string, contents: string): void {
 	ensureDir(filePath);
-	const temp = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+	const temp = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
 	writeFileSync(temp, contents, "utf-8");
 	renameSync(temp, filePath);
 }
@@ -185,13 +186,14 @@ export function readTabMeta(workdir: string): Map<string, MixcodeTabMeta> {
 	return meta;
 }
 
-export interface TabLayoutEntry {
-	sessionId: string;
-	title?: string;
+/**
+ * A tab layout to persist: the workdir is always known there, and the badge only
+ * when the tab has one. Every other field matches {@link MixcodeTabMeta}.
+ */
+export type TabLayoutEntry = Omit<MixcodeTabMeta, "workdir" | "unread"> & {
 	workdir: string;
-	color?: TabColorName;
 	unread?: boolean;
-}
+};
 
 /**
  * Persist the open-tab layout: `open_tabs.json` holds the set and its order,
@@ -258,6 +260,7 @@ export interface MixcodeWorkspace {
 	tabs: MixcodeWorkspaceTab[];
 }
 
+/** Saved layouts from `workspaces.json`. Throws when the file is unreadable or malformed. */
 export function readWorkspaces(workdir: string): MixcodeWorkspace[] {
 	const filePath = workspacesFilePath(workdir);
 	if (!existsSync(filePath)) return [];
@@ -298,6 +301,7 @@ function writeWorkspaces(workdir: string, workspaces: readonly MixcodeWorkspace[
 	atomicWrite(workspacesFilePath(workdir), `${JSON.stringify(cleaned, null, 2)}\n`);
 }
 
+/** Insert or replace a saved layout by name, keeping the file sorted. Throws on an empty name. */
 export function upsertWorkspace(workdir: string, record: MixcodeWorkspace): void {
 	const normalized = normalizeWorkspace(record);
 	if (!normalized) throw new Error("Workspace name cannot be empty");
@@ -368,7 +372,7 @@ function isProcessAlive(pid: number): boolean {
  * each other's freshly published lock.
  */
 function tryReclaimStaleLock(lockPath: string): boolean {
-	const quarantine = `${lockPath}.reclaim.${process.pid}.${crypto.randomUUID()}`;
+	const quarantine = `${lockPath}.reclaim.${process.pid}.${randomUUID()}`;
 	try {
 		renameSync(lockPath, quarantine);
 	} catch {
@@ -394,7 +398,7 @@ function tryReclaimStaleLock(lockPath: string): boolean {
 
 /** Publish the lock through a temp file plus `link`, so the path is never seen empty. */
 function tryAcquireLock(lockPath: string, payload: string): boolean {
-	const temp = `${lockPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+	const temp = `${lockPath}.${process.pid}.${randomUUID()}.tmp`;
 	try {
 		writeFileSync(temp, payload, "utf-8");
 		try {

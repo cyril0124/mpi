@@ -19,11 +19,11 @@ import {
 	type Component,
 	Container,
 	dispatchMouseEvent,
+	type RenderedLineWindow,
 	type TuiMouseDispatchResult,
 	type TuiMouseEvent,
 	WINDOWED_NODE,
 	type WindowedLayoutNode,
-	type WindowedWindow,
 } from "@earendil-works/pi-tui";
 
 /** Rows assumed for a block that has not been rendered at the current width. */
@@ -56,8 +56,8 @@ export class WindowedTranscript extends Container {
 	/** Measured heights currently in the table, maintained incrementally. */
 	private measuredSum = 0;
 	private measuredCount = 0;
-	/** Block list the counters were last synced against. */
-	private syncedBlocks = -1;
+	/** Number of blocks the counters were last synced against. */
+	private syncedBlockCount = -1;
 	private syncedFirst: Component | undefined;
 	private syncedLast: Component | undefined;
 	/** Rendered lines for the current pass, so one pass renders a block once. */
@@ -71,7 +71,6 @@ export class WindowedTranscript extends Container {
 		this.estimatedBlockHeight = Math.max(1, Math.floor(options.estimatedBlockHeight ?? ESTIMATED_BLOCK_HEIGHT));
 	}
 
-	/** The live block list, read fresh so messages can be added and removed. */
 	private blockList(): readonly Component[] {
 		return this.blocksSource();
 	}
@@ -82,7 +81,7 @@ export class WindowedTranscript extends Container {
 		this.measuredHeights = new WeakMap<Component, number>();
 		this.measuredSum = 0;
 		this.measuredCount = 0;
-		this.syncedBlocks = -1;
+		this.syncedBlockCount = -1;
 		for (const block of this.blockList()) block.invalidate?.();
 	}
 
@@ -100,17 +99,12 @@ export class WindowedTranscript extends Container {
 	}
 
 	/**
-	 * Whole document. Nothing in the running app calls this: the layout uses the
-	 * windowed protocol and the regular renderer mounts the plain document
-	 * container. It exists because a window is still a `Component`.
+	 * Plain `Component` path: the whole document, rendered exactly. It exists because
+	 * the class implements `Component`; the app reads the document through
+	 * `materialize` instead.
 	 */
 	override render(width: number): string[] {
-		const safeWidth = this.safeWidth(width);
-		this.ensureWidth(safeWidth);
-		this.passLines.clear();
-		const lines: string[] = [];
-		for (const block of this.blockList()) lines.push(...this.linesOf(block, safeWidth));
-		return lines;
+		return this.materialize(width);
 	}
 
 	lineCount(width: number): number {
@@ -186,7 +180,7 @@ export class WindowedTranscript extends Container {
 	 * the newest rows whatever the estimates above claim, and appending output cannot
 	 * move the rows above it: only blocks inside the window are ever measured.
 	 */
-	renderWindow(width: number, scrollTop: number, height: number, overscan: number): WindowedWindow {
+	renderWindow(width: number, scrollTop: number, height: number, overscan: number): RenderedLineWindow {
 		const safeWidth = this.safeWidth(width);
 		const viewportHeight = Math.max(0, Math.floor(height));
 		const margin = Math.max(0, Math.floor(overscan));
@@ -216,7 +210,7 @@ export class WindowedTranscript extends Container {
 		viewportHeight: number,
 		margin: number,
 		atContentEnd: boolean,
-	): WindowedWindow {
+	): RenderedLineWindow {
 		const total = this.totalHeight();
 		const windowEnd = atContentEnd ? total : Math.min(total, top + viewportHeight + margin);
 		const windowStart = Math.max(0, windowEnd - (viewportHeight + margin * 2));
@@ -281,14 +275,21 @@ export class WindowedTranscript extends Container {
 		const lines: string[] = [];
 		let offset = 0;
 		for (const block of this.blockList()) {
-			const estimatedHeight = this.heightOf(block);
-			if (offset + estimatedHeight > start && offset < end) {
+			const tableHeight = this.heightOf(block);
+			if (offset + tableHeight <= start) {
+				// The block ends above the window, so it is never rendered and its table
+				// height is final: the walk just moves past it.
+				offset += tableHeight;
+			} else {
+				// Render once, then advance by the rendered height, the same after-render
+				// height `collectBackward` advances by.
 				const blockLines = this.linesOf(block, width);
+				const renderedHeight = blockLines.length;
 				const from = Math.max(0, start - offset);
-				const to = Math.min(blockLines.length, end - offset);
+				const to = Math.min(renderedHeight, end - offset);
 				for (let index = from; index < to; index++) lines.push(blockLines[index] ?? "");
+				offset += renderedHeight;
 			}
-			offset += this.heightOf(block);
 			if (offset >= end) break;
 		}
 		return lines;
@@ -330,7 +331,7 @@ export class WindowedTranscript extends Container {
 		// Resync when the list changed outright: a different length, or a different first
 		// or last block, which covers appends, removals and a wholesale replacement.
 		if (
-			blocks.length !== this.syncedBlocks ||
+			blocks.length !== this.syncedBlockCount ||
 			blocks[0] !== this.syncedFirst ||
 			blocks[blocks.length - 1] !== this.syncedLast
 		) {
@@ -344,7 +345,7 @@ export class WindowedTranscript extends Container {
 			}
 			this.measuredSum = sum;
 			this.measuredCount = count;
-			this.syncedBlocks = blocks.length;
+			this.syncedBlockCount = blocks.length;
 			this.syncedFirst = blocks[0];
 			this.syncedLast = blocks[blocks.length - 1];
 		}
@@ -397,6 +398,6 @@ export class WindowedTranscript extends Container {
 		this.measuredHeights = new WeakMap<Component, number>();
 		this.measuredSum = 0;
 		this.measuredCount = 0;
-		this.syncedBlocks = -1;
+		this.syncedBlockCount = -1;
 	}
 }

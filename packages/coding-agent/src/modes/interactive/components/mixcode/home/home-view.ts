@@ -14,6 +14,7 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import { visibleRosterIndices } from "../../../../../core/mixcode/home/home-state.ts";
+import { isWorkingStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
 import { theme } from "../../../theme/theme.ts";
 import { tabColorPaint, tabStatusGlyph } from "../multi-tab/tab-bar.ts";
 import {
@@ -59,6 +60,7 @@ export interface HomeViewModel {
 	overlayOpen: boolean;
 }
 
+/** Action a button on the heading fires. */
 export type HomeAction = "new-session" | "resume";
 
 interface ActionRegion {
@@ -99,6 +101,13 @@ const CARD_TITLE_RESERVE = 6;
 /** Gap between the hint phrases, and the number of hints never trimmed away. */
 const HINT_GAP = "  ";
 const KEPT_HINTS = 2;
+/** Rows the `older`/`newer` markers take when the roster is windowed. */
+const ROSTER_MARKER_ROWS = 2;
+/** Prefix before a card's message text; its width is what the text has to give up. */
+const CARD_TEXT_PREFIX = "  ⎿ ";
+
+/** Where the action buttons go when they cannot share a row with the heading. */
+type HeadingLayout = "heading-first" | "actions-first";
 
 /**
  * The `+ New session` / `[ Resume ]` buttons. Capture state is per rendered
@@ -131,16 +140,17 @@ export class HomeActions {
 	/**
 	 * Render the heading with the action buttons. `origin` is where this
 	 * component's first cell starts inside the page body, so the recorded hit
-	 * regions line up with the drawn row. Returns one line when the heading fits
-	 * beside the buttons, two when it does not, and just the heading when there is
-	 * no room for buttons.
+	 * regions line up with the drawn row. `layout` decides which of the two keeps
+	 * the first row when both cannot share one. Returns one line when the heading
+	 * fits beside the buttons, two when it does not, and just the heading when
+	 * there is no room for buttons.
 	 */
 	renderHeading(
 		heading: string,
 		width: number,
 		origin: { x: number; y: number },
 		maxRows: number,
-		actionsFirst: boolean,
+		layout: HeadingLayout,
 	): string[] {
 		const buttons: Array<{ action: HomeAction; label: string }> = [
 			{ action: "new-session", label: width >= 15 ? " + New session " : " + New " },
@@ -153,7 +163,7 @@ export class HomeActions {
 		if (width < visibleWidth(buttons[0]!.label) + 1 + visibleWidth(buttons[1]!.label)) buttons.pop();
 		const buttonWidth = buttons.reduce((total, button) => total + visibleWidth(button.label), 0) + buttons.length - 1;
 		const inline = Boolean(heading) && visibleWidth(heading) + 2 + buttonWidth <= width;
-		if (!inline && heading && maxRows < 2 && !actionsFirst) {
+		if (!inline && heading && maxRows < 2 && layout === "heading-first") {
 			this.reset();
 			return [heading];
 		}
@@ -304,7 +314,7 @@ export class HomeView implements Component {
 function renderHome(view: HomeViewModel, width: number, height: number | undefined, actions: HomeActions): string[] {
 	const inset = width >= WIDE_INSET_WIDTH ? WIDE_INSET : width >= NARROW_INSET_WIDTH ? NARROW_INSET : 0;
 	const bodyWidth = Math.max(0, width - inset * 2);
-	actions.beginFrame(width, height, view.overlayOpen === true);
+	actions.beginFrame(width, height, view.overlayOpen);
 	const brand = `${theme.fg("accent", theme.bold("MixCode"))} ${theme.fg("dim", "/ HOME")}`;
 	const activity = [
 		view.workingCount ? theme.fg("accent", `${view.workingCount} working`) : "",
@@ -377,7 +387,7 @@ function renderAgentViewTable(
 		if (visible.length > 0) actions.reset();
 		const rows =
 			visible.length === 0
-				? actions.renderHeading("", width, origin, 1, true)
+				? actions.renderHeading("", width, origin, 1, "actions-first")
 				: renderAgentRoster(view, width, Math.max(1, budget - 1), visible);
 		return budget === 1 ? rows.slice(0, 1) : finish(rows);
 	}
@@ -388,7 +398,7 @@ function renderAgentViewTable(
 		listWidth,
 		origin,
 		budget === undefined || budget >= TWO_ROW_HEADING_BUDGET ? 2 : 1,
-		visible.length === 0,
+		visible.length === 0 ? "actions-first" : "heading-first",
 	);
 	const rule = theme.fg("borderMuted", "─".repeat(width));
 	if (visible.length === 0) {
@@ -468,9 +478,11 @@ function renderAgentRoster(
 	const now = Date.now();
 	const selectedPosition = Math.max(0, visible.indexOf(view.selectedIndex));
 	const windowed = budget !== undefined && visible.length * AGENT_CARD_HEIGHT > budget;
-	const markers = windowed && budget !== undefined && budget >= AGENT_CARD_HEIGHT + 2;
+	const markers = windowed && budget !== undefined && budget >= AGENT_CARD_HEIGHT + ROSTER_MARKER_ROWS;
 	const count =
-		budget === undefined ? visible.length : Math.max(1, Math.floor((budget - (markers ? 2 : 0)) / AGENT_CARD_HEIGHT));
+		budget === undefined
+			? visible.length
+			: Math.max(1, Math.floor((budget - (markers ? ROSTER_MARKER_ROWS : 0)) / AGENT_CARD_HEIGHT));
 	const start = windowStart(selectedPosition, visible.length, count);
 	const end = Math.min(visible.length, start + count);
 	const lines: string[] = [];
@@ -501,17 +513,18 @@ function renderAgentCard(agent: HomeAgentEntry, width: number, selected: boolean
 		"…",
 	);
 	const titleBudget = Math.max(1, width - visibleWidth(statusGroup) - CARD_TITLE_RESERVE);
+	const textWidth = Math.max(0, width - visibleWidth(CARD_TEXT_PREFIX));
 	const titleLabel = singleLinePreview(card.title);
 	const titleText = `${tabStatusGlyph(card.status, card.unread)} ${truncateToWidth(titleLabel, titleBudget, "…")}`;
 	// A colored tab paints the whole title with its own colour pair.
 	const title = card.color ? tabColorPaint(card.color)(titleText) : titleSegment(card, titleText);
-	const preview = cachedOutputPreview(card.id, agent.messages, Math.max(0, width - 4), () =>
-		latestOutputPreview(agent.messages, Math.max(0, width - 4)),
+	const preview = cachedOutputPreview(card.id, agent.messages, textWidth, () =>
+		latestOutputPreview(agent.messages, textWidth),
 	);
 	const rows = [
 		lineEnds(`${marker}${title}`, statusGroup, width),
 		padLine(`  ${cardMeta(card, now)}`, width),
-		theme.fg("dim", padLine(`  ⎿ ${preview}`, width)),
+		theme.fg("dim", padLine(`${CARD_TEXT_PREFIX}${preview}`, width)),
 	];
 	return [...rows.map((line) => (selected ? theme.bg("selectedBg", line) : line)), ""];
 }
@@ -589,7 +602,7 @@ function statusChip(card: HomeCard): string {
 	}
 	if (card.status === "error") return theme.fg("error", "[error]");
 	const text = `[${card.status}]`;
-	if (card.status === "running" || card.status === "thinking") return theme.fg("accent", text);
+	if (isWorkingStatus(card.status)) return theme.fg("accent", text);
 	if (card.status === "done") return theme.fg("toolTitle", text);
 	return theme.fg("dim", text);
 }
@@ -597,14 +610,14 @@ function statusChip(card: HomeCard): string {
 /** Card title colour for a tab without a `/color` of its own. */
 function titleSegment(card: HomeCard, text: string): string {
 	if (card.status === "error") return theme.fg("error", text);
-	if (card.status === "running" || card.status === "thinking") return theme.fg("accent", text);
+	if (isWorkingStatus(card.status)) return theme.fg("accent", text);
 	if (card.status === "done" || card.unread) return theme.fg("success", text);
 	return text;
 }
 
 /** Current braille frame while the tab works; empty for any other status. */
 function spinnerFrame(card: HomeCard, now: number): string {
-	if (card.status !== "running" && card.status !== "thinking") return "";
+	if (!isWorkingStatus(card.status)) return "";
 	const start = card.workingStartedAt ? Date.parse(card.workingStartedAt) : Number.NaN;
 	// Without a start stamp the spinner still animates off wall-clock time.
 	const elapsed = Number.isFinite(start) ? Math.max(0, now - start) : now;
@@ -616,9 +629,8 @@ function spinnerFrame(card: HomeCard, now: number): string {
 function cardMeta(card: HomeCard, now: number): string {
 	const model = card.model ?? "?";
 	const context = theme.fg("dim", formatContextUsage(card.tokens, card.contextWindow));
-	const updated =
-		card.status === "running" || card.status === "thinking"
-			? `${card.status} ${formatElapsed(card.workingStartedAt, now)}`
-			: formatRelativeAge(card.lastWorkedAt, now);
+	const updated = isWorkingStatus(card.status)
+		? `${card.status} ${formatElapsed(card.workingStartedAt, now)}`
+		: formatRelativeAge(card.lastWorkedAt, now);
 	return updated ? `${model} · ${context} · ${updated}` : `${model} · ${context}`;
 }

@@ -50,6 +50,7 @@ import {
 	type ViewportTUI,
 } from "./tui.ts";
 import {
+	countGraphemes,
 	extractAnsiCode,
 	getGraphemeCellRange,
 	getOsc8LinkAtColumn,
@@ -159,8 +160,8 @@ interface ActiveSearch {
 	selectionMode: SearchSelectionMode;
 	/** Transcript lines the index was built from. */
 	lines?: string[];
-	/** Content height the cached lines were materialized from. */
-	linesKey?: number;
+	/** Line count the cached transcript lines were materialized from. */
+	lineCount?: number;
 }
 
 interface SearchHighlightRange {
@@ -209,8 +210,8 @@ export interface ClipboardResult {
 	ok: boolean;
 	/** The failure detail, when the copy failed. */
 	detail?: string;
-	/** Length of the copied text in characters. */
-	chars: number;
+	/** Length of the copied text in grapheme clusters. */
+	graphemes: number;
 }
 
 /** Alternate-screen TUI with a scrollable, application-owned viewport. */
@@ -488,25 +489,25 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.currentLayout = undefined;
 	}
 
+	/** Scroll the primary transcript by the given number of lines. */
 	scrollBy(lines: number): void {
 		this.getPrimaryScrollView().scrollBy(lines);
 		this.requestRender();
 	}
 
+	/** Scroll the primary transcript to its start. */
 	scrollToTop(): void {
 		this.getPrimaryScrollView().scrollToStart();
 		this.requestRender();
 	}
 
+	/** Scroll the primary transcript to its end. */
 	scrollToBottom(): void {
 		this.getPrimaryScrollView().scrollToEnd();
 		this.requestRender();
 	}
 
-	/**
-	 * Jump to the next (`1`) or previous (`-1`) OSC 133 prompt start in the primary
-	 * transcript. Returns whether a prompt row was found and scrolled to.
-	 */
+	/** Jump to the next or previous OSC 133 prompt start; returns whether one was found. */
 	scrollToPrompt(direction: -1 | 1): boolean {
 		if (!this.currentLayout) return false;
 		const scrollView = this.getPrimaryScrollView();
@@ -608,7 +609,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const provider = getScrollLineProvider(layout, scrollView);
 		if (!provider || !search.query.trim()) {
 			search.lines = undefined;
-			search.linesKey = undefined;
+			search.lineCount = undefined;
 			search.matches = [];
 			search.selectedIndex = -1;
 			search.selectedKey = undefined;
@@ -618,11 +619,11 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		}
 
 		// Materializing walks the whole document, and this runs on every frame while the
-		// search overlay is open, so the lines are kept until the content height moves.
-		const linesKey = provider.lineCount();
-		if (search.lines === undefined || search.linesKey !== linesKey) {
+		// search overlay is open, so the lines are kept until the line count moves.
+		const lineCount = provider.lineCount();
+		if (search.lines === undefined || search.lineCount !== lineCount) {
 			search.lines = materializeScrollLines(layout, scrollView) ?? [];
-			search.linesKey = linesKey;
+			search.lineCount = lineCount;
 		}
 		const lines = search.lines;
 
@@ -1498,12 +1499,12 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			const result = await this.copySelection(text);
 			const ok = result === true;
 			const detail = typeof result === "string" ? result : undefined;
-			if (this.onCopyResult) this.onCopyResult({ ok, detail, chars: text.length });
+			if (this.onCopyResult) this.onCopyResult({ ok, detail, graphemes: countGraphemes(text) });
 			else this.flash(ok ? "Copied!" : (detail ?? "Copy failed"), ok ? undefined : COPY_ERROR_FLASH_DURATION_MS);
 			return ok;
 		}
 		this.terminal.write(`\x1b]52;c;${Buffer.from(text).toString("base64")}\x07`);
-		if (this.onCopyResult) this.onCopyResult({ ok: true, chars: text.length });
+		if (this.onCopyResult) this.onCopyResult({ ok: true, graphemes: countGraphemes(text) });
 		else this.flash("Copied!");
 		return true;
 	}

@@ -57,7 +57,7 @@ export interface WindowedLayoutState {
 	 * `scrollTop - overscan` when the window is assembled from the end of the content,
 	 * which happens when the caller is already at the end.
 	 */
-	renderWindow(width: number, scrollTop: number, height: number, overscan: number): WindowedWindow;
+	renderWindow(width: number, scrollTop: number, height: number, overscan: number): RenderedLineWindow;
 	/**
 	 * Lines for an arbitrary range. The range is resolved against the same
 	 * estimated heights as `lineCount`, so it is exact only for content that has
@@ -68,7 +68,8 @@ export interface WindowedLayoutState {
 	materialize(width: number): string[];
 }
 
-export interface WindowedWindow {
+/** The rows, content offsets and total a windowed render returned for one request. */
+export interface RenderedLineWindow {
 	lines: string[];
 	/** Content row the first returned line corresponds to. */
 	start: number;
@@ -88,6 +89,14 @@ export interface WindowedLayoutNode {
 	state: WindowedLayoutState;
 }
 
+/** Symbol a component implements to expose windowed content to the layout engine. */
+export const WINDOWED_NODE = Symbol.for("@earendil-works/pi-tui/windowed-node");
+
+/** A component that renders its content through `WindowedLayoutState`. */
+export interface WindowedLayoutComponent extends Component {
+	[WINDOWED_NODE](): WindowedLayoutNode;
+}
+
 export type LayoutNode = StackLayoutNode | ScrollLayoutNode | WindowedLayoutNode;
 
 export interface LayoutComponent extends Component {
@@ -105,14 +114,6 @@ export interface ScrollLineProvider {
 	getLines(start: number, count: number): string[];
 	/** Every line, exact; present when the source can render content it has not measured. */
 	materialize?(): string[];
-}
-
-/** Symbol a component implements to expose windowed content to the layout engine. */
-export const WINDOWED_NODE = Symbol.for("@earendil-works/pi-tui/windowed-node");
-
-/** A component that renders its content through `WindowedLayoutState`. */
-export interface WindowedLayoutComponent extends Component {
-	[WINDOWED_NODE](): WindowedLayoutNode;
 }
 
 export function getLayoutNode(component: Component): LayoutNode | undefined {

@@ -15,8 +15,10 @@ const OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
 
 /**
  * Rows rendered above and below the viewport of a windowed scroll child.
- * Keeps a one-row scroll from re-rendering the neighbouring block and lets the
- * Kitty cropper read the row just above the viewport.
+ *
+ * Keeps a 1-row scroll from re-rendering the neighbouring block and lets the
+ * Kitty cropper read the row just above the viewport. 20 rows balance that
+ * against the cost of every window render.
  */
 export const WINDOW_OVERSCAN_LINES = 20;
 
@@ -111,6 +113,36 @@ function updateClips(box: LayoutBox, parentClip: LayoutRect): void {
 	for (const child of box.children) updateClips(child, box.clip);
 }
 
+/**
+ * Wrap a scroll view's child box in its viewport box: record it as the primary
+ * scroll view when it is the first one, then link the child to its parent and
+ * clamp the child clips. The plain and windowed paths differ only in the child
+ * box and line provider they pass in; this assembly is shared.
+ */
+function assembleScrollBox(
+	context: LayoutContext,
+	component: Component,
+	scrollView: ScrollView,
+	rect: LayoutRect,
+	childClip: LayoutRect,
+	childBox: LayoutBox,
+	lineProvider: ScrollLineProvider,
+): LayoutBox {
+	if (scrollView.primary || !context.primaryScrollView) context.primaryScrollView = scrollView;
+	const box: LayoutBox = {
+		component,
+		rect,
+		clip: childClip,
+		children: [childBox],
+		scrollView,
+		lineProvider,
+		layer: 0,
+	};
+	childBox.parent = box;
+	updateClips(childBox, childClip);
+	return box;
+}
+
 function layoutComponent(
 	context: LayoutContext,
 	component: Component,
@@ -158,16 +190,15 @@ function layoutComponent(
 			// The child measures what it paints and reports the offset and total it
 			// settled on. Those win over the estimate, so the scroll range and the rows
 			// agree with each other from this frame on.
-			const window = windowed.state.renderWindow(
+			const renderedWindow = windowed.state.renderWindow(
 				contentWidth,
 				requestedScrollTop,
 				viewportHeight,
 				WINDOW_OVERSCAN_LINES,
 			);
 			const scrollView = node.state as ScrollView;
-			if (node.state.primary || !context.primaryScrollView) context.primaryScrollView = scrollView;
-			if (window.scrollTop !== requestedScrollTop) scrollView.scrollTo(window.scrollTop);
-			node.state.updateLayout(window.total, viewportHeight, context.requestRender);
+			if (renderedWindow.scrollTop !== requestedScrollTop) scrollView.scrollTo(renderedWindow.scrollTop);
+			node.state.updateLayout(renderedWindow.total, viewportHeight, context.requestRender);
 
 			const rect = { x, y, width: safeWidth, height: viewportHeight };
 			const childClip = intersect(clip, rect);
@@ -176,29 +207,18 @@ function layoutComponent(
 			// clipped to the viewport like the full-render path.
 			const childBox: LayoutBox = {
 				component: node.component,
-				rect: { x, y: y - window.scrollTop, width: contentWidth, height: window.total },
+				rect: { x, y: y - renderedWindow.scrollTop, width: contentWidth, height: renderedWindow.total },
 				clip: childClip,
 				children: [],
-				lines: window.lines,
-				lineOffset: -window.start,
+				lines: renderedWindow.lines,
+				lineOffset: -renderedWindow.start,
 				layer: 0,
 			};
-			const box: LayoutBox = {
-				component,
-				rect,
-				clip: childClip,
-				children: [childBox],
-				scrollView,
-				lineProvider: {
-					lineCount: () => Math.max(0, Math.floor(windowed.state.lineCount(contentWidth))),
-					getLines: (start, count) => windowed.state.getLines(contentWidth, start, count),
-					materialize: () => windowed.state.materialize(contentWidth),
-				},
-				layer: 0,
-			};
-			childBox.parent = box;
-			updateClips(childBox, childClip);
-			return box;
+			return assembleScrollBox(context, component, scrollView, rect, childClip, childBox, {
+				lineCount: () => Math.max(0, Math.floor(windowed.state.lineCount(contentWidth))),
+				getLines: (start, count) => windowed.state.getLines(contentWidth, start, count),
+				materialize: () => windowed.state.materialize(contentWidth),
+			});
 		}
 		const childBox = layoutComponent(
 			context,
@@ -214,25 +234,13 @@ function layoutComponent(
 		node.state.updateLayout(contentHeight, viewportHeight, context.requestRender);
 		translateBox(childBox, previousScrollTop - node.state.scrollTop);
 		const scrollView = node.state as ScrollView;
-		if (node.state.primary || !context.primaryScrollView) context.primaryScrollView = scrollView;
 		const rect = { x, y, width: safeWidth, height: viewportHeight };
 		const childClip = intersect(clip, rect);
-		const box: LayoutBox = {
-			component,
-			rect,
-			clip: childClip,
-			children: [childBox],
-			scrollView,
-			lineProvider: {
-				lineCount: () => contentHeight,
-				getLines: (start, count) =>
-					renderCached(context, node.component, contentWidth).slice(start, start + Math.max(0, count)),
-			},
-			layer: 0,
-		};
-		childBox.parent = box;
-		updateClips(childBox, childClip);
-		return box;
+		return assembleScrollBox(context, component, scrollView, rect, childClip, childBox, {
+			lineCount: () => contentHeight,
+			getLines: (start, count) =>
+				renderCached(context, node.component, contentWidth).slice(start, start + Math.max(0, count)),
+		});
 	}
 
 	const entries = visibleStackEntries(node.entries, context.viewport);

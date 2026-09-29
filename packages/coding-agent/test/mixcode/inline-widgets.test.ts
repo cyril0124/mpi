@@ -78,7 +78,7 @@ type InlineWiringContext = {
 	showError: (message: string) => void;
 	showWarning: (message: string) => void;
 	inlineWidgetState(this: InlineWiringContext): InlineWidgetTabState | undefined;
-	renderWidgets(this: InlineWiringContext): void;
+	requestWidgetRender(this: InlineWiringContext): void;
 	renderWidgetContainer(
 		this: InlineWiringContext,
 		container: Container,
@@ -88,9 +88,10 @@ type InlineWiringContext = {
 	): void;
 	refreshInlineWidgets(this: InlineWiringContext): void;
 	handleToggleInlineWidgets(this: InlineWiringContext): void;
-	widgetKeys(this: InlineWiringContext): string[];
+	getWidgetKeys(this: InlineWiringContext): string[];
 	handleWidgetsCommand(this: InlineWiringContext, args: string): void;
 	inlineViewportRows(this: InlineWiringContext): number | undefined;
+	buildDocumentChildren(this: InlineWiringContext): void;
 	leaveHome(this: InlineWiringContext): void;
 };
 const proto = InteractiveMode.prototype as unknown as InlineWiringContext;
@@ -170,10 +171,10 @@ async function bootInline(options: {
 		showWarning: (message: string) => errors.push(message),
 	} satisfies Partial<InlineWiringContext>);
 	context.inlineWidgetState = () => proto.inlineWidgetState.call(context);
-	context.renderWidgets = () => proto.renderWidgets.call(context);
+	context.requestWidgetRender = () => proto.requestWidgetRender.call(context);
 	context.refreshInlineWidgets = () => proto.refreshInlineWidgets.call(context);
 	context.handleToggleInlineWidgets = () => proto.handleToggleInlineWidgets.call(context);
-	context.widgetKeys = () => proto.widgetKeys.call(context);
+	context.getWidgetKeys = () => proto.getWidgetKeys.call(context);
 	context.handleWidgetsCommand = (args) => proto.handleWidgetsCommand.call(context, args);
 	context.inlineViewportRows = () => proto.inlineViewportRows.call(context);
 
@@ -188,7 +189,7 @@ async function bootInline(options: {
 	});
 	// The component reads the viewport of the scroll view the frame really uses.
 	context.transcriptScrollView = viewport.transcript;
-	context.renderWidgets();
+	context.requestWidgetRender();
 	tui.setLayoutRoot(viewport.root);
 	tui.start();
 	await terminal.waitForRender();
@@ -611,7 +612,7 @@ describe("inline widget tab state", () => {
 			updateEditorBorderColor: () => {},
 			restoreFooterAfterHome: () => {},
 			restoreStatusAfterHome: () => {},
-			renderWidgets: () => {},
+			requestWidgetRender: () => {},
 			documentContainer,
 			headerContainer: header,
 			loadedResourcesContainer: loaded,
@@ -619,6 +620,7 @@ describe("inline widget tab state", () => {
 			inlineWidgets,
 			windowedTranscript: { invalidate: () => {} },
 		} as unknown as InlineWiringContext;
+		context.buildDocumentChildren = () => proto.buildDocumentChildren.call(context);
 
 		proto.leaveHome.call(context);
 
