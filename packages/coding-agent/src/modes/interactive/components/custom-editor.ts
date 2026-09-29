@@ -124,6 +124,15 @@ export class CustomEditor extends Editor {
 			// Fall through to editor handling for delete-char-forward when not empty
 		}
 
+		// Tab cycles agent tabs, but autocomplete keeps Tab while its popup is open.
+		if (
+			this.isShowingAutocomplete() &&
+			(this.keybindings.matches(data, "app.tab.next") || this.keybindings.matches(data, "app.tab.previous"))
+		) {
+			super.handleInput(data);
+			return;
+		}
+
 		// Explicit history bindings take precedence over app actions while the editor is focused.
 		// This lets users bind Ctrl+P even though it cycles models by default.
 		if (

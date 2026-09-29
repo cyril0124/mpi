@@ -1,6 +1,3 @@
-import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { unlink } from "node:fs/promises";
 import * as os from "node:os";
 import {
 	type Component,
@@ -14,6 +11,7 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import { KeybindingsManager } from "../../../core/keybindings.ts";
+import { deleteSessionFile } from "../../../core/mixcode/session-delete.ts";
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.ts";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.ts";
 import { theme } from "../theme/theme.ts";
@@ -306,6 +304,11 @@ class SessionList implements Component, Focusable {
 	public onTogglePath?: (showPath: boolean) => void;
 	public onDeleteConfirmationChange?: (path: string | null) => void;
 	public onDeleteSession?: (sessionPath: string) => Promise<void>;
+	/**
+	 * Refuses a deletion when the session belongs to a turn in progress. Returns
+	 * the reason to show, or undefined when the file is deletable.
+	 */
+	public sessionDeleteGuard?: (sessionPath: string) => string | undefined;
 	public onRenameSession?: (sessionPath: string) => void;
 	public onError?: (message: string) => void;
 	private maxVisible: number = 10; // Max sessions visible (one line each)
@@ -406,6 +409,13 @@ class SessionList implements Component, Focusable {
 		// Prevent deleting current session
 		if (this.isCurrentSessionPath(selected.session.path)) {
 			this.onError?.("Cannot delete the currently active session");
+			return;
+		}
+
+		// Prevent deleting a session whose tab is still working on it.
+		const busy = this.sessionDeleteGuard?.(selected.session.path);
+		if (busy) {
+			this.onError?.(busy);
 			return;
 		}
 
@@ -649,49 +659,14 @@ class SessionList implements Component, Focusable {
 type SessionsLoader = (onProgress?: SessionListProgress, signal?: AbortSignal) => Promise<SessionInfo[]>;
 
 /**
- * Delete a session file, trying the `trash` CLI first, then falling back to unlink
- */
-async function deleteSessionFile(
-	sessionPath: string,
-): Promise<{ ok: boolean; method: "trash" | "unlink"; error?: string }> {
-	// Try `trash` first (if installed)
-	const trashArgs = sessionPath.startsWith("-") ? ["--", sessionPath] : [sessionPath];
-	const trashResult = spawnSync("trash", trashArgs, { encoding: "utf-8" });
-
-	const getTrashErrorHint = (): string | null => {
-		const parts: string[] = [];
-		if (trashResult.error) {
-			parts.push(trashResult.error.message);
-		}
-		const stderr = trashResult.stderr?.trim();
-		if (stderr) {
-			parts.push(stderr.split("\n")[0] ?? stderr);
-		}
-		if (parts.length === 0) return null;
-		return `trash: ${parts.join(" · ").slice(0, 200)}`;
-	};
-
-	// If trash reports success, or the file is gone afterwards, treat it as successful
-	if (trashResult.status === 0 || !existsSync(sessionPath)) {
-		return { ok: true, method: "trash" };
-	}
-
-	// Fallback to permanent deletion
-	try {
-		await unlink(sessionPath);
-		return { ok: true, method: "unlink" };
-	} catch (err) {
-		const unlinkError = err instanceof Error ? err.message : String(err);
-		const trashErrorHint = getTrashErrorHint();
-		const error = trashErrorHint ? `${unlinkError} (${trashErrorHint})` : unlinkError;
-		return { ok: false, method: "unlink", error };
-	}
-}
-
-/**
  * Component that renders a session selector
  */
 export class SessionSelectorComponent extends Container implements Focusable {
+	/** Refuses a deletion for a session whose tab is mid-turn; see `SessionList`. */
+	public setSessionDeleteGuard(guard: (sessionPath: string) => string | undefined): void {
+		this.sessionList.sessionDeleteGuard = guard;
+	}
+
 	handleInput(data: string): void {
 		if (this.mode === "rename") {
 			const kb = getKeybindings();
@@ -840,6 +815,12 @@ export class SessionSelectorComponent extends Container implements Focusable {
 
 		// Handle session deletion
 		this.sessionList.onDeleteSession = async (sessionPath: string) => {
+			const busy = this.sessionList.sessionDeleteGuard?.(sessionPath);
+			if (busy) {
+				this.header.setStatusMessage({ type: "error", message: busy }, 3000);
+				this.requestRender();
+				return;
+			}
 			const result = await deleteSessionFile(sessionPath);
 
 			if (result.ok) {

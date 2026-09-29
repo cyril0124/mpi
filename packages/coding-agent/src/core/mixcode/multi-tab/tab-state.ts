@@ -1,0 +1,51 @@
+/**
+ * Tab status mutation seam.
+ *
+ * Funnels the status/timer invariant (entering work stamps a start time, leaving
+ * work records a duration) into one place so event handlers do not each
+ * re-derive it.
+ */
+import type { TabStatus } from "./types.ts";
+
+/** Statuses that represent the agent actively working (a timer is running). */
+const WORKING_STATUSES: ReadonlySet<TabStatus> = new Set<TabStatus>(["running", "thinking"]);
+
+export interface TabTimerState {
+	status: TabStatus;
+	workingStartedAt?: string;
+	lastWorkedDurationSeconds?: number;
+}
+
+export interface SetTabStatusOptions {
+	/** Clock injection point; defaults to now. Tests pass a fixed Date. */
+	now?: Date;
+	/** Restart the timer even when one is already running. */
+	restart?: boolean;
+}
+
+/**
+ * Set the tab status and maintain the timer invariant: entering a working
+ * status stamps `workingStartedAt` (unless one is already running), leaving a
+ * working status measures `lastWorkedDurationSeconds` and clears the stamp.
+ */
+export function setTabStatus(tab: TabTimerState, status: TabStatus, options: SetTabStatusOptions = {}): void {
+	const now = options.now ?? new Date();
+	tab.status = status;
+
+	if (WORKING_STATUSES.has(status)) {
+		if (options.restart) tab.workingStartedAt = now.toISOString();
+		else tab.workingStartedAt ??= now.toISOString();
+		tab.lastWorkedDurationSeconds = undefined;
+		return;
+	}
+
+	tab.lastWorkedDurationSeconds = elapsedSeconds(tab.workingStartedAt, now);
+	tab.workingStartedAt = undefined;
+}
+
+/** Seconds between an ISO start stamp and now, floored; undefined if no/invalid stamp. */
+function elapsedSeconds(startedAt: string | undefined, now: Date): number | undefined {
+	const start = startedAt ? Date.parse(startedAt) : Number.NaN;
+	if (!Number.isFinite(start)) return undefined;
+	return Math.max(0, Math.floor((now.getTime() - start) / 1000));
+}

@@ -30,6 +30,10 @@ export interface AppKeybindings {
 	"app.message.dequeue": true;
 	"app.clipboard.pasteImage": true;
 	"app.session.new": true;
+	"app.tab.next": true;
+	"app.tab.previous": true;
+	"app.tab.new": true;
+	"app.tab.close": true;
 	"app.session.tree": true;
 	"app.session.fork": true;
 	"app.session.resume": true;
@@ -98,7 +102,7 @@ export const KEYBINDINGS = {
 		description: "Suspend to background",
 	},
 	"app.thinking.cycle": {
-		defaultKeys: "shift+tab",
+		defaultKeys: "alt+t",
 		description: "Cycle thinking level",
 	},
 	"app.thinking.save": {
@@ -144,6 +148,10 @@ export const KEYBINDINGS = {
 		description: "Paste image from clipboard (text fallback)",
 	},
 	"app.session.new": { defaultKeys: [], description: "Start a new session" },
+	"app.tab.next": { defaultKeys: ["tab", "ctrl+shift+right"], description: "Next agent tab" },
+	"app.tab.previous": { defaultKeys: ["shift+tab", "ctrl+shift+left"], description: "Previous agent tab" },
+	"app.tab.new": { defaultKeys: [], description: "Open a new agent tab" },
+	"app.tab.close": { defaultKeys: [], description: "Close the current agent tab" },
 	"app.session.tree": { defaultKeys: [], description: "Open session tree" },
 	"app.session.fork": { defaultKeys: [], description: "Fork current session" },
 	"app.session.resume": { defaultKeys: [], description: "Resume a session" },

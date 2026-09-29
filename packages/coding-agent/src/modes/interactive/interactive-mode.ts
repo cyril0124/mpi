@@ -63,7 +63,11 @@ import {
 	VERSION,
 } from "../../config.ts";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
-import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
+import {
+	type AgentSessionRuntime,
+	type CreateAgentSessionRuntimeFactory,
+	SessionImportFileNotFoundError,
+} from "../../core/agent-session-runtime.ts";
 import type { AgentSessionRuntimeDiagnostic } from "../../core/agent-session-services.ts";
 import {
 	CACHE_TTL_MS,
@@ -93,6 +97,19 @@ import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.ts";
+import {
+	deleteWorkspaceRecord,
+	type MixcodeWorkspace,
+	readOpenTabs,
+	readTabMeta,
+	readWorkspaces,
+	resolveSessionPath,
+	saveTabLayout,
+	upsertWorkspace,
+} from "../../core/mixcode/multi-tab/mixcode-state.ts";
+import { type AgentTab, TabManager, tabBusyPhrase, tabBusyReason } from "../../core/mixcode/multi-tab/tab-manager.ts";
+import { isTabColorName, nextAvailableAgentTitle, TAB_COLOR_NAMES } from "../../core/mixcode/multi-tab/types.ts";
+import { deleteSessionFile } from "../../core/mixcode/session-delete.ts";
 import {
 	defaultModelPerProvider,
 	findExactModelReferenceMatch,
@@ -146,6 +163,7 @@ import { FooterComponent, formatTokens } from "./components/footer.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { createMermaidMarkdownTransformer } from "./components/mermaid.ts";
+import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import {
 	type AuthSelectorProvider,
@@ -385,6 +403,41 @@ function formatLoginProviderCompletionDescription(provider: LoginProviderComplet
 }
 
 /**
+ * Parse `/new-session [--focus|--no-focus] [title]`.
+ * Defaults to focusing the new tab.
+ */
+function parseNewSessionArgs(args: string): { title?: string; focus: boolean; error?: string } {
+	let rest = args.trim();
+	let focus = true;
+	const match = rest.match(/^(--focus|--no-focus)\b\s*/);
+	if (match) {
+		focus = match[1] === "--focus";
+		rest = rest.slice(match[0].length).trim();
+	} else if (rest.startsWith("--")) {
+		return { focus: true, error: "Usage: /new-session [--focus|--no-focus] [title]" };
+	}
+	return { title: rest || undefined, focus };
+}
+
+type ExtensionFooterFactory = (
+	tui: TUI,
+	thm: Theme,
+	footerData: ReadonlyFooterDataProvider,
+) => Component & { dispose?(): void };
+type ExtensionHeaderFactory = (tui: TUI, thm: Theme) => Component & { dispose?(): void };
+
+/** Extension-owned UI belonging to one tab, swapped when the tab becomes active. */
+interface TabExtensionUi {
+	widgetsAbove: Map<string, Component & { dispose?(): void }>;
+	widgetsBelow: Map<string, Component & { dispose?(): void }>;
+	footerFactory: ExtensionFooterFactory | undefined;
+	headerFactory: ExtensionHeaderFactory | undefined;
+	statuses: Map<string, string>;
+	autocompleteWrappers: AutocompleteProviderFactory[];
+	editorFactory: EditorFactory | undefined;
+}
+
+/**
  * Options for InteractiveMode initialization.
  */
 export interface InteractiveModeOptions {
@@ -410,10 +463,27 @@ export interface InteractiveModeOptions {
 	initialThemeSetting?: string;
 	/** Terminal implementation. Defaults to the current process terminal. */
 	terminal?: Terminal;
+	/**
+	 * Factory used to create additional agent runtimes for multi-tab sessions.
+	 * When omitted the instance stays single-session (one tab, no tab bar).
+	 */
+	createRuntime?: CreateAgentSessionRuntimeFactory;
 }
 
 export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;
+	private tabManager: TabManager | undefined;
+	private tabBarContainer: Container | undefined;
+	/** Workdir that scopes the persisted open-tab layout. */
+	private readonly tabsWorkdir: string;
+	/** Most tabs reopened at startup; the remainder is reported, not restored. */
+	private static readonly RESTORE_TAB_LIMIT = 12;
+
+	/** Set once the startup restore has been attempted; gates layout persistence. */
+	private tabsRestoreAttempted = false;
+	private tabPersistFailureReported = false;
+	/** Serializes async tab transitions (activation, create, close). */
+	private tabSwitchQueue: Promise<void> = Promise.resolve();
 	private renderer: TuiMainScreen | TuiAltScreen;
 	private ui: TUI;
 	private mainScreenRenderState: TuiMainScreenRenderState | undefined;
@@ -530,6 +600,19 @@ export class InteractiveMode {
 
 	// Custom footer from extension (undefined = use built-in footer)
 	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
+	private customFooterFactory: ExtensionFooterFactory | undefined = undefined;
+	private customHeaderFactory: ExtensionHeaderFactory | undefined = undefined;
+	/** Per-tab extension UI (widgets, footer/header, statuses), swapped on tab switch. */
+	private readonly tabUi = new Map<string, TabExtensionUi>();
+	/** Tab whose extension UI is currently mounted; used to capture state on switch. */
+	private activeTabIdForUi: string | undefined = undefined;
+	/**
+	 * Sessions whose extensions are already bound. Created on first use so a host
+	 * that only supplies a subset of this class (tests) still works.
+	 */
+	private boundSessions?: WeakSet<AgentSession>;
+	/** Cached transcript components per tab, reused when the tab is unchanged. */
+	private readonly tabTranscript = new Map<string, { signature: string; chat: Component[]; loaded: Component[] }>();
 
 	// Header container that holds the built-in or custom header
 	private headerContainer: Container;
@@ -567,13 +650,26 @@ export class InteractiveMode {
 		const tuiMode = options.tuiMode ?? this.settingsManager.getTuiMode();
 		this.options = { ...options, tuiMode };
 		this.autoTrustOnReloadCwd = options.autoTrustOnReloadCwd;
-		this.runtimeHost.setBeforeSessionInvalidate(() => {
-			this.resetExtensionUI();
-		});
-		this.runtimeHost.setRebindSession(async () => {
-			await this.rebindCurrentSession({ renderBeforeBind: true });
-			await this.themeController.applyFromSettings();
-		});
+		// Key the persisted tab layout on the startup workdir, so the same value
+		// is used for both writing and restoring regardless of the active tab.
+		this.tabsWorkdir = runtimeHost.cwd;
+		if (options.createRuntime) {
+			this.tabManager = new TabManager({
+				initialRuntime: runtimeHost,
+				initialTitle: this.session.sessionManager.getSessionName() ?? "Agent-01",
+				createRuntime: options.createRuntime,
+				agentDir: runtimeHost.services.agentDir,
+				onTabsChanged: () => this.ui.requestRender(),
+				onLayoutChanged: () => this.persistOpenTabs(),
+				// Ring the bell when a tab the user is not looking at finishes, so a
+				// background result is noticeable with the terminal unfocused.
+				onBackgroundCompletion: () => this.ui.terminal.write("\x07"),
+				configureRuntime: (runtime) => this.bindRuntimeCallbacks(runtime),
+			});
+		} else {
+			this.bindRuntimeCallbacks(this.runtimeHost);
+		}
+		this.activeTabIdForUi = this.tabManager?.getActive().id;
 		this.version = VERSION;
 		this.renderer = createInteractiveTui({
 			tuiMode,
@@ -931,8 +1027,19 @@ export class InteractiveMode {
 			scrollbarThumbStyle: (text) => theme.fg("scrollbarThumb", text),
 		});
 		this.transcriptScrollView = viewport.transcript;
-		this.fullscreenLayoutRoot = viewport.root;
+		this.tabBarContainer = new Container();
+		this.tabBarContainer.addChild(
+			new TabBar(
+				() => this.getTabBarModel(),
+				(id) => void this.activateTabById(id),
+			),
+		);
+		this.fullscreenLayoutRoot = new TuiLayouts.VStack([
+			{ component: this.tabBarContainer, basis: "auto", grow: 0, shrink: 1, minSize: 0 },
+			{ component: viewport.root, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+		]);
 		this.mountInteractiveTui(this.renderer, [
+			this.tabBarContainer,
 			this.documentContainer,
 			this.pendingMessagesContainer,
 			this.statusContainer,
@@ -1049,6 +1156,9 @@ export class InteractiveMode {
 
 		// Initialize available provider count for footer display
 		await this.updateAvailableProviderCount();
+
+		// Reopen the previous run's tabs when this is a fresh session at startup.
+		await this.restoreOpenTabsOnStartup();
 
 		// Flush the completed startup state before loading the remaining syntax grammars.
 		this.ui.renderNow();
@@ -2030,6 +2140,12 @@ export class InteractiveMode {
 		}
 
 		await this.bindCurrentSessionExtensions();
+		const boundSession = this.session;
+		if (boundSession) {
+			this.boundSessions ??= new WeakSet<AgentSession>();
+			this.boundSessions.add(boundSession);
+		}
+		if (this.activeTabIdForUi) this.tabUi.delete(this.activeTabIdForUi);
 
 		if (this.session !== session) {
 			return;
@@ -2042,6 +2158,847 @@ export class InteractiveMode {
 		await this.updateAvailableProviderCount();
 		this.updateEditorBorderColor();
 		this.updateTerminalTitle();
+	}
+
+	/** Attach the host rebind/invalidate callbacks to a runtime (initial or newly created tab). */
+	private bindRuntimeCallbacks(runtime: AgentSessionRuntime): void {
+		runtime.setBeforeSessionInvalidate(() => {
+			this.resetExtensionUI();
+		});
+		runtime.setRebindSession(async () => {
+			this.tabManager?.rebind(runtime);
+			await this.rebindCurrentSession({ renderBeforeBind: true });
+			await this.themeController.applyFromSettings();
+			// A replaced session has a new id; republish so the shared layout never
+			// points at the session that was left behind.
+			this.persistOpenTabs();
+		});
+	}
+
+	private getTabBarModel(): TabBarModel {
+		const manager = this.tabManager;
+		if (!manager) return { tabs: [], activeId: "" };
+		const activeId = manager.getActive().id;
+		return {
+			tabs: manager.list().map((tab) => ({
+				id: tab.id,
+				title: tab.title,
+				status: tab.status,
+				unread: tab.unread,
+				recentRank: tab.id === activeId ? -1 : manager.recentRank(tab.id),
+				color: tab.color,
+			})),
+			activeId,
+			rulePainter: theme.getThinkingBorderColor(this.session.thinkingLevel || "off"),
+			// The bar may wrap, but it must not push the transcript out of the
+			// viewport; the surplus collapses into the overflow counts.
+			maxRows: Math.max(1, Math.floor(this.ui.terminal.rows * 0.1)),
+		};
+	}
+
+	/** Cycle to the next/previous agent tab. No-op without multi-tab runtimes. */
+	private cycleAgentTab(delta: number): void {
+		const manager = this.tabManager;
+		if (!manager || manager.size <= 1) return;
+		// `next()` activates immediately, so save the outgoing draft before it.
+		manager.setDraft(manager.getActive().id, this.editor.getText());
+		const next = manager.next(delta);
+		this.enqueueTabSwitch(() => this.switchActiveTab(next));
+	}
+
+	/** Focus an existing agent tab, restoring its draft and transcript. */
+	private async activateTab(tab: AgentTab): Promise<void> {
+		const manager = this.tabManager;
+		if (!manager) return;
+		const current = manager.getActive();
+		if (tab.id === current.id) return;
+		manager.setDraft(current.id, this.editor.getText());
+		const active = manager.activate(tab.id);
+		await this.enqueueTabSwitch(() => this.switchActiveTab(active));
+	}
+
+	/**
+	 * Serialize tab transitions so rapid switching cannot interleave and leave
+	 * the editor showing another tab's draft.
+	 */
+	private enqueueTabSwitch(run: () => Promise<void>): Promise<void> {
+		const next = this.tabSwitchQueue.then(run, run).catch((error: unknown) => {
+			this.showError(`Tab switch failed: ${error instanceof Error ? error.message : String(error)}`);
+		});
+		this.tabSwitchQueue = next;
+		return next;
+	}
+
+	private async activateTabById(id: string): Promise<void> {
+		const tab = this.tabManager?.get(id);
+		if (tab) await this.activateTab(tab);
+	}
+
+	/**
+	 * Swap the rendered session to `tab`.
+	 *
+	 * The outgoing tab's extension UI and transcript are set aside for reuse, the
+	 * incoming tab's are restored (or rebuilt when its session changed), and the
+	 * frame is requested before extensions are bound. Binding emits
+	 * `session_start`, so it runs only for a session that has not been bound yet.
+	 */
+	private async switchActiveTab(tab: AgentTab): Promise<void> {
+		if (this.activeTabIdForUi && this.activeTabIdForUi !== tab.id) {
+			this.captureTranscript(this.activeTabIdForUi);
+			this.detachTabUi(this.activeTabIdForUi);
+		}
+		this.unsubscribe?.();
+		this.unsubscribe = undefined;
+		this.runtimeHost = tab.runtime;
+		this.applyRuntimeSettings();
+		if (!this.restoreTranscript(tab.id)) this.renderCurrentSessionState();
+		this.subscribeToAgent();
+		this.attachTabUi(tab.id);
+		// The shared status line belongs to the previously active session; sync it
+		// to the newly active tab instead of leaving a stale "Working" indicator.
+		if (this.session.isStreaming || this.session.isCompacting) this.showWorkingStatusIndicator();
+		else this.clearStatusIndicator();
+		this.defaultEditor.setText(tab.draftInput);
+		if (this.editor !== this.defaultEditor) this.editor.setText(tab.draftInput);
+		this.updateAvailableProviderCount();
+		this.updateEditorBorderColor();
+		this.updateTerminalTitle();
+		this.activeTabIdForUi = tab.id;
+		this.ui.requestRender();
+		await this.ensureSessionBound();
+	}
+
+	/**
+	 * Signature of a session's transcript: entry count, last entry id, and whether
+	 * it is streaming. Rebuilding a long transcript is expensive, so a tab whose
+	 * signature is unchanged reuses the components built for it last time.
+	 */
+	private transcriptSignature(): string {
+		const branch = this.sessionManager.getBranch();
+		const last = branch[branch.length - 1]?.id ?? "";
+		return `${branch.length}:${last}:${this.session.isStreaming ? "s" : ""}`;
+	}
+
+	/** Move the outgoing tab's transcript components aside for reuse; do not dispose them. */
+	private captureTranscript(tabId: string): void {
+		this.tabTranscript.set(tabId, {
+			signature: this.transcriptSignature(),
+			chat: [...this.chatContainer.children],
+			loaded: [...this.loadedResourcesContainer.children],
+		});
+		this.chatContainer.clear();
+		this.loadedResourcesContainer.clear();
+	}
+
+	/** Re-attach a cached transcript when it is still current. Returns false to rebuild. */
+	private restoreTranscript(tabId: string): boolean {
+		const cached = this.tabTranscript.get(tabId);
+		if (!cached || cached.signature !== this.transcriptSignature()) return false;
+		this.chatContainer.clear();
+		for (const child of cached.chat) this.chatContainer.addChild(child);
+		this.loadedResourcesContainer.clear();
+		for (const child of cached.loaded) this.loadedResourcesContainer.addChild(child);
+		this.pendingMessagesContainer.clear();
+		this.compactionQueuedMessages = [];
+		this.pendingTools.clear();
+		this.streamingComponent = undefined;
+		this.streamingMessage = undefined;
+		this.updatePendingMessagesDisplay();
+		return true;
+	}
+
+	private async ensureSessionBound(): Promise<void> {
+		const session = this.session;
+		if (!session) return;
+		if (this.boundSessions?.has(session)) {
+			// Shortcuts are per-session but cheap to (re)apply on each switch.
+			this.setupExtensionShortcuts(session.extensionRunner);
+			return;
+		}
+		this.boundSessions ??= new WeakSet<AgentSession>();
+		this.boundSessions.add(session);
+		await this.bindCurrentSessionExtensions();
+	}
+
+	/** Move the active tab's extension UI aside (widgets are kept alive, not disposed). */
+	private detachTabUi(tabId: string): void {
+		const leavingHeader = this.customHeader;
+		this.tabUi.set(tabId, {
+			widgetsAbove: this.extensionWidgetsAbove,
+			widgetsBelow: this.extensionWidgetsBelow,
+			footerFactory: this.customFooterFactory,
+			headerFactory: this.customHeaderFactory,
+			statuses: new Map(this.footerDataProvider.getExtensionStatuses()),
+			autocompleteWrappers: this.autocompleteProviderWrappers,
+			editorFactory: this.editorComponentFactory,
+		});
+		// Footer/header are rebuilt from their factories on re-attach, so dispose
+		// the outgoing instances instead of orphaning them.
+		this.customFooter?.dispose?.();
+		this.customHeader?.dispose?.();
+		// Reset live UI to a clean slate for the incoming tab.
+		this.extensionWidgetsAbove = new Map();
+		this.extensionWidgetsBelow = new Map();
+		this.customFooter = undefined;
+		this.customFooterFactory = undefined;
+		this.customHeader = undefined;
+		this.customHeaderFactory = undefined;
+		this.autocompleteProviderWrappers = [];
+		this.editorComponentFactory = undefined;
+		this.footerDataProvider.clearExtensionStatuses();
+		if (this.extensionSelector) this.hideExtensionSelector();
+		if (this.extensionInput) this.hideExtensionInput();
+		if (this.extensionEditor) this.hideExtensionEditor();
+		this.ui.hideOverlay();
+		this.clearExtensionTerminalInputListeners();
+		this.defaultEditor.onExtensionShortcut = undefined;
+		this.restoreBuiltInChrome(leavingHeader);
+	}
+
+	/** Mount a tab's saved extension UI into the live fields. */
+	private attachTabUi(tabId: string): void {
+		const ui = this.tabUi.get(tabId);
+		this.extensionWidgetsAbove = ui?.widgetsAbove ?? new Map();
+		this.extensionWidgetsBelow = ui?.widgetsBelow ?? new Map();
+		this.customFooter = undefined;
+		this.customFooterFactory = undefined;
+		this.customHeader = undefined;
+		this.customHeaderFactory = undefined;
+		this.autocompleteProviderWrappers = ui?.autocompleteWrappers ?? [];
+		this.footerDataProvider.clearExtensionStatuses();
+		for (const [key, value] of ui?.statuses ?? []) this.footerDataProvider.setExtensionStatus(key, value);
+		this.setExtensionFooter(ui?.footerFactory);
+		this.setExtensionHeader(ui?.headerFactory);
+		this.setCustomEditorComponent(ui?.editorFactory);
+		this.setupAutocompleteProvider();
+		this.renderWidgets();
+		this.footer.invalidate();
+	}
+
+	/** Remove any custom footer/header and show the built-ins (without disposing the tab's copies). */
+	private restoreBuiltInChrome(leavingHeader: (Component & { dispose?(): void }) | undefined): void {
+		this.footerContainer.clear();
+		this.footerContainer.addChild(this.footer);
+		if (this.builtInHeader && leavingHeader) {
+			const index = this.headerContainer.children.indexOf(leavingHeader);
+			if (index >= 0) {
+				if (isExpandable(this.builtInHeader)) this.builtInHeader.setExpanded(this.toolOutputExpanded);
+				this.headerContainer.children[index] = this.builtInHeader;
+			}
+		}
+		this.renderWidgets();
+	}
+
+	/** Dispose and forget a closed tab's extension UI. */
+	private disposeTabUi(tabId: string): void {
+		this.tabTranscript.delete(tabId);
+		const ui = this.tabUi.get(tabId);
+		if (!ui) return;
+		this.tabUi.delete(tabId);
+		for (const widget of ui.widgetsAbove.values()) widget.dispose?.();
+		for (const widget of ui.widgetsBelow.values()) widget.dispose?.();
+	}
+
+	/** Open a new agent session in its own tab. */
+	private async handleNewTab(title?: string, focus = true): Promise<void> {
+		const manager = this.tabManager;
+		if (!manager) {
+			this.showWarning("Multi-tab is unavailable in this session.");
+			return;
+		}
+		const previousId = manager.getActive().id;
+		manager.setDraft(previousId, this.editor.getText());
+		try {
+			const tab = await manager.createTab(title ? { title } : {});
+			if (title && tab.runtime.session.sessionManager.getSessionName() !== title) {
+				tab.runtime.session.setSessionName(title);
+			}
+			if (!focus) {
+				// Keep the current tab rendered; the new tab only joins the bar.
+				manager.activate(previousId);
+				return;
+			}
+			await this.enqueueTabSwitch(() => this.switchActiveTab(tab));
+		} catch (error) {
+			this.showError(`Failed to open tab: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	/** Close the current tab, falling back to the nearest remaining tab. */
+	private async handleCloseTab(): Promise<void> {
+		const manager = this.tabManager;
+		if (!manager) return;
+		if (manager.size <= 1) {
+			this.showWarning("Cannot close the last tab.");
+			return;
+		}
+		const closing = manager.getActive();
+		this.unsubscribe?.();
+		this.unsubscribe = undefined;
+		try {
+			await manager.closeTab(closing.id);
+		} catch (error) {
+			// Refused (a turn in progress): keep the subscription and the tab.
+			this.subscribeToAgent();
+			this.showError(error instanceof Error ? error.message : String(error));
+			return;
+		}
+		await this.enqueueTabSwitch(() => this.switchActiveTab(manager.getActive()));
+		this.disposeTabUi(closing.id);
+	}
+
+	/**
+	 * Persist the open-tab layout to the shared state. Best effort, except that a
+	 * snapshot we cannot read is reported and left untouched: overwriting it would
+	 * drop the tabs recorded by another agent in the same workdir.
+	 */
+	private persistOpenTabs(): void {
+		const manager = this.tabManager;
+		if (!manager) return;
+		// Do not write before the startup restore has read the previous layout,
+		// otherwise startup activity could clobber what we are about to restore.
+		if (!this.tabsRestoreAttempted) return;
+		try {
+			const active = manager.getActive();
+			saveTabLayout(this.tabsWorkdir, {
+				activeSessionId: active.runtime.session.sessionManager.getSessionId(),
+				tabs: manager.list().map((tab) => ({
+					sessionId: tab.runtime.session.sessionManager.getSessionId(),
+					title: tab.title,
+					workdir: tab.runtime.cwd,
+					color: tab.color,
+					unread: tab.unread,
+				})),
+			});
+		} catch (error) {
+			if (this.tabPersistFailureReported) return;
+			this.tabPersistFailureReported = true;
+			this.showWarning(`Tab layout not saved: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	/**
+	 * Reopen the previous run's tabs when the current session is a fresh,
+	 * message-less session. Skipped
+	 * for `-r`/`--continue` resumes and for in-memory sessions.
+	 */
+	private async restoreOpenTabsOnStartup(): Promise<void> {
+		const manager = this.tabManager;
+		if (!manager) {
+			this.tabsRestoreAttempted = true;
+			return;
+		}
+		try {
+			const session = this.session;
+			if (!session.sessionManager.isPersisted()) return;
+			// A fresh session may still hold a startup `custom` entry, so look for
+			// actual conversation turns to distinguish it from a resumed session.
+			const hasConversation = session.sessionManager
+				.buildSessionContext()
+				.messages.some(
+					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
+				);
+			if (hasConversation) return;
+
+			// Shared state: open_tabs.json holds the ordered session ids, and
+			// mixcode_state.json holds titles, colors, and workdirs.
+			const stored = readOpenTabs(this.tabsWorkdir);
+			if (stored.kind !== "ok" || stored.snapshot.sessionIds.length === 0) return;
+			const snapshot = stored.snapshot;
+			const meta = readTabMeta(this.tabsWorkdir);
+			const currentId = session.sessionManager.getSessionId();
+			const sessionDir = session.sessionManager.getSessionDir();
+			// Restoring every recorded tab would block startup on a large layout;
+			// the surplus is reported instead of being restored silently.
+			const entries = snapshot.sessionIds
+				.filter((id) => id !== currentId)
+				.slice(0, InteractiveMode.RESTORE_TAB_LIMIT);
+			if (entries.length === 0) return;
+
+			const initialId = manager.getActive().id;
+			let restored = 0;
+			const errors: string[] = [];
+			const restoredTabs: Array<{ id: string; title?: string; unread: boolean }> = [];
+			for (const sessionId of entries) {
+				try {
+					const tabMeta = meta.get(sessionId);
+					const sessionPath = resolveSessionPath(sessionDir, sessionId);
+					const title = tabMeta?.title;
+					const workdir = tabMeta?.workdir ?? this.tabsWorkdir;
+					// Session files are written lazily, so a tab that never ran a turn
+					// has no file. Restore its layout slot as a fresh session instead of
+					// dropping the tab.
+					const tab = sessionPath
+						? await manager.openSessionTab(sessionPath, { title, workdir })
+						: await manager.createTab({ title, workdir });
+					if (tabMeta?.color) manager.setColor(tab.id, tabMeta.color);
+					restoredTabs.push({ id: tab.id, title, unread: tabMeta?.unread ?? false });
+					restored += 1;
+				} catch (error) {
+					// Skip unreadable sessions and keep whatever restored so far.
+					errors.push(error instanceof Error ? error.message : String(error));
+				}
+			}
+			if (restored === 0) {
+				if (errors.length > 0) this.showWarning(`Could not restore tabs: ${errors[0]}`);
+				return;
+			}
+			// Drop the fresh startup tab; the restored layout replaces it.
+			if (manager.size > 1) await manager.closeTab(initialId);
+			// Re-apply persisted titles, then renumber the remaining default-named tabs
+			// in order, so the transient startup tab does not push them to the next
+			// free number.
+			const explicitTitles = new Map(restoredTabs.map((item) => [item.id, item.title]));
+			const used = new Set<string>();
+			for (const tab of manager.list()) {
+				const explicit = explicitTitles.get(tab.id);
+				if (explicit) used.add(explicit);
+				else if (!/^Agent-\d+$/.test(tab.title)) used.add(tab.title);
+			}
+			for (const tab of manager.list()) {
+				const explicit = explicitTitles.get(tab.id);
+				if (explicit) {
+					manager.restoreTitle(tab.id, explicit);
+					continue;
+				}
+				if (/^Agent-\d+$/.test(tab.title)) {
+					const next = nextAvailableAgentTitle(used);
+					used.add(next);
+					manager.restoreTitle(tab.id, next);
+				}
+			}
+			const active = snapshot.activeSessionId
+				? manager
+						.list()
+						.find((tab) => tab.runtime.session.sessionManager.getSessionId() === snapshot.activeSessionId)
+				: undefined;
+			const target = active ?? manager.list()[0] ?? manager.getActive();
+			manager.activate(target.id);
+			await this.enqueueTabSwitch(() => this.switchActiveTab(target));
+			for (const item of restoredTabs) manager.setUnread(item.id, item.unread);
+			// Publish the layout now: sessions created during the restore have new
+			// ids, and the next start must read those instead of the old ones.
+			this.tabsRestoreAttempted = true;
+			this.persistOpenTabs();
+			const skipped =
+				snapshot.sessionIds.length - entries.length - (snapshot.sessionIds.includes(currentId) ? 1 : 0);
+			this.showStatus(
+				skipped > 0
+					? `Restored ${restored} tab(s), ${skipped} beyond the restore limit.`
+					: `Restored ${restored} tab(s).`,
+			);
+		} catch (error) {
+			// Best-effort restore: fall back to the single fresh tab.
+			this.showWarning(`Could not restore tabs: ${error instanceof Error ? error.message : String(error)}`);
+		} finally {
+			// Allow layout persistence only after the previous layout was read.
+			this.tabsRestoreAttempted = true;
+		}
+	}
+
+	/**
+	 * Parse a session action argument: empty opens a confirmation overlay,
+	 * `yes`/`y` skips it, and anything else is a usage error.
+	 */
+	private parseSessionActionArgs(args: string, command: string): "confirm" | "skip" | "none" {
+		const token = args.trim().toLowerCase();
+		if (token === "") return "confirm";
+		if (token === "yes" || token === "y") return "skip";
+		this.showError(`Usage: /${command} [yes]`);
+		return "none";
+	}
+
+	/** `/close-session [yes]` closes the active tab (session file is kept). */
+	private async handleCloseSession(args: string): Promise<void> {
+		const mode = this.parseSessionActionArgs(args, "close-session");
+		if (mode === "none") return;
+		if (mode === "confirm") {
+			const title = this.tabManager?.getActive().title ?? "this tab";
+			const confirmed = await this.showExtensionConfirm(
+				"Close session",
+				`Close tab "${title}"? The session file is kept and can be resumed later.`,
+			);
+			if (!confirmed) return;
+		}
+		await this.handleCloseTab();
+	}
+
+	/** `/delete-session [yes]` closes the active tab and deletes its session file. */
+	private async handleDeleteSession(args: string): Promise<void> {
+		const mode = this.parseSessionActionArgs(args, "delete-session");
+		if (mode === "none") return;
+		const path = this.session.sessionFile;
+		if (!path) {
+			this.showError("This session has not been saved yet; nothing to delete.");
+			return;
+		}
+		if (mode === "confirm") {
+			const confirmed = await this.showExtensionConfirm(
+				"Delete session",
+				`Permanently delete the session file?\n${path}\nThis cannot be undone.`,
+			);
+			if (!confirmed) return;
+		}
+		try {
+			await this.handleDeleteTabs({ all: false });
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	/** `/close-all-sessions` closes every tab except the active one, after confirmation. */
+	private async handleCloseAllSessions(): Promise<void> {
+		const manager = this.tabManager;
+		if (!manager) {
+			this.showWarning("Multi-tab is unavailable in this session.");
+			return;
+		}
+		const confirmed = await this.showExtensionConfirm(
+			"Close all sessions",
+			`Close ${manager.size - 1} other tab(s)? Session files are kept.`,
+		);
+		if (!confirmed) return;
+		const keep = manager.getActive();
+		const blocked: string[] = [];
+		for (const tab of [...manager.list()]) {
+			if (tab.id === keep.id) continue;
+			try {
+				await manager.closeTab(tab.id);
+			} catch (error) {
+				blocked.push(error instanceof Error ? error.message : String(error));
+				continue;
+			}
+			this.disposeTabUi(tab.id);
+		}
+		await this.enqueueTabSwitch(() => this.switchActiveTab(manager.getActive()));
+		if (blocked.length > 0) {
+			this.showError(blocked.join("; "));
+			return;
+		}
+		this.showStatus("Closed all other tabs.");
+	}
+
+	/** `/delete-all-sessions` deletes every tab's session file, after confirmation. */
+	private async handleDeleteAllSessions(): Promise<void> {
+		const manager = this.tabManager;
+		if (!manager) {
+			this.showWarning("Multi-tab is unavailable in this session.");
+			return;
+		}
+		const blocked = manager
+			.list()
+			.map((tab) => tabBusyReason(tab))
+			.filter((reason): reason is string => reason !== undefined);
+		if (blocked.length > 0) {
+			this.showError(`Cannot delete all sessions while ${blocked.join(", ")}`);
+			return;
+		}
+		const total = manager.size;
+		const confirmed = await this.showExtensionConfirm(
+			"Delete all sessions",
+			`Permanently delete the session files of all ${total} tab(s) and start fresh? This cannot be undone.`,
+		);
+		if (!confirmed) return;
+		try {
+			await this.handleDeleteTabs({ all: true });
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	/**
+	 * Execute a session-file deletion. `all` deletes every tab's file, keeping one
+	 * tab on a fresh session.
+	 */
+	private async handleDeleteTabs(options: { all: boolean }): Promise<void> {
+		const manager = this.tabManager;
+		if (!manager) {
+			this.showWarning("Multi-tab is unavailable in this session.");
+			return;
+		}
+		const targets = options.all ? [...manager.list()] : [manager.getActive()];
+		const blocked = targets
+			.map((tab) => tabBusyReason(tab))
+			.filter((reason): reason is string => reason !== undefined);
+		if (blocked.length > 0) {
+			const phrase = tabBusyPhrase(targets[0]!);
+			this.showError(
+				options.all
+					? `Cannot delete all sessions while ${blocked.join(", ")}`
+					: `Cannot delete a session while ${phrase ?? "a turn is in progress"}`,
+			);
+			return;
+		}
+		const paths = targets
+			.map((tab) => tab.runtime.session.sessionFile)
+			.filter((item): item is string => Boolean(item));
+		if (paths.length === 0) {
+			this.showError("No saved session files to delete.");
+			return;
+		}
+
+		const errors: string[] = [];
+		let deleted = 0;
+		if (options.all || manager.size <= 1) {
+			// Keep one tab; delete its file after giving the runtime a fresh session.
+			const keep = manager.getActive();
+			for (const tab of [...manager.list()]) {
+				if (tab.id === keep.id) continue;
+				const result = await manager.deleteTab(tab.id);
+				this.disposeTabUi(tab.id);
+				if (result.ok && result.removed) deleted += 1;
+				else if (result.error) errors.push(result.error);
+			}
+			const keepPath = keep.runtime.session.sessionFile;
+			await this.runtimeHost.newSession();
+			if (keepPath) {
+				const result = await deleteSessionFile(keepPath);
+				if (result.ok && result.removed) deleted += 1;
+				else if (result.error) errors.push(result.error);
+			}
+			await this.enqueueTabSwitch(() => this.switchActiveTab(manager.getActive()));
+		} else {
+			const closingId = manager.getActive().id;
+			const result = await manager.deleteTab(closingId);
+			if (result.ok && result.removed) deleted += 1;
+			else if (result.error) errors.push(result.error);
+			await this.enqueueTabSwitch(() => this.switchActiveTab(manager.getActive()));
+			this.disposeTabUi(closingId);
+		}
+
+		if (errors.length > 0) this.showError(`Delete failed: ${errors.join("; ")}`);
+		if (deleted > 0) this.showStatus(`Deleted ${deleted} session file(s).`);
+		else if (errors.length === 0) this.showStatus("No session file to delete.");
+	}
+
+	private renameActiveTab(title: string): void {
+		const manager = this.tabManager;
+		if (!manager) return;
+		try {
+			manager.rename(manager.getActive().id, title);
+			// Keep the session name in step so the title survives restore and is
+			// what `/name`, auto-rename, and the terminal title report.
+			if (this.sessionManager.getSessionName() !== title) this.session.setSessionName(title);
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	/** Print the open tabs as status lines (`/tabs`). */
+	private showTabList(): void {
+		const manager = this.tabManager;
+		if (!manager) {
+			this.showStatus("Multi-tab is unavailable in this session.");
+			return;
+		}
+		const activeId = manager.getActive().id;
+		const lines = manager.list().map((tab, index) => {
+			const marker = tab.id === activeId ? "*" : " ";
+			return `${marker} ${index + 1}. ${tab.title} [${tab.status}${tab.unread ? ", unread" : ""}]`;
+		});
+		this.showStatus(`Tabs:\n${lines.join("\n")}`);
+	}
+
+	/** `/tab <index|title>` focuses an open tab. */
+	private async handleTabCommand(arg: string): Promise<void> {
+		const manager = this.tabManager;
+		if (!manager) return;
+		if (!arg) {
+			this.showTabList();
+			return;
+		}
+		const index = Number.parseInt(arg, 10);
+		if (!Number.isNaN(index) && String(index) === arg) {
+			const tab = manager.list()[index - 1];
+			if (!tab) {
+				this.showError(`No tab at index ${index}`);
+				return;
+			}
+			await this.activateTab(tab);
+			return;
+		}
+		const tab = manager.list().find((item) => item.title === arg);
+		if (!tab) {
+			this.showError(`Unknown tab: ${arg}`);
+			return;
+		}
+		await this.activateTab(tab);
+	}
+
+	/** `/color [name|clear]` sets or clears the active tab's chip color. */
+	private colorActiveTab(arg: string): void {
+		const manager = this.tabManager;
+		if (!manager) {
+			this.showWarning("Multi-tab is unavailable in this session.");
+			return;
+		}
+		const value = arg.trim().toLowerCase();
+		try {
+			if (value === "" || value === "clear") {
+				manager.setColor(manager.getActive().id, undefined);
+				this.showStatus("Cleared tab color.");
+				return;
+			}
+			if (!isTabColorName(value)) {
+				this.showError(`Unknown color: ${arg} (valid: ${TAB_COLOR_NAMES.join(", ")}, clear)`);
+				return;
+			}
+			manager.setColor(manager.getActive().id, value);
+			this.showStatus(`Tab color: ${value}`);
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	/** `/mark-done` flags the active tab as finished without running anything. */
+	private markActiveTabDone(): void {
+		const manager = this.tabManager;
+		if (!manager) {
+			this.showWarning("Multi-tab is unavailable in this session.");
+			return;
+		}
+		try {
+			manager.markDone(manager.getActive().id);
+			this.persistOpenTabs();
+			this.showStatus("Tab marked done.");
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	/** `/save-workspace [name]` snapshots the open tab layout in the shared schema. */
+	private saveWorkspaceCommand(name: string): void {
+		const manager = this.tabManager;
+		if (!manager) {
+			this.showWarning("Multi-tab is unavailable in this session.");
+			return;
+		}
+		try {
+			const active = manager.getActive();
+			const existing = readWorkspaces(this.tabsWorkdir).some((workspace) => workspace.name === name);
+			const record: MixcodeWorkspace = {
+				name,
+				startup_workdir: this.tabsWorkdir.trim().replace(/\/+$/, ""),
+				updated_at: new Date().toISOString(),
+				active_session_id: active.runtime.session.sessionManager.getSessionId(),
+				tabs: manager.list().map((tab) => {
+					const session = tab.runtime.session;
+					const model = session.model;
+					return {
+						session_id: session.sessionManager.getSessionId(),
+						session_path: session.sessionFile,
+						title: tab.title,
+						workdir: tab.runtime.cwd,
+						...(model
+							? {
+									model: {
+										provider: model.provider,
+										model_id: model.id,
+										display_name: model.name,
+										context_window: model.contextWindow,
+										...(typeof model.reasoning === "boolean" ? { reasoning: model.reasoning } : {}),
+										...(model.thinkingLevelMap ? { thinking_level_map: model.thinkingLevelMap } : {}),
+									},
+								}
+							: {}),
+						...(session.thinkingLevel ? { thinking_level: session.thinkingLevel } : {}),
+					};
+				}),
+			};
+			upsertWorkspace(this.tabsWorkdir, record);
+			this.showStatus(`Workspace ${existing ? "updated" : "saved"}: "${name}" (${record.tabs.length} tab(s)).`);
+		} catch (error) {
+			this.showError(`Failed to save workspace: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	/** `/restore-workspace [name]` opens a saved layout as new tabs. */
+	private async restoreWorkspaceCommand(name: string): Promise<void> {
+		const manager = this.tabManager;
+		if (!manager) {
+			this.showWarning("Multi-tab is unavailable in this session.");
+			return;
+		}
+		try {
+			const record = readWorkspaces(this.tabsWorkdir).find((workspace) => workspace.name === name);
+			if (!record) {
+				this.showError(`Unknown workspace: ${name}`);
+				return;
+			}
+			const sessionDir = this.session.sessionManager.getSessionDir();
+			const previousIds = new Set(manager.list().map((tab) => tab.id));
+			const savedCount = record.tabs.length;
+			const closingCount = previousIds.size;
+			if (savedCount === 0) {
+				this.showError(`Workspace "${name}" has no tabs.`);
+				return;
+			}
+			if (closingCount > 0) {
+				const confirmed = await this.showExtensionConfirm(
+					`Restore Workspace "${name}"?`,
+					`This opens ${savedCount} tab(s) and closes ${closingCount} tab(s) that are not in this workspace.\nSessions are not deleted.`,
+				);
+				if (!confirmed) {
+					this.showStatus("Restore cancelled.");
+					return;
+				}
+			}
+			let activeTab: AgentTab | undefined;
+			let opened = 0;
+			let recreated = 0;
+			const openedTabs: Array<{ tab: AgentTab; title?: string }> = [];
+			for (const entry of record.tabs) {
+				const sessionPath =
+					entry.session_path && fs.existsSync(entry.session_path)
+						? entry.session_path
+						: resolveSessionPath(sessionDir, entry.session_id);
+				// Session files are written lazily, so a tab that never ran a turn has
+				// no file; restore its slot as a fresh session instead of dropping it.
+				const tab = sessionPath
+					? await manager.openSessionTab(sessionPath, { title: entry.title, workdir: entry.workdir })
+					: await manager.createTab({ title: entry.title, workdir: entry.workdir });
+				if (!sessionPath) recreated += 1;
+				if (entry.session_id === record.active_session_id) activeTab = tab;
+				openedTabs.push({ tab, title: entry.title });
+				opened += 1;
+			}
+			// The layout is replaced, not extended: anything that was open before
+			// and is not part of the workspace is closed. Iterate a copy because
+			// closing mutates the tab list.
+			for (const tab of [...manager.list()]) {
+				if (previousIds.has(tab.id) && manager.size > 1) await manager.closeTab(tab.id);
+			}
+			// Re-apply the saved titles now that the gaps they collided with are gone.
+			for (const { tab, title } of openedTabs) {
+				if (title && manager.get(tab.id)) manager.restoreTitle(tab.id, title);
+			}
+			const target = activeTab ?? manager.getActive();
+			manager.activate(target.id);
+			await this.enqueueTabSwitch(() => this.switchActiveTab(target));
+			this.showStatus(
+				recreated > 0
+					? `Restored workspace "${name}" (${opened} tab(s), ${recreated} without a saved session file).`
+					: `Restored workspace "${name}" (${opened} tab(s)).`,
+			);
+			this.persistOpenTabs();
+		} catch (error) {
+			this.showError(`Failed to restore workspace: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	/** `/delete-workspace [name]` removes a saved workspace record. */
+	private deleteWorkspaceCommand(name: string): void {
+		const manager = this.tabManager;
+		if (!manager) {
+			this.showWarning("Multi-tab is unavailable in this session.");
+			return;
+		}
+		try {
+			deleteWorkspaceRecord(this.tabsWorkdir, name);
+			this.showStatus(`Deleted workspace "${name}".`);
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
 	}
 
 	private async handleFatalRuntimeError(prefix: string, error: unknown): Promise<never> {
@@ -2429,6 +3386,7 @@ export class InteractiveMode {
 			| ((tui: TUI, thm: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
 			| undefined,
 	): void {
+		this.customFooterFactory = factory;
 		// Dispose existing custom footer
 		if (this.customFooter?.dispose) {
 			this.customFooter.dispose();
@@ -2457,6 +3415,7 @@ export class InteractiveMode {
 			return;
 		}
 
+		this.customHeaderFactory = factory;
 		// Dispose existing custom header
 		if (this.customHeader?.dispose) {
 			this.customHeader.dispose();
@@ -3011,6 +3970,10 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
 		this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
 		this.defaultEditor.onAction("app.session.new", () => this.handleClearCommand());
+		this.defaultEditor.onAction("app.tab.next", () => this.cycleAgentTab(1));
+		this.defaultEditor.onAction("app.tab.previous", () => this.cycleAgentTab(-1));
+		this.defaultEditor.onAction("app.tab.new", () => void this.handleNewTab());
+		this.defaultEditor.onAction("app.tab.close", () => void this.handleCloseTab());
 		this.defaultEditor.onAction("app.session.tree", () => this.showTreeSelector());
 		this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("app.session.resume", () => this.showSessionSelector());
@@ -3177,6 +4140,103 @@ export class InteractiveMode {
 			if (text === "/logout") {
 				this.showOAuthSelector("logout");
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/new-session" || text.startsWith("/new-session ")) {
+				const parsed = parseNewSessionArgs(
+					text.startsWith("/new-session ") ? text.slice("/new-session ".length) : "",
+				);
+				this.editor.setText("");
+				if (parsed.error) {
+					this.showError(parsed.error);
+					return;
+				}
+				await this.handleNewTab(parsed.title, parsed.focus);
+				return;
+			}
+			if (text === "/close-session" || text.startsWith("/close-session ")) {
+				const args = text.slice("/close-session".length).trim();
+				this.editor.setText("");
+				await this.handleCloseSession(args);
+				return;
+			}
+			if (text === "/close-all-sessions") {
+				this.editor.setText("");
+				await this.handleCloseAllSessions();
+				return;
+			}
+			if (text === "/delete-session" || text.startsWith("/delete-session ")) {
+				const args = text.slice("/delete-session".length).trim();
+				this.editor.setText("");
+				await this.handleDeleteSession(args);
+				return;
+			}
+			if (text === "/delete-all-sessions") {
+				this.editor.setText("");
+				await this.handleDeleteAllSessions();
+				return;
+			}
+			if (text === "/rename" || text.startsWith("/rename ")) {
+				const title = text.startsWith("/rename ") ? text.slice("/rename ".length).trim() : "";
+				this.editor.setText("");
+				if (title) this.renameActiveTab(title);
+				else this.showError("Tab title cannot be empty");
+				return;
+			}
+			if (text === "/tabs") {
+				this.editor.setText("");
+				this.showTabList();
+				return;
+			}
+			if (text === "/tab" || text.startsWith("/tab ")) {
+				const arg = text.startsWith("/tab ") ? text.slice("/tab ".length).trim() : "";
+				this.editor.setText("");
+				await this.handleTabCommand(arg);
+				return;
+			}
+			if (text === "/color" || text.startsWith("/color ")) {
+				const arg = text.startsWith("/color ") ? text.slice("/color ".length).trim() : "";
+				this.editor.setText("");
+				this.colorActiveTab(arg);
+				return;
+			}
+			if (text === "/group-colored-tabs") {
+				this.editor.setText("");
+				this.tabManager?.groupByColor();
+				return;
+			}
+			if (text === "/mark-done") {
+				this.editor.setText("");
+				this.markActiveTabDone();
+				return;
+			}
+			if (text === "/save-workspace" || text.startsWith("/save-workspace ")) {
+				const name = text.startsWith("/save-workspace ") ? text.slice("/save-workspace ".length).trim() : "";
+				this.editor.setText("");
+				if (name) this.saveWorkspaceCommand(name);
+				else this.showError("Usage: /save-workspace <name>");
+				return;
+			}
+			if (text === "/restore-workspace" || text.startsWith("/restore-workspace ")) {
+				const name = text.startsWith("/restore-workspace ") ? text.slice("/restore-workspace ".length).trim() : "";
+				this.editor.setText("");
+				if (!name) {
+					const names = readWorkspaces(this.tabsWorkdir).map((workspace) => workspace.name);
+					this.showError(
+						names.length > 0
+							? `Usage: /restore-workspace <name> (saved: ${names.join(", ")})`
+							: "Usage: /restore-workspace <name> (no saved workspaces)",
+					);
+					return;
+				}
+				await this.restoreWorkspaceCommand(name);
+				return;
+			}
+			if (text === "/delete-workspace" || text.startsWith("/delete-workspace ")) {
+				const name = text.startsWith("/delete-workspace ") ? text.slice("/delete-workspace ".length).trim() : "";
+				this.editor.setText("");
+				if (name) this.deleteWorkspaceCommand(name);
+				else this.showError("Usage: /delete-workspace <name>");
 				return;
 			}
 			if (text === "/new") {
@@ -4150,7 +5210,11 @@ export class InteractiveMode {
 			// terminal. If the terminal is gone, the restore writes below emit EIO,
 			// which the stdout/stderr error handler turns into emergencyTerminalExit;
 			// the render loop is already idle, so this cannot hot-spin (see #4144).
-			await this.runtimeHost.dispose();
+			if (this.tabManager) {
+				await this.tabManager.dispose();
+			} else {
+				await this.runtimeHost.dispose();
+			}
 			this.themeController.disableAutoSync();
 			await this.ui.terminal.drainInput(1000);
 			this.stop();
@@ -4166,7 +5230,11 @@ export class InteractiveMode {
 		await this.ui.terminal.drainInput(1000);
 
 		this.stop();
-		await this.runtimeHost.dispose();
+		if (this.tabManager) {
+			await this.tabManager.dispose();
+		} else {
+			await this.runtimeHost.dispose();
+		}
 
 		const resumeCommand = formatResumeCommand(this.sessionManager);
 		if (resumeCommand) {
@@ -5585,6 +6653,13 @@ export class InteractiveMode {
 
 				this.sessionManager.getSessionFile(),
 			);
+			// A session file that another tab is still writing must not be deleted
+			// from the selector either.
+			selector.setSessionDeleteGuard((sessionPath: string) => {
+				const tab = this.tabManager?.list().find((item) => item.runtime.session.sessionFile === sessionPath);
+				const reason = tab ? tabBusyReason(tab) : undefined;
+				return reason ? `Cannot delete a session while ${reason}` : undefined;
+			});
 			return { component: selector, focus: selector };
 		});
 	}
