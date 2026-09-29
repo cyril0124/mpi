@@ -52,6 +52,17 @@ export interface TuiSelectionSurface {
 	kind: string;
 }
 
+/** Where one painted line of a selection sits: the surface it belongs to and its row inside it. */
+export interface TuiSelectionLine {
+	/** `kind` of the surface the selection started in. */
+	kind: string;
+	/**
+	 * Row inside that surface: the content row within a scroll view, counting from the top of the
+	 * scrolled document, and the screen row on a plain surface.
+	 */
+	row: number;
+}
+
 /** How a host narrows and styles the application-owned text selection. */
 export interface TuiSelectionOptions {
 	/**
@@ -63,10 +74,18 @@ export interface TuiSelectionOptions {
 	/** Rewrite the copied text for the surface kind it came from. */
 	normalizeText?: (text: string, kind: string) => string;
 	/**
-	 * Paint the selected cells. The wrap's opening sequence is re-inserted after every SGR inside
-	 * the slice, so an inner reset cannot drop it. Defaults to reverse video.
+	 * Paint the selected cells of one line. The wrap's opening sequence is re-inserted after every
+	 * SGR inside the slice, so an inner reset cannot drop it. The line is named so a host can vary
+	 * the wrap by row, e.g. to underline a cell whose row already carries another cue. Defaults to
+	 * reverse video.
 	 */
-	highlight?: (text: string) => string;
+	highlight?: (text: string, line: TuiSelectionLine) => string;
+	/**
+	 * Drop the highlight on the release that copies the selection, so a drag shows a selection only
+	 * while the button is down. A release with copy-on-select off never clears, leaving the selection
+	 * up for the copy command. Off by default.
+	 */
+	clearOnRelease?: boolean;
 }
 
 export interface TuiMouseEventResult {
@@ -340,6 +359,24 @@ type OverlayFocusRestoreState = { status: "inactive" } | ActiveOverlayFocusResto
 type OverlayFocusRestorePolicy = "clear" | "preserve";
 
 /**
+ * The child painted at `row` of a parent's own line space, and the row inside that child, from the
+ * children the parent's last render measured. Shared by `Container` and `Box`, which differ only in
+ * the padding the caller subtracts from `row` first. Undefined for a row no child covers.
+ */
+export function childAtRow(
+	children: ReadonlyArray<{ component: Component; height: number }> | undefined,
+	row: number,
+): { component: Component; offset: number } | undefined {
+	if (!children) return undefined;
+	let start = 0;
+	for (const { component, height } of children) {
+		if (row >= start && row < start + height) return { component, offset: row - start };
+		start += height;
+	}
+	return undefined;
+}
+
+/**
  * Container - a component that contains other components
  */
 export class Container implements Component {
@@ -365,6 +402,16 @@ export class Container implements Component {
 		for (const child of this.children) {
 			child.invalidate?.();
 		}
+	}
+
+	/**
+	 * The child painted at `row` of this container's own line space in the last render, with the row's
+	 * offset inside it. A row resolves against the render that already happened, so it neither
+	 * re-renders nor dispatches. Undefined until the container has rendered, or when no child covers
+	 * the row.
+	 */
+	componentAtRow(row: number): { component: Component; offset: number } | undefined {
+		return childAtRow(this.mouseLayout?.children, row);
 	}
 
 	handleMouse(event: TuiMouseEvent): TuiMouseDispatchResult | undefined {

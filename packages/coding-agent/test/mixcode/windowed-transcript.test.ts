@@ -1,9 +1,17 @@
-import { ScrollView, type TuiMouseEvent, type TuiMouseEventResult, VStack } from "@earendil-works/pi-tui";
+import {
+	Box,
+	Container,
+	ScrollView,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
+	VStack,
+} from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 // The layout engine is internal to pi-tui; drive the container through the real
 // scroll child path the fullscreen transcript uses.
 import { materializeScrollLines, renderLayoutFrame } from "../../../tui/src/layout.ts";
 import type { Component } from "../../../tui/src/tui.ts";
+import { BlockHover, carriesPointerCue } from "../../src/modes/interactive/components/mixcode/hover/hover-block.ts";
 import { WindowedTranscript } from "../../src/modes/interactive/components/mixcode/windowed-chat/windowed-transcript.ts";
 
 /** Message stand-in: a fixed number of rows, counted renders, stable identity. */
@@ -245,5 +253,68 @@ describe("windowed transcript mouse routing", () => {
 
 		expect(result?.handled).toBe(true);
 		expect(seen).toEqual([{ y: 3, height: 3 }]);
+	});
+
+	it("names the component chain of a row, with the row inside each component", () => {
+		// The document child is a container, so a row resolves through it to the block inside.
+		const card = new Block("card", 3);
+		const message = new Container();
+		message.addChild(card);
+		const transcript = new WindowedTranscript({ blocks: () => [message] });
+		// The row mapping reads the render that already happened: the block heights, and each
+		// container's own child routing, come from it.
+		transcript.render(24);
+
+		expect(transcript.componentPathAtRow(0)).toEqual([
+			{ component: message, row: 0 },
+			{ component: card, row: 0 },
+		]);
+		expect(transcript.componentPathAtRow(2)).toEqual([
+			{ component: message, row: 2 },
+			{ component: card, row: 2 },
+		]);
+		expect(transcript.componentPathAtRow(3)).toEqual([]);
+	});
+
+	it("resolves a row to the card of the block that carries the pointer cue", () => {
+		// The same question the mouse selection asks before it underlines a selected row.
+		const card = new Block("card", 3);
+		const message = new Container();
+		message.addChild(card);
+		const transcript = new WindowedTranscript({ blocks: () => [message] });
+		transcript.render(24);
+		// The block paints its gap on row 0 and its card below it.
+		new BlockHover(card, () => undefined, 1);
+
+		const cuedRow = (row: number) =>
+			transcript.componentPathAtRow(row).some((entry) => carriesPointerCue(entry.component, entry.row));
+
+		expect(cuedRow(0)).toBe(false);
+		expect(cuedRow(1)).toBe(true);
+		expect(cuedRow(2)).toBe(true);
+	});
+
+	it("descends through a padded box to the card inside it", () => {
+		// A block may wrap its card in a Box; the descent has to cross the box's padding rows.
+		const card = new Block("card", 2);
+		const box = new Box(1, 1);
+		box.addChild(card);
+		const message = new Container();
+		message.addChild(box);
+		const transcript = new WindowedTranscript({ blocks: () => [message] });
+		transcript.render(24);
+		new BlockHover(card, () => undefined, 1);
+
+		const cuedRow = (row: number) =>
+			transcript.componentPathAtRow(row).some((entry) => carriesPointerCue(entry.component, entry.row));
+
+		// The box pads one row above its child, so the box's row 1 is the child's row 0.
+		expect(transcript.componentPathAtRow(1)).toEqual([
+			{ component: message, row: 1 },
+			{ component: box, row: 1 },
+			{ component: card, row: 0 },
+		]);
+		expect(cuedRow(1)).toBe(false);
+		expect(cuedRow(2)).toBe(true);
 	});
 });

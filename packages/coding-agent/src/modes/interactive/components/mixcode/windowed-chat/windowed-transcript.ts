@@ -178,6 +178,29 @@ export class WindowedTranscript extends Container {
 	}
 
 	/**
+	 * The components painted at a content row, outermost first, each with the row inside it: the
+	 * document child that owns the row, then the child chain within it, as of the last render. Resolves
+	 * a content row the way a mouse event does, without dispatching to it, so a caller can ask what a
+	 * row is made of and where in each component it sits. The chain ends at the first component that
+	 * cannot name its own rows.
+	 */
+	componentPathAtRow(row: number): Array<{ component: Component; row: number }> {
+		const width = this.measuredWidth;
+		if (width <= 0) return [];
+		const hit = this.blockAtRow(width, row);
+		if (!hit) return [];
+		let entry = { component: hit.block, row: hit.offsetInBlock };
+		const path = [entry];
+		while (canRouteRows(entry.component)) {
+			const child = entry.component.componentAtRow(entry.row);
+			if (!child) break;
+			entry = { component: child.component, row: child.offset };
+			path.push(entry);
+		}
+		return path;
+	}
+
+	/**
 	 * Rows for a `height`-row viewport scrolled to `scrollTop`, plus the content row
 	 * the first returned line corresponds to.
 	 *
@@ -408,4 +431,13 @@ export class WindowedTranscript extends Container {
 		this.measuredCount = 0;
 		this.syncedBlocks = -1;
 	}
+}
+
+/** A component that can name the child painted at one of its own rows. */
+interface RowRouting {
+	componentAtRow(row: number): { component: Component; offset: number } | undefined;
+}
+
+function canRouteRows(component: Component): component is Component & RowRouting {
+	return typeof (component as Partial<RowRouting>).componentAtRow === "function";
 }

@@ -4,7 +4,27 @@ import { ScrollView } from "../src/components/scroll-view.ts";
 import { Text } from "../src/components/text.ts";
 import { VStack } from "../src/components/v-stack.ts";
 import { WINDOWED_NODE, type WindowedLayoutNode } from "../src/layout-node.ts";
-import { type Component, Container, type TuiMouseEvent, type TuiSelectionOptions } from "../src/tui.ts";
+import {
+	type Component,
+	Container,
+	type TuiMouseEvent,
+	type TuiSelectionLine,
+	type TuiSelectionOptions,
+} from "../src/tui.ts";
+
+/** Read one cell's background and underline state off the terminal's own screen buffer. */
+function cellAt(terminal: VirtualTerminal, row: number, col: number): { bg: number; underlined: boolean } {
+	interface Buffer {
+		viewportY: number;
+		getLine(
+			row: number,
+		): { getCell(col: number): { getBgColor(): number; isUnderline(): boolean } | undefined } | undefined;
+	}
+	const buffer = (terminal as unknown as { xterm: { buffer: { active: Buffer } } }).xterm.buffer.active;
+	const cell = buffer.getLine(buffer.viewportY + row)?.getCell(col);
+	assert.ok(cell, `missing cell at row ${row} col ${col}`);
+	return { bg: cell.getBgColor(), underlined: cell.isUnderline() };
+}
 
 /** Records everything the screen writes, so a test can read the styled frame. */
 class RecordingTerminal extends VirtualTerminal {
@@ -403,6 +423,105 @@ describe("scoped mouse selection", () => {
 		const writes = terminal.writes.join("");
 		assert.ok(writes.includes("\x1b[41m"), "the host style paints the selected cells");
 		assert.ok(writes.includes("\x1b[0m\x1b[41m"), "the host style is re-inserted after a reset inside the selection");
+
+		tui.stop();
+	});
+
+	it("drops the painted highlight on release when the host clears on release", async () => {
+		const { terminal, copied, tui } = await start((card) => ({
+			surfaces: () => [{ component: card, kind: "chat" }],
+			highlight: (text) => `\x1b[41m${text}\x1b[49m`,
+			clearOnRelease: true,
+		}));
+
+		// Press and drag without releasing, so the painted frame is still up.
+		terminal.sendInput("\x1b[<0;1;2M");
+		terminal.sendInput("\x1b[<32;6;2M");
+		await terminal.waitForRender();
+		const painted = cellAt(terminal, CARD_ROW - 1, 0);
+		const plain = cellAt(terminal, CARD_ROW - 1, 12);
+		assert.equal(tui.hasActiveSelection(), true, "the drag paints a selection");
+		assert.notEqual(painted.bg, plain.bg, "the selected cells wear the host style");
+
+		terminal.sendInput("\x1b[<0;6;2m");
+		await terminal.waitForRender();
+
+		// The copy reads the selection before the highlight goes, so the release still copies.
+		assert.deepStrictEqual(copied, ["hello"], "the release copies the dragged cells");
+		assert.equal(tui.hasActiveSelection(), false, "the release drops the selection");
+		assert.equal(cellAt(terminal, CARD_ROW - 1, 0).bg, plain.bg, "and the screen repaints those cells plain");
+
+		tui.stop();
+	});
+
+	it("keeps the selection for the copy command when the release does not copy", async () => {
+		const terminal = new RecordingTerminal(20, 6);
+		const card = new Text("hello world", 0, 0);
+		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			copyOnSelect: false,
+			selection: {
+				surfaces: () => [{ component: card, kind: "chat" }],
+				clearOnRelease: true,
+			},
+		});
+		tui.setLayoutRoot(card);
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput("\x1b[<0;1;1M");
+		terminal.sendInput("\x1b[<32;6;1M");
+		terminal.sendInput("\x1b[<0;6;1m");
+		await terminal.waitForRender();
+
+		// Copy-on-select is off, so the release neither copies nor clears: the copy command still
+		// has the on-screen selection to take.
+		assert.equal(tui.hasActiveSelection(), true, "copy-on-select off keeps the selection up");
+		assert.equal(await tui.copyActiveSelectionToClipboard(), true, "and the copy command takes it");
+
+		tui.stop();
+	});
+
+	it("keeps the highlight up until the next press when the host does not clear", async () => {
+		const { terminal, tui } = await start((card) => ({
+			surfaces: () => [{ component: card, kind: "chat" }],
+		}));
+
+		drag(terminal, [1, CARD_ROW], [6, CARD_ROW]);
+		await terminal.waitForRender();
+
+		assert.equal(tui.hasActiveSelection(), true, "the release leaves the selection for the host to clear");
+
+		tui.stop();
+	});
+
+	it("names each painted row by its surface kind and its row inside that surface", async () => {
+		const seen: TuiSelectionLine[] = [];
+		const terminal = new RecordingTerminal(20, 5);
+		const text = new Text(Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0);
+		const scroll = new ScrollView(text, { follow: "end", primary: true });
+		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			selection: {
+				surfaces: () => [{ component: scroll, kind: "chat" }],
+				highlight: (value, line) => {
+					seen.push(line);
+					return value;
+				},
+			},
+		});
+		tui.setLayoutRoot(scroll);
+		tui.start();
+		await terminal.waitForRender();
+
+		// The viewport holds the last five of eight rows, so screen row 2 is content row 4.
+		terminal.sendInput("\x1b[<0;1;2M");
+		terminal.sendInput("\x1b[<32;4;3M");
+		await terminal.waitForRender();
+
+		assert.deepStrictEqual([...new Set(seen.map((line) => line.kind))], ["chat"]);
+		assert.deepStrictEqual(
+			[...new Set(seen.map((line) => line.row))].sort((a, b) => a - b),
+			[4, 5],
+		);
 
 		tui.stop();
 	});

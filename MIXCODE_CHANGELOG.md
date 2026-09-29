@@ -51,10 +51,17 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   background cannot swallow it), and releasing copies through the existing toast. A press also pins a
   following transcript for as long as the button is down, so output that streams in during a drag
   cannot slide the selected rows away; releasing leaves the transcript where the user left it when
-  output arrived or they scrolled it, and a press that moved nothing follows again. The text cleanup
+  output arrived or they scrolled it, and a press that moved nothing follows again. The highlight goes
+  with the release that copies the selection: a release with copy-on-select on (the default) drops it,
+  and one with the setting off leaves it up for the copy command. Selected card rows inside a
+  block that carries the pointer cue — a tool call, a summary card, a skill invocation, the thinking
+  block — also gain an underline, because the cue fills those cells with the same background. The text cleanup
   lives in `core/mixcode/selection/chat-selection.ts` and the surface registry in
   `modes/interactive/mixcode/selection/`; pi-tui keeps owning the drag, the slicing and the edge
-  auto-scroll. See [Mouse Selection](docs/mouse-selection.md).
+  auto-scroll. Its `TuiSelectionOptions` gained `clearOnRelease` and a `highlight` handed the painted
+  line's surface kind and row, and `Container` and `Box` gained `componentAtRow`, so a host can
+  resolve a row to the component that painted it and to the row inside that component.
+  See [Mouse Selection](docs/mouse-selection.md).
 - Follow-up queues with `/follow-up`: user follow-ups no longer ride the SDK follow-up queue.
   `alt+enter` and `/follow-up <message>` queue host-side rounds (an exclusive round each, or merged
   into one round with `/follow-up --batch <message>`) that dispatch one prompt turn per round when

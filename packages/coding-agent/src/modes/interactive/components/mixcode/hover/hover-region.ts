@@ -13,7 +13,7 @@ import {
 import { BlockHover } from "./hover-block.ts";
 
 export class HoverRegion extends MouseRegion {
-	private readonly hover = new BlockHover();
+	private readonly hover = new BlockHover(this);
 
 	override render(width: number): string[] {
 		return this.hover.paint(super.render(width), width);

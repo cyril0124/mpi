@@ -21,7 +21,7 @@ export class CompactionSummaryMessageComponent extends Box {
 	private expanded = false;
 	private message: CompactionSummaryMessage;
 	private markdownTheme: MarkdownTheme;
-	private readonly hover = new BlockHover((event) => this.handleBlockClick(event));
+	private readonly hover = new BlockHover(this, (event) => this.handleBlockClick(event));
 
 	constructor(message: CompactionSummaryMessage, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
 		super(1, 1, (t) => theme.bg("customMessageBg", t));

@@ -152,6 +152,7 @@ export {
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
 	type TuiMouseEventType,
+	type TuiSelectionLine,
 	type TuiSelectionOptions,
 	type TuiSelectionSurface,
 	type TuiStopOptions,

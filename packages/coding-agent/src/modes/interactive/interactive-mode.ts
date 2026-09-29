@@ -252,6 +252,7 @@ import {
 	mapHomeMessages,
 } from "./components/mixcode/home/home-model.ts";
 import { type HomeAction, HomeView, type HomeViewModel } from "./components/mixcode/home/home-view.ts";
+import { carriesPointerCue } from "./components/mixcode/hover/hover-block.ts";
 import {
 	createInlineWidgetTabState,
 	InlineWidgetsComponent,
@@ -1080,6 +1081,10 @@ export class InteractiveMode {
 			input: () => this.editorContainer,
 			notice: () => this.consoleNotice?.component,
 			modalOpen: () => this.ui.hasCapturingOverlay(),
+			cueRow: (row) =>
+				this.windowedTranscript
+					.componentPathAtRow(row)
+					.some((entry) => carriesPointerCue(entry.component, entry.row)),
 		});
 	}
 

@@ -48,6 +48,7 @@ import {
 	type TuiMouseDispatchResult,
 	type TuiMouseDispatchTarget,
 	type TuiMouseEvent,
+	type TuiSelectionLine,
 	type TuiSelectionOptions,
 	type TuiStopOptions,
 	VIEWPORT_TUI,
@@ -96,10 +97,13 @@ const SELECTION_STYLE_PROBE = "\x01";
 
 /**
  * Opening sequence of a host selection wrap, probed with a sentinel so the host keeps a plain
- * `(text) => string`. An empty result means the wrap adds nothing to re-insert.
+ * `(text) => string` per line. An empty result means the wrap adds nothing to re-insert.
  */
-function selectionHighlightOpen(highlight: (text: string) => string): string {
-	const marked = highlight(SELECTION_STYLE_PROBE);
+function selectionHighlightOpen(
+	highlight: (text: string, line: TuiSelectionLine) => string,
+	line: TuiSelectionLine,
+): string {
+	const marked = highlight(SELECTION_STYLE_PROBE, line);
 	const index = marked.indexOf(SELECTION_STYLE_PROBE);
 	return index > 0 ? marked.slice(0, index) : "";
 }
@@ -1599,7 +1603,12 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 					return;
 				}
 			}
-			if (this.copyOnSelect) void this.copySelectionToClipboard();
+			if (this.copyOnSelect) {
+				void this.copySelectionToClipboard();
+				// The host can want the highlight gone with the copy, so a selection lasts only as long as
+				// the drag. A release that copies nothing keeps it for the copy command.
+				if (this.selection?.clearOnRelease) this.clearTextSelection();
+			}
 			this.requestRender();
 			return;
 		}
@@ -1816,13 +1825,16 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		return result;
 	}
 
-	private applySelectionHighlight(text: string): string {
+	private applySelectionHighlight(text: string, line: TuiSelectionLine): string {
 		const highlight = this.selection?.highlight;
 		if (highlight) {
-			const open = selectionHighlightOpen(highlight);
-			if (!open || !text.includes("\x1b")) return highlight(text);
+			const open = selectionHighlightOpen(highlight, line);
+			if (!open || !text.includes("\x1b")) return highlight(text, line);
 			// Re-open the host's style after every SGR so an inner reset cannot drop it.
-			return highlight(text.replace(/\x1b\[[0-9;:]*m/g, (sequence) => `${sequence}${open}`));
+			return highlight(
+				text.replace(/\x1b\[[0-9;:]*m/g, (sequence) => `${sequence}${open}`),
+				line,
+			);
 		}
 		let result = "\x1b[7m";
 		let index = 0;
@@ -1844,6 +1856,9 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const selection = this.getSelectionBounds();
 		if (!selection) return screen;
 		let screenSelection = selection;
+		// Row a painted screen line has to lose to become the row inside the surface: the scroll view's
+		// top is its first content row, a plain surface is painted where it sits.
+		let lineRowOffset = 0;
 		let minRow = 0;
 		let maxRow = screen.length - 1;
 		let minColumn = 0;
@@ -1856,6 +1871,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			maxRow = Math.min(screen.length - 1, box.rect.y + box.rect.height - 1, box.clip.y + box.clip.height - 1);
 			minColumn = Math.max(0, box.rect.x, box.clip.x);
 			maxColumn = Math.min(this.terminal.columns, box.rect.x + box.rect.width, box.clip.x + box.clip.width);
+			lineRowOffset = box.rect.y - selection.start.scrollView.scrollTop;
 			screenSelection = {
 				start: {
 					...selection.start,
@@ -1893,7 +1909,8 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			const before = sliceByColumn(line, 0, columns.start, true);
 			const selected = sliceByColumn(line, columns.start, columns.end - columns.start, true);
 			const after = sliceByColumn(line, columns.end, Math.max(0, lineWidth - columns.end), true);
-			return `${before}${this.applySelectionHighlight(selected)}${after}`;
+			const lineInfo: TuiSelectionLine = { kind: this.selectionSurface?.kind ?? "", row: row - lineRowOffset };
+			return `${before}${this.applySelectionHighlight(selected, lineInfo)}${after}`;
 		});
 	}
 

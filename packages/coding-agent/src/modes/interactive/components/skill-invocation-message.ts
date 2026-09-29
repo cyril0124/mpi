@@ -21,7 +21,7 @@ export class SkillInvocationMessageComponent extends Box {
 	private expanded = false;
 	private skillBlock: ParsedSkillBlock;
 	private markdownTheme: MarkdownTheme;
-	private readonly hover = new BlockHover((event) => this.handleBlockClick(event));
+	private readonly hover = new BlockHover(this, (event) => this.handleBlockClick(event));
 
 	constructor(skillBlock: ParsedSkillBlock, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
 		super(1, 1, (t) => theme.bg("customMessageBg", t));

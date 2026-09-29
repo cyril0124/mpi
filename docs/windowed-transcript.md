@@ -39,7 +39,10 @@ renders only the rows near the viewport. Long conversations scroll at a bounded 
   cross-frame line cache: it re-renders the window each pass, with a short-lived per-pass cache so
   one pass does not render a block twice.
 - Mouse events still reach the block under the pointer: rows are in content coordinates, and the
-  container maps them back to a block before dispatching.
+  container maps them back to a block before dispatching. The same mapping is readable without
+  dispatching (`componentPathAtRow`), so a host can ask what a content row is made of and where in each
+  component it sits; the mouse selection uses it to tell a row inside a pointer-cued card from a plain
+  one.
 - A conversation that fits the viewport window is measured in full, so a short conversation reports
   exact heights.
 

@@ -5,6 +5,11 @@
  * rather than only the part one of its inner components happened to render. The block
  * owns this state, hands it to the dispatcher from its own `handleMouse`, paints with
  * `paint` at the end of its `render`, and passes its click action in at construction.
+ *
+ * Owning a hover cue also means the card's rows already wear the cue's background, so the
+ * constructor records the owner and the first row that carries the card: a text selection over
+ * those rows has to add an underline to stay visible, and `carriesPointerCue` is what says which
+ * rows those are.
  */
 import {
 	type Component,
@@ -15,19 +20,37 @@ import {
 } from "@earendil-works/pi-tui";
 import { paintRowBackground } from "./pointer-hover.ts";
 
+/** First card row of every block that paints the pointer cue, by owning component. */
+const pointerCueCards = new WeakMap<Component, number>();
+
+/**
+ * Whether `row` of `component`'s own lines is a card row of a block that paints the pointer cue.
+ * The cue fills those rows, so a selection over them also underlines; the gap rows above a card
+ * keep the plain selection background like any other row.
+ */
+export function carriesPointerCue(component: Component, row: number): boolean {
+	const cardFirstRow = pointerCueCards.get(component);
+	return cardFirstRow !== undefined && row >= cardFirstRow;
+}
+
 export class BlockHover implements Component {
 	private hovered = false;
 	private readonly onClick: (event: TuiMouseEvent) => TuiMouseEventResult | undefined;
 	private readonly cardFirstRow: number;
 
 	/**
-	 * `cardFirstRow` is the block's first row that carries its own card: rows above it are
-	 * the blank gap a block may render to the message before it, which holds no card for the
-	 * cue to fill and no target for a click.
+	 * `owner` is the block that paints the cue. `cardFirstRow` is that block's first row carrying
+	 * its own card: rows above it are the blank gap a block may render to the message before it,
+	 * which holds no card for the cue to fill and no target for a click.
 	 */
-	constructor(onClick?: (event: TuiMouseEvent) => TuiMouseEventResult | undefined, cardFirstRow = 0) {
+	constructor(
+		owner: Component,
+		onClick?: (event: TuiMouseEvent) => TuiMouseEventResult | undefined,
+		cardFirstRow = 0,
+	) {
 		this.onClick = onClick ?? (() => undefined);
 		this.cardFirstRow = Math.max(0, cardFirstRow);
+		pointerCueCards.set(owner, this.cardFirstRow);
 	}
 
 	/** True while the pointer is over the block. */

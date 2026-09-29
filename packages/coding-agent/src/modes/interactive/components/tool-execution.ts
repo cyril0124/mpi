@@ -52,7 +52,7 @@ export class ToolExecutionComponent extends Container {
 	private contentBox: Box;
 	private contentText: Text;
 	// The card starts below the gap row, so the cue and the click skip it.
-	private readonly hover = new BlockHover((event) => this.handleBlockClick(event), CARD_GAP_ROWS);
+	private readonly hover = new BlockHover(this, (event) => this.handleBlockClick(event), CARD_GAP_ROWS);
 	private selfRenderContainer: Container;
 	private selfRenderHeight = 0;
 	private callRendererComponent?: Component;

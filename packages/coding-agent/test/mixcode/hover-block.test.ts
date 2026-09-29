@@ -1,6 +1,6 @@
 import type { TuiMouseEvent, TuiMouseEventType } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
-import { BlockHover } from "../../src/modes/interactive/components/mixcode/hover/hover-block.ts";
+import { BlockHover, carriesPointerCue } from "../../src/modes/interactive/components/mixcode/hover/hover-block.ts";
 import { initTheme, theme } from "../../src/modes/interactive/theme/theme.ts";
 
 /**
@@ -11,6 +11,8 @@ import { initTheme, theme } from "../../src/modes/interactive/theme/theme.ts";
 beforeEach(() => {
 	initTheme("dark");
 });
+
+const owner = { render: () => [], invalidate: () => {} };
 
 function backgroundOpen(): string {
 	const painted = theme.bg("selectedBg", "\u0001");
@@ -35,9 +37,21 @@ function mouse(type: TuiMouseEventType, x: number, y: number, width = 10, height
 }
 
 describe("block hover", () => {
+	it("records the card rows of the block that owns the cue, and no other component", () => {
+		const cued = { render: () => [], invalidate: () => {} };
+		const other = { render: () => [], invalidate: () => {} };
+		expect(carriesPointerCue(cued, 0)).toBe(false);
+		new BlockHover(cued, undefined, 1);
+		// The gap row above the card is not a card row, so a selection there keeps the plain wrap.
+		expect(carriesPointerCue(cued, 0)).toBe(false);
+		expect(carriesPointerCue(cued, 1)).toBe(true);
+		expect(carriesPointerCue(cued, 9)).toBe(true);
+		expect(carriesPointerCue(other, 1)).toBe(false);
+	});
+
 	it("answers moves inside the block and paints every row while hovered", () => {
 		const clicks: string[] = [];
-		const hover = new BlockHover((event) => {
+		const hover = new BlockHover(owner, (event) => {
 			if (event.type !== "click") return undefined;
 			clicks.push("click");
 			return { handled: true };
@@ -61,7 +75,7 @@ describe("block hover", () => {
 
 	it("hands a click to the block's own action and clears the cue on a leave event", () => {
 		let expanded = false;
-		const hover = new BlockHover((event) => {
+		const hover = new BlockHover(owner, (event) => {
 			if (event.type !== "click" || event.button !== "left") return undefined;
 			expanded = !expanded;
 			return { handled: true };
@@ -86,11 +100,15 @@ describe("block hover", () => {
 
 	it("keeps the gap row above the card out of the cue and out of the click", () => {
 		let clicks = 0;
-		const hover = new BlockHover((event) => {
-			if (event.type !== "click" || event.button !== "left") return undefined;
-			clicks += 1;
-			return { handled: true };
-		}, 1);
+		const hover = new BlockHover(
+			owner,
+			(event) => {
+				if (event.type !== "click" || event.button !== "left") return undefined;
+				clicks += 1;
+				return { handled: true };
+			},
+			1,
+		);
 
 		// The gap row answers no pointer, so nothing is cued and nothing toggles.
 		expect(hover.dispatch(mouse("move", 2, 0))).toMatchObject({ handled: true, render: false });

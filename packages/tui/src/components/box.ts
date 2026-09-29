@@ -1,4 +1,10 @@
-import { type Component, dispatchMouseEvent, type TuiMouseDispatchResult, type TuiMouseEvent } from "../tui.ts";
+import {
+	type Component,
+	childAtRow,
+	dispatchMouseEvent,
+	type TuiMouseDispatchResult,
+	type TuiMouseEvent,
+} from "../tui.ts";
 import { applyBackgroundToLine, visibleWidth } from "../utils.ts";
 
 type RenderCache = {
@@ -96,6 +102,15 @@ export class Box implements Component {
 			childY += childHeight;
 		}
 		return undefined;
+	}
+
+	/**
+	 * The child painted at `row` of this box's own line space in the last render, with the row's offset
+	 * inside it. The box's padding rows belong to no child. A row resolves against the render that
+	 * already happened, so it neither re-renders nor dispatches. Undefined until the box has rendered.
+	 */
+	componentAtRow(row: number): { component: Component; offset: number } | undefined {
+		return childAtRow(this.mouseLayout?.children, row - this.paddingY);
 	}
 
 	render(width: number): string[] {

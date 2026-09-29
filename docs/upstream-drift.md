@@ -40,7 +40,7 @@ commit that causes it.
 | Docked widget stack | no cap; the layout shrinks the slots when space runs out | the above and below slots share a row budget, cut whole rows are marked `… (widgets truncated)` | a tall widget stack otherwise squeezes the chat and the dock chrome |
 | User message block | a background-filled block with the message text | the same block with the send time at the right end of its first row (`Sep 29, 9:29 PM`: short month, day, hour, and minute in the terminal's own locale), painted dim, with the body rendered narrow enough that no text can reach it | the block says when it was written, so a long conversation can be read by time without opening a session listing |
 | Pointer hover feedback | no cue: lists ignore pointer motion, a message region answers clicks only, and the jump-to-end label is styled once | the cells under the pointer get a selection background and an underline (tab chips, command-palette rows, the dock meta row's model and thinking fields), a message block that answers a click is filled as one rectangle, and the fullscreen renderer tells a component when the pointer leaves it, keeps the whole chrome unlit while an overlay is open, and drops every hover when the terminal is resized | the fork's clickable chrome needs a cue that does not move the keyboard selection or the active tab |
-| Mouse drag selection | selects any cell on screen, copies the cells verbatim, paints them with reverse video, and keeps following new output during the drag | scoped to the transcript, the prompt card and the notice panel; the copied text drops a framed surface's border rows, border columns, padding column and key-hint rows; the highlight uses the theme's `selectedBg`; a press holds the transcript so streaming output cannot move the selected rows, and the release leaves it there when the output grew past the viewport or the user scrolled | [Mouse Selection](mouse-selection.md) |
+| Mouse drag selection | selects any cell on screen, copies the cells verbatim, paints them with reverse video, and keeps following new output during the drag | scoped to the transcript, the prompt card and the notice panel; the copied text drops a framed surface's border rows, border columns, padding column and key-hint rows; the highlight uses the theme's `selectedBg` and is dropped by a release with copy-on-select on (a release with the setting off keeps it for the copy command), and it underlines the card rows inside a block that carries the pointer cue, whose fill uses the same background; a press holds the transcript so streaming output cannot move the selected rows, and the release leaves it there when the output grew past the viewport or the user scrolled | [Mouse Selection](mouse-selection.md) |
 | Extension module resolution | bun loading the built dist keeps jiti's `tryNative` (native TS import), so an extension's bare `@earendil-works/*` imports resolve from ambient `node_modules` | bun loading the built dist resolves through `virtualModules`, so the specifiers that map lists always come from the running host; bun running the TypeScript source is unchanged | a second copy of `@earendil-works/pi-tui` puts `ToolExecutionComponent.prototype` patching on a class the host never rendered, so renderer extensions silently fell back to the built-in tool rows |
 | Hidden thinking | the full reasoning text when hiding is off, the italic `Thinking...` label when it is on | with hiding on, each block renders as a three-row tail that follows the stream: a `Thinking` header whose duration ticks live and freezes when the block stops growing, and the last three visual rows behind a left rail, `…`-marked when earlier content was dropped. An extension `setHiddenThinkingLabel` still replaces the whole block. The `Thinking tail preview` row in `/settings` turns it off, and it defaults to on | the tail keeps the reasoning legible while it streams without giving the block the whole transcript |
 
@@ -49,15 +49,19 @@ commit that causes it.
   a suspended scroll view passes to its windowed child
 - `packages/tui/src/components/scroll-view.ts`: `setFollowSuspended` / `isFollowSuspended` /
   `resumeFollowEnd`, so a pointer gesture can hold the rows it is selecting over
+- `packages/tui/src/components/box.ts`: `componentAtRow`, so a row inside a padded card resolves to the
+  child that painted it (the descent a host walks to find the component a transcript row belongs to)
 - `packages/tui/src/tui.ts`: the overlay mouse dispatch reports the overlay it hit, so a point
-  outside it can be told from a point on it; the `TuiSelectionOptions` contract, `hasCapturingOverlay`,
+  outside it can be told from a point on it; the `TuiSelectionOptions` contract (including
+  `clearOnRelease` and a `highlight` handed the painted line), `Container.componentAtRow` so a host
+  can resolve a row to the component that painted it, `hasCapturingOverlay`,
   and the overlay rect lookup the surface resolver needs
 - `packages/tui/src/tui-alt-screen.ts`: reads content lines through the provider; public `scrollToPrompt`;
   an `onCopyResult` option lets the host confirm a clipboard write instead of the screen's own flash,
   and reports the copied text as a grapheme count; tracks the hovered component so the next move
   elsewhere, an overlay, or a pointer capture can send it a leave event; `scrollToEndIndicator`
   receives whether the pointer is over the label; a `selection` option scopes the drag to host surfaces
-  and takes the host's text cleanup and style
+  and takes the host's text cleanup, style and release clearing
 - `packages/tui/src/utils.ts`: `countGraphemes`, moved there from the alternate screen so the
   coding-agent toast can report a copy in the same unit
 - `packages/tui/src/index.ts`: exports for the windowed node, mouse dispatch, the grapheme counter and

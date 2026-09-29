@@ -56,11 +56,19 @@ Selected cells are painted with the theme's `selectedBg` (the same token the tra
 uses), not with reverse video. The background is re-opened after every SGR inside the selection,
 so a tool block's or a thinking block's own background cannot swallow it.
 
+Inside a block that carries the pointer cue — a tool call, a summary card, a skill invocation, the
+thinking block — the selected cells of its card rows also gain an underline. The cue fills those same
+cells with the same background, so without it a selection inside a block would be indistinguishable
+from hovering it. Every other row of the transcript keeps the plain background, including the blank
+gap a block renders above its card.
+
 ## Release
 
 Releasing the mouse button copies the selection and reports `Copied N chars.` through the toast,
-where `N` is the length of the cleaned text. A failed clipboard write reports the reason instead.
-An empty selection reports nothing.
+where `N` is the length of the cleaned text. With `fullscreenCopyOnSelect` on (the default) the
+release also drops the highlight in the same frame, so a drag shows a selection only while the button
+is down; with the setting off the selection stays on screen for `ctrl+x`. A failed clipboard write
+reports the reason instead, and an empty selection reports nothing.
 
 `ctrl+x` (`app.message.copy`) still copies the last assistant message; when
 `fullscreenCopyOnSelect` is off and a selection is on screen, it copies that selection instead,
