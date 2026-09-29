@@ -54,12 +54,17 @@ that calls into `mixcode/` code:
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
+- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: forwards the host's clipboard callback to the alternate screen
+- `packages/coding-agent/src/modes/interactive/theme/theme.ts`, `theme/dark.json`, `theme/light.json`,
+  `theme/theme-json.ts`, `theme/theme-schema.json`: the `panelBg` background a framed card fills with
 - `packages/coding-agent/test/extensions-runner.test.ts`
+- `packages/coding-agent/test/interactive-tui.test.ts`: the copy confirmations pin the toast
 - `packages/ai/src/api/openai-responses-shared.ts`: records the server-reported model on
   Responses streams as `AssistantMessage.responseModel`
 - `packages/tui/src/layout-node.ts`: windowed layout node and scroll line provider
 - `packages/tui/src/layout.ts`: windowed scroll child, line provider on the scroll box
-- `packages/tui/src/tui-alt-screen.ts`: reads content lines through the provider; public `scrollToPrompt`
+- `packages/tui/src/tui-alt-screen.ts`: reads content lines through the provider; public `scrollToPrompt`;
+  an `onCopyResult` option lets the host confirm a clipboard write instead of the screen's own flash
 - `packages/tui/src/index.ts`: exports for the windowed node and mouse dispatch
 - `AGENTS.md`, `.gitignore`
 
@@ -76,4 +81,4 @@ Nothing upstream references them, so they can never conflict:
 - `.agents/skills/` — fork-local agent skills, including [manual TUI demos](../.agents/skills/mixcode-manual-e2e/SKILL.md)
 - `docs/` — this directory
 - `test-all.sh`, `run.sh`, `install.sh` — fork test runner, dev launcher, and local installer
-- `packages/*/src/**/mixcode/`, `packages/*/test/mixcode/` — fork code and its tests
+- `packages/*/src/**/mixcode/`, `packages/*/test/mixcode/`, `packages/tui/test/mixcode-*.test.ts` — fork code and its tests

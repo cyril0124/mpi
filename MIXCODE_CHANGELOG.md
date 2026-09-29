@@ -11,6 +11,11 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Added
 
+- Toast notifications: a typed card in the top-right corner of the transcript, with a rounded frame,
+  an icon and color per kind, a width that follows the terminal, and a three second lifetime. The
+  copy command reports through it, a failing copy reports the error, and closing the last tab
+  reports the refusal; vim's entry prompt and message-jump notices use it too. The card fills its
+  cells with a new `panelBg` theme background, so it reads as a surface instead of an outline.
 - Interactive console output: `console.log`, `console.info`, `console.debug`, `console.warn` and
   `console.error` no longer write raw text onto the tty from interactive mode, where it corrupted
   the frame and duplicated the tab bar. Their output is prefixed with `[console.<method>]:` and
@@ -97,6 +102,9 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Changed
 
+- The fullscreen transcript's clipboard confirmation: the alternate screen hands the result to the
+  host through a new `onCopyResult` option, so a mouse-selection copy reports with the same toast as
+  the copy command instead of the screen's own one-line flash.
 - `app.model.cycleForward` ships with no default key, because `ctrl+p` now opens the command
   palette; `shift+ctrl+p` (`alt+p` on Windows and WSL) still cycles backwards.
 - On Windows and WSL the quit chord is `ctrl+shift+q`, keeping `ctrl+q` for

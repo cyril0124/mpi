@@ -35,7 +35,7 @@ type VimWiringContext = {
 	editor: { borderColor: unknown };
 	showStatus: (message: string) => void;
 	updateEditorBorderColor: () => void;
-	notifyVim: (message: string) => void;
+	notifyToast: (type: string, message: string) => void;
 	refreshVimChrome: () => void;
 	viewportTui: () => TuiAltScreen | undefined;
 	createVimHost: () => VimKeyHost;
@@ -48,7 +48,7 @@ type VimWiringContext = {
 type VimWiringPrototype = {
 	createVimHost(this: VimWiringContext): VimKeyHost;
 	vimTabState(this: VimWiringContext): VimTabState;
-	notifyVim(this: VimWiringContext, message: string): void;
+	notifyToast(this: VimWiringContext, type: string, message: string): void;
 	refreshVimChrome(this: VimWiringContext): void;
 	viewportTui(this: VimWiringContext): TuiAltScreen | undefined;
 	enterActiveTabVimMode(this: VimWiringContext): void;
@@ -105,11 +105,11 @@ async function bootFullscreen(columns = 40, rows = 12) {
 		keybindings: new KeybindingsManager(),
 		ui: { requestRender: () => tui.requestRender() },
 		editor: { borderColor: undefined },
-		showStatus: (message) => {
-			notices.push(message);
-		},
+		showStatus: () => {},
 		updateEditorBorderColor: () => {},
-		notifyVim: () => {},
+		notifyToast: (type, message) => {
+			notices.push(`${type} ${message}`);
+		},
 		refreshVimChrome: () => {},
 		viewportTui: () => proto.viewportTui.call(context),
 		createVimHost: () => proto.createVimHost.call(context),
@@ -118,7 +118,6 @@ async function bootFullscreen(columns = 40, rows = 12) {
 		leaveVimModeIfUnavailable: () => proto.leaveVimModeIfUnavailable.call(context),
 		handleVimKeyInput: (data) => proto.handleVimKeyInput.call(context, data),
 	};
-	context.notifyVim = (message) => proto.notifyVim.call(context, message);
 	context.refreshVimChrome = () => proto.refreshVimChrome.call(context);
 
 	const painted = async () => {
@@ -249,9 +248,11 @@ describe("vim mode against the real transcript viewport", () => {
 			keybindings: new KeybindingsManager(),
 			ui: { requestRender: vi.fn() },
 			editor: { borderColor: undefined },
-			showStatus: (message) => notices.push(message),
+			showStatus: () => {},
 			updateEditorBorderColor: () => {},
-			notifyVim: () => {},
+			notifyToast: (type, message) => {
+				notices.push(`${type} ${message}`);
+			},
 			refreshVimChrome: () => {},
 			viewportTui: () => proto.viewportTui.call(context),
 			createVimHost: () => proto.createVimHost.call(context),
@@ -260,12 +261,11 @@ describe("vim mode against the real transcript viewport", () => {
 			leaveVimModeIfUnavailable: () => proto.leaveVimModeIfUnavailable.call(context),
 			handleVimKeyInput: (data) => proto.handleVimKeyInput.call(context, data),
 		};
-		context.notifyVim = (message) => proto.notifyVim.call(context, message);
 
 		context.enterActiveTabVimMode();
 
 		expect(tab.vim.active).toBe(false);
-		expect(notices.join(" ")).toContain("fullscreen");
+		expect(notices.join(" ")).toContain("warning Vim mode needs the fullscreen transcript");
 		tui.stop();
 	});
 

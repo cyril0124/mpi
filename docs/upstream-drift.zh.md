@@ -50,12 +50,17 @@
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
+- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调转发给备用屏幕
+- `packages/coding-agent/src/modes/interactive/theme/theme.ts`、`theme/dark.json`、`theme/light.json`、
+  `theme/theme-json.ts`、`theme/theme-schema.json`：带框卡片填充用的 `panelBg` 背景色
 - `packages/coding-agent/test/extensions-runner.test.ts`
+- `packages/coding-agent/test/interactive-tui.test.ts`：复制确认改为断言 toast
 - `packages/ai/src/api/openai-responses-shared.ts`：把 Responses 流中服务器报告的模型名记录到
   `AssistantMessage.responseModel`
 - `packages/tui/src/layout-node.ts`：窗口化布局节点与滚动行提供者
 - `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒上的行提供者
-- `packages/tui/src/tui-alt-screen.ts`：经提供者读取内容行；`scrollToPrompt` 改为公开
+- `packages/tui/src/tui-alt-screen.ts`：经提供者读取内容行；`scrollToPrompt` 改为公开；
+  `onCopyResult` 选项让宿主自行确认复制结果，替代该屏幕自带的一行 flash
 - `packages/tui/src/index.ts`：导出窗口化节点与鼠标派发
 - `AGENTS.md`、`.gitignore`
 
@@ -71,4 +76,4 @@
 - `.agents/skills/` —— fork 专用 agent skill，包括[手动 TUI 演示](../.agents/skills/mixcode-manual-e2e/SKILL.md)
 - `docs/` —— 本目录
 - `test-all.sh`、`run.sh`、`install.sh` —— fork 测试入口、开发启动脚本与本地安装脚本
-- `packages/*/src/**/mixcode/`、`packages/*/test/mixcode/` —— fork 代码及其测试
+- `packages/*/src/**/mixcode/`、`packages/*/test/mixcode/`、`packages/tui/test/mixcode-*.test.ts` —— fork 代码与其测试

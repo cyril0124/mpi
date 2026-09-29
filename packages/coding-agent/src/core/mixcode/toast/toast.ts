@@ -27,6 +27,16 @@ export interface ToastHost {
 	toast?: ToastNotification;
 }
 
+/** The confirmation a successful copy reports, counting characters. */
+export function copyConfirmation(chars: number): string {
+	return `Copied ${chars} chars.`;
+}
+
+/** The message a failed copy reports, carrying the clipboard's own reason. */
+export function copyFailure(detail: string): string {
+	return `Copy failed: ${detail}`;
+}
+
 /** Store a toast, replacing the tab's previous one. */
 export function pushToast(host: ToastHost, toast: ToastRequest): void {
 	host.toast = { ...toast, createdAt: Date.now() };

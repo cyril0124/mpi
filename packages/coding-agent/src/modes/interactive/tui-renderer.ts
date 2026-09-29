@@ -1,5 +1,5 @@
 import type { Terminal } from "@earendil-works/pi-tui";
-import { ProcessTerminal, type TUI, TuiAltScreen, TuiMainScreen } from "@earendil-works/pi-tui";
+import { type ClipboardResult, ProcessTerminal, type TUI, TuiAltScreen, TuiMainScreen } from "@earendil-works/pi-tui";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { openBrowser } from "../../utils/open-browser.ts";
 import { keyDisplayText } from "./components/keybinding-hints.ts";
@@ -12,6 +12,8 @@ export interface InteractiveTuiOptions {
 	readonly terminal?: Terminal;
 	readonly onRightClickPaste?: () => void;
 	readonly fullscreenCopyOnSelect?: boolean;
+	/** Report a clipboard result instead of letting the alternate screen flash its own confirmation. */
+	readonly onCopyResult?: (result: ClipboardResult) => void;
 }
 
 /** Composition root shared by coding-agent presentations. */
@@ -42,6 +44,7 @@ export function createInteractiveTui(options: InteractiveTuiOptions): TuiMainScr
 					return error instanceof Error ? error.message : String(error);
 				}
 			},
+			onCopyResult: options.onCopyResult,
 		});
 	}
 	return new TuiMainScreen(terminal, options.showHardwareCursor, options.logDirectory);

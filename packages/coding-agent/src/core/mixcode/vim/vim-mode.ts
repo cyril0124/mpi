@@ -7,6 +7,7 @@
  * owns the transcript scroll view.
  */
 import type { KeybindingsManager } from "../../keybindings.ts";
+import type { ToastType } from "../toast/toast.ts";
 
 /** How long an empty-editor `ctrl+u` keeps the vim-entry confirmation open. */
 export const VIM_ENTER_ARM_WINDOW_MS = 1_000;
@@ -53,7 +54,8 @@ export interface VimTranscriptController {
 export interface VimKeyHost {
 	keybindings: KeybindingsManager;
 	controller: VimTranscriptController;
-	notify(message: string): void;
+	/** Transient feedback; `type` picks the notice's kind and defaults to information. */
+	notify(message: string, type?: ToastType): void;
 }
 
 /**
@@ -166,7 +168,7 @@ export function enterVimMode(state: VimTabState, host: VimKeyHost): boolean {
 	state.topArmed = false;
 	if (state.active) return true;
 	if (!host.controller.available()) {
-		host.notify("Vim mode needs the fullscreen transcript (run /settings and enable fullscreen)");
+		host.notify("Vim mode needs the fullscreen transcript (run /settings and enable fullscreen)", "warning");
 		return false;
 	}
 	state.active = true;

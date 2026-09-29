@@ -202,6 +202,7 @@ type CopyCommandOptions = { preferSelection?: boolean };
 
 type CopyCommandPrototype = {
 	handleCopyCommand(this: CopyCommandContext, options?: CopyCommandOptions): Promise<void>;
+	notifyCopyResult(this: CopyCommandContext, result: { ok: boolean; detail?: string; chars: number }): void;
 };
 
 const copyCommandPrototype = InteractiveMode.prototype as unknown as CopyCommandPrototype;
@@ -296,7 +297,48 @@ describe("InteractiveMode copy confirmation", () => {
 			expect(getLastAssistantText).toHaveBeenCalledOnce();
 			expect(showStatus).not.toHaveBeenCalled();
 			expect(showError).not.toHaveBeenCalled();
-			expect(notifyToast).toHaveBeenCalledWith("success", "Copied last agent message to clipboard");
+			expect(notifyToast).toHaveBeenCalledWith("success", "Copied 18 chars.");
+		} finally {
+			ui.stop();
+		}
+	});
+
+	it("reports a selection copy through the clipboard result the screen hands over", async () => {
+		const terminal = new RecordingTerminal(40, 4);
+		const showStatus = vi.fn();
+		const showError = vi.fn();
+		const notifyToast = vi.fn();
+		const context = {
+			session: { getLastAssistantText: () => "assistant response" },
+			showStatus,
+			showError,
+			notifyToast,
+		} as unknown as CopyCommandContext;
+		const ui = createInteractiveTui({
+			tuiMode: "fullscreen",
+			showHardwareCursor: false,
+			logDirectory: "/tmp",
+			terminal,
+			fullscreenCopyOnSelect: false,
+			onCopyResult: (result) => copyCommandPrototype.notifyCopyResult.call(context, result),
+		});
+		context.ui = ui;
+		ui.addChild(new Text("alpha\nbeta\ngamma\ndelta", 0, 0));
+
+		ui.start();
+		try {
+			await terminal.waitForRender();
+			terminal.sendInput("\x1b[<0;1;1M");
+			terminal.sendInput("\x1b[<32;4;2M");
+			terminal.sendInput("\x1b[<0;4;2m");
+			await terminal.waitForRender();
+
+			await copyCommandPrototype.handleCopyCommand.call(context, { preferSelection: true });
+			await terminal.waitForRender();
+
+			expect(showStatus).not.toHaveBeenCalled();
+			expect(showError).not.toHaveBeenCalled();
+			expect(notifyToast).toHaveBeenCalledWith("success", "Copied 10 chars.");
 		} finally {
 			ui.stop();
 		}
@@ -330,7 +372,7 @@ describe("InteractiveMode copy confirmation", () => {
 			expect(clipboardMocks.copyToClipboard).toHaveBeenCalledWith("assistant response");
 			expect(showStatus).not.toHaveBeenCalled();
 			expect(showError).not.toHaveBeenCalled();
-			expect(notifyToast).toHaveBeenCalledWith("success", "Copied last agent message to clipboard");
+			expect(notifyToast).toHaveBeenCalledWith("success", "Copied 18 chars.");
 		} finally {
 			ui.stop();
 		}
@@ -358,7 +400,7 @@ describe("InteractiveMode copy confirmation", () => {
 
 		expect(showStatus).not.toHaveBeenCalled();
 		expect(showError).not.toHaveBeenCalled();
-		expect(notifyToast).toHaveBeenCalledWith("success", "Copied last agent message to clipboard");
+		expect(notifyToast).toHaveBeenCalledWith("success", "Copied 18 chars.");
 	});
 });
 

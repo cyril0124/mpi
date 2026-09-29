@@ -20,6 +20,7 @@ import {
 } from "@earendil-works/pi-ai/compat";
 import type {
 	AutocompleteProvider,
+	ClipboardResult,
 	EditorComponent,
 	Keybinding,
 	KeyId,
@@ -131,6 +132,8 @@ import { deleteSessionFile } from "../../core/mixcode/session-delete.ts";
 import {
 	activeToast,
 	clearToast,
+	copyConfirmation,
+	copyFailure,
 	pushToast,
 	TOAST_DURATION_MS,
 	type ToastHost,
@@ -746,6 +749,7 @@ export class InteractiveMode {
 			terminal: options.terminal,
 			onRightClickPaste: this.onRightClickPaste,
 			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
+			onCopyResult: (result) => this.notifyCopyResult(result),
 		});
 		this.ui = createInteractiveTuiReference(() => this.renderer);
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
@@ -964,6 +968,7 @@ export class InteractiveMode {
 			terminal,
 			onRightClickPaste: this.onRightClickPaste,
 			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
+			onCopyResult: (result) => this.notifyCopyResult(result),
 		});
 		nextUi.setClearOnShrink(clearOnShrink);
 		nextUi.onDebug = onDebug;
@@ -4385,6 +4390,12 @@ export class InteractiveMode {
 		return this.fallbackToastHost;
 	}
 
+	/** Report a clipboard result the alternate screen handed over instead of flashing its own line. */
+	private notifyCopyResult(result: ClipboardResult): void {
+		if (result.ok) this.notifyToast("success", copyConfirmation(result.chars));
+		else this.notifyToast("error", copyFailure(result.detail ?? "clipboard unavailable"));
+	}
+
 	/** Record a typed message for the active tab and show it over the transcript. */
 	private notifyToast(type: ToastType, message: string): void {
 		pushToast(this.toastHost(), { type, message });
@@ -4413,15 +4424,21 @@ export class InteractiveMode {
 		const boxWidth = toastBoxWidth(type, message, this.ui.terminal.columns);
 		if (boxWidth === undefined) return;
 		const rows = toastCardRows(type, message, boxWidth);
+		// Only the fullscreen layout pins the tab bar above the transcript; the regular
+		// renderer scrolls it with the document, so the card stays at the window's top.
+		const chromeRows = this.renderer instanceof TuiAltScreen ? this.rowsAboveTranscript() : 0;
+		const topOffset = chromeRows + TOAST_MARGIN;
 		const generation = ++this.toastGeneration;
 		this.toastHandle = this.ui.showOverlay(new ToastCardComponent(type, message), {
 			anchor: "top-right",
 			width: boxWidth,
-			// Right and top margins only: a narrow terminal can still hold the narrowest
-			// card flush against its left edge.
-			margin: { top: TOAST_MARGIN, right: TOAST_MARGIN, bottom: TOAST_MARGIN, left: 0 },
+			offsetY: topOffset,
+			// Right margin only: a narrow terminal can still hold the narrowest card flush
+			// against its left edge.
+			margin: { top: 0, right: TOAST_MARGIN, bottom: TOAST_MARGIN, left: 0 },
 			nonCapturing: true,
-			visible: (termWidth, termHeight) => termWidth >= boxWidth + TOAST_MARGIN && termHeight >= rows + TOAST_MARGIN,
+			visible: (termWidth, termHeight) =>
+				termWidth >= boxWidth + TOAST_MARGIN && termHeight >= topOffset + rows + TOAST_MARGIN,
 		});
 		const timer = setTimeout(() => {
 			if (generation !== this.toastGeneration) return;
@@ -4434,6 +4451,13 @@ export class InteractiveMode {
 		timer.unref();
 		this.toastTimer = timer;
 		this.ui.requestRender();
+	}
+
+	/** Rows the layout spends above the transcript, which the card must clear. */
+	private rowsAboveTranscript(): number {
+		const tabBar = this.tabBarContainer;
+		if (!tabBar) return 0;
+		return tabBar.render(this.ui.terminal.columns).length;
 	}
 
 	/** Drop the card and its timer; the toast stays with the tab. */
@@ -4494,20 +4518,13 @@ export class InteractiveMode {
 					return true;
 				},
 			},
-			notify: (message) => this.notifyVim(message),
+			notify: (message, type = "info") => this.notifyToast(type, message),
 		};
 	}
 
 	/** The transcript viewport, when the current renderer has one. */
 	private viewportTui(): TuiAltScreen | undefined {
 		return this.renderer instanceof TuiAltScreen ? this.renderer : undefined;
-	}
-
-	/** Vim feedback is transient: a flash overlay in fullscreen, a status line otherwise. */
-	private notifyVim(message: string): void {
-		const viewport = this.viewportTui();
-		if (viewport) viewport.flash(message);
-		else this.showStatus(message);
 	}
 
 	/** Repaint the editor frame after the modal surface started or ended. */
@@ -7512,11 +7529,11 @@ export class InteractiveMode {
 				}
 				try {
 					await copyToClipboard(text);
-					this.notifyToast("success", "Copied selected message to clipboard");
+					this.notifyToast("success", copyConfirmation(text.length));
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					this.showError(message);
-					this.notifyToast("error", message);
+					this.notifyToast("error", copyFailure(message));
 				}
 			};
 			return { component: selector, focus: selector };
@@ -8377,11 +8394,11 @@ export class InteractiveMode {
 
 		try {
 			await copyToClipboard(text);
-			this.notifyToast("success", "Copied last agent message to clipboard");
+			this.notifyToast("success", copyConfirmation(text.length));
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			this.showError(message);
-			this.notifyToast("error", message);
+			this.notifyToast("error", copyFailure(message));
 		}
 	}
 

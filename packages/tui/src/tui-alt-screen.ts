@@ -197,6 +197,20 @@ export interface TuiAltScreenOptions {
 	 * via an OSC 52 write.
 	 */
 	copySelection?: (text: string) => Promise<boolean | string>;
+	/**
+	 * Report a clipboard result to the host instead of flashing it into the screen. When omitted,
+	 * the alternate screen flashes its own one-line confirmation.
+	 */
+	onCopyResult?: (result: ClipboardResult) => void;
+}
+
+/** What a clipboard write reported to the host. */
+export interface ClipboardResult {
+	ok: boolean;
+	/** The failure detail, when the copy failed. */
+	detail?: string;
+	/** Length of the copied text in characters. */
+	chars: number;
 }
 
 /** Alternate-screen TUI with a scrollable, application-owned viewport. */
@@ -252,6 +266,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private readonly onRightClickPaste?: () => void;
 	private copyOnSelect: boolean;
 	private readonly copySelection?: (text: string) => Promise<boolean | string>;
+	private readonly onCopyResult?: (result: ClipboardResult) => void;
 
 	constructor(
 		terminal: Terminal,
@@ -279,6 +294,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.onRightClickPaste = options.onRightClickPaste;
 		this.copyOnSelect = options.copyOnSelect ?? true;
 		this.copySelection = options.copySelection;
+		this.onCopyResult = options.onCopyResult;
 		this.addInputListener((data) => this.handleViewportInput(data));
 	}
 
@@ -1481,14 +1497,14 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		if (this.copySelection) {
 			const result = await this.copySelection(text);
 			const ok = result === true;
-			this.flash(
-				ok ? "Copied!" : typeof result === "string" ? result : "Copy failed",
-				ok ? undefined : COPY_ERROR_FLASH_DURATION_MS,
-			);
+			const detail = typeof result === "string" ? result : undefined;
+			if (this.onCopyResult) this.onCopyResult({ ok, detail, chars: text.length });
+			else this.flash(ok ? "Copied!" : (detail ?? "Copy failed"), ok ? undefined : COPY_ERROR_FLASH_DURATION_MS);
 			return ok;
 		}
 		this.terminal.write(`\x1b]52;c;${Buffer.from(text).toString("base64")}\x07`);
-		this.flash("Copied!");
+		if (this.onCopyResult) this.onCopyResult({ ok: true, chars: text.length });
+		else this.flash("Copied!");
 		return true;
 	}
 
