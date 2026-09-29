@@ -73,10 +73,26 @@ describe("tab bar layout", () => {
 		const lines = bar.render(40).map(plain);
 		expect(lines).toHaveLength(4);
 		expect(lines[0]!.startsWith(" +7 … ")).toBe(true);
-		expect(lines[1]!.startsWith(" ".repeat(10))).toBe(true);
+		// The left hint leads row 0; continuation rows indent to the same column.
+		expect(lines[1]!.indexOf("- tab")).toBe(lines[0]!.indexOf("- tab"));
 		expect(lines[2]!.includes("▌")).toBe(true);
 		expect(lines[3]).toBe("─".repeat(40));
 		for (const line of lines.slice(0, 3)) expect(line.length).toBeLessThanOrEqual(40);
+	});
+
+	it("wraps under the first agent chip when a Home chip leads the bar", () => {
+		const bar = new TabBar(
+			() => model(20, 0, { maxRows: 3, home: { id: "home", label: "MixCode Home" } }),
+			() => {},
+		);
+		const chipRows = bar
+			.render(100)
+			.map(plain)
+			.filter((line) => line.includes("- tab"));
+		expect(chipRows).toHaveLength(3);
+		// Every row's first chip sits at the same column, past the Home chip and
+		// its gutter.
+		expect(chipRows.map((line) => line.indexOf("- tab"))).toEqual([16, 16, 16]);
 	});
 
 	it("counts the tabs hidden on the right on the last row", () => {
@@ -85,7 +101,7 @@ describe("tab bar layout", () => {
 			() => {},
 		);
 		const lines = bar.render(40).map(plain);
-		expect(lines[2]!.trimEnd().endsWith(" … +6")).toBe(true);
+		expect(lines[2]!.trimEnd().endsWith(" … +5")).toBe(true);
 	});
 
 	it("keeps the active chip visible when the tabs overflow", () => {

@@ -11,6 +11,8 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Added
 
+- `mixcode-manual-e2e` skill: creates user-runnable TUI demos through this checkout's
+  source launcher, with local faux models, isolated runtime state, and per-state evidence.
 - Command palette: `ctrl+p` (`app.palette`) opens a fuzzy-searchable list of every command the UI
   can run (built-ins, extension commands, skill commands, prompt templates), floating over the
   draft and painting the characters the query matched. Enter submits the selection through the
@@ -21,7 +23,8 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 - `install.sh` at the repo root: builds the workspace and installs a standalone `mpi`
   binary under a prefix (default `~/.local`). The compiled binary resolves themes,
   export templates, docs, and native prebuilds from its own directory, so the binary
-  lives in `<prefix>/lib/mpi/` and `<prefix>/bin/mpi` is a wrapper that execs it.
+  lives in a versioned directory under `<prefix>/lib/mpi/` and `<prefix>/bin/mpi`
+  is a wrapper that execs it.
   `scripts/build-binaries.sh` stays the release-archive path; this covers single-machine
   installs.
 - Multi-tab agent sessions: several agents run side by side in one terminal, each tab
@@ -102,3 +105,13 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   rows can hide both slots.
 - `CustomEditor.onAction` handlers may return `false` to decline a key, which then reaches the
   editor. Existing handlers are unaffected; the Home bindings rely on it.
+
+### Fixed
+
+- `install.sh` prepares each runtime in a separate directory and activates it only after
+  compilation and all resource copies succeed. Failed installs leave the current version
+  usable; previous runtimes remain intact for running processes, including on NFS. Wrapper
+  paths and PATH instructions now quote shell characters literally.
+- The tab bar's wrapped rows indented past the first agent chip, so a second row started under
+  the second chip and left the first chip's column empty as if it were a continuation of the
+  pinned Home chrome. They now line up under the first agent chip.

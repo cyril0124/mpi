@@ -200,12 +200,6 @@ function hintWidth(kind: "left" | "right", count: number): number {
 	return kind === "left" ? 1 + visibleWidth(`+${count} ${ELLIPSIS} `) : visibleWidth(` ${ELLIPSIS} +${count}`);
 }
 
-/** Wrapped rows line up under the first agent chip, after the Home chip and its gutter. */
-function agentIndent(prefix: number, chips: readonly Chip[], width: number): number {
-	if (chips.length === 0) return Math.max(0, Math.min(prefix, width - 1));
-	return Math.max(0, Math.min(prefix + visibleWidth(chips[0]!.text) + 1, width - 1));
-}
-
 /** Whether the full Home label would take more of the row than the pinned budget allows. */
 function packedHomeNeedsAbbreviation(label: string, width: number): boolean {
 	return visibleWidth(label) / Math.max(1, width) > HOME_PIN_FULL_MAX_RATIO;
@@ -258,8 +252,7 @@ export class TabBar implements Component {
 		/** Pack the agent chips with the given leading Home chip; undefined when they do not fit. */
 		const packWithHome = (homeText: string | undefined): { rows: Chip[][]; prefix: number } | undefined => {
 			const prefix = homeText === undefined ? 0 : visibleWidth(homeText) + (chips.length > 0 ? 1 : 0);
-			const indent = agentIndent(prefix, chips, width);
-			const rows = packRows(chips, (rowIndex) => (rowIndex === 0 ? width - prefix : width - indent), maxRows);
+			const rows = packRows(chips, () => width - prefix, maxRows);
 			return rows ? { rows, prefix } : undefined;
 		};
 
@@ -271,7 +264,6 @@ export class TabBar implements Component {
 		}
 		const prefix =
 			packed?.prefix ?? (homeText === undefined ? 0 : visibleWidth(homeText) + (chips.length > 0 ? 1 : 0));
-		const indent = agentIndent(prefix, chips, width);
 
 		// Fast path: everything fits without hiding chips.
 		let rows = packed?.rows;
@@ -281,11 +273,15 @@ export class TabBar implements Component {
 		if (!rows) {
 			const activeIndex = chips.findIndex((chip) => chip.id === model.activeId);
 			const preferred = activeIndex >= 0 ? activeIndex : 0;
-			const candidate = this.findWindow(chips, preferred, width, indent, maxRows, prefix);
+			const candidate = this.findWindow(chips, preferred, width, maxRows, prefix);
 			rows = candidate?.rows;
 			hiddenLeft = candidate?.hiddenLeft ?? 0;
 			hiddenRight = candidate?.hiddenRight ?? 0;
 		}
+
+		// Wrapped rows indent to the column where the first agent chip starts: past
+		// the Home chip, its gutter, and any left-overflow hint.
+		const indent = Math.max(0, Math.min(prefix + hintWidth("left", hiddenLeft), width - 1));
 
 		if (!rows) {
 			// Nothing fits: keep the active chip alone, truncated if needed.
@@ -368,7 +364,6 @@ export class TabBar implements Component {
 		chips: readonly Chip[],
 		preferred: number,
 		width: number,
-		indent: number,
 		maxRows: number,
 		prefix = 0,
 	): { rows: Chip[][]; hiddenLeft: number; hiddenRight: number } | undefined {
@@ -379,18 +374,11 @@ export class TabBar implements Component {
 				const hiddenRight = chips.length - 1 - end;
 				const left = hintWidth("left", hiddenLeft);
 				const right = hintWidth("right", hiddenRight);
-				const rows = packRows(
-					chips.slice(start, end + 1),
-					(rowIndex) => {
-						// The left hint occupies the first row only; the right hint is
-						// reserved on every row so the last row always has room. The Home
-						// chip and its gutter cut into the first row's budget.
-						const firstRowLoss = prefix + (rowIndex === 0 ? left : 0);
-						const budget = Math.max(1, width - firstRowLoss - right);
-						return rowIndex === 0 ? budget : Math.min(budget, Math.max(1, width - indent - right));
-					},
-					maxRows,
-				);
+				// Home, its gutter, and the left hint occupy the first row, and the
+				// wrapped rows indent to that same column, so every row shares one
+				// budget. The right hint is reserved on every row so the last row fits.
+				const budget = Math.max(1, width - prefix - left - right);
+				const rows = packRows(chips.slice(start, end + 1), () => budget, maxRows);
 				if (!rows) continue;
 				const visible = end - start + 1;
 				if (
