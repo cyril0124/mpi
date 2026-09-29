@@ -96,10 +96,11 @@ export type ThemeBg =
 	| "customMessageBg"
 	| "toolPendingBg"
 	| "toolSuccessBg"
-	| "toolErrorBg";
+	| "toolErrorBg"
+	| "panelBg";
 
 type OptionalThemeColor = "scrollbarTrack" | "scrollbarThumb" | "thinkingMax" | "searchMatchText";
-type OptionalThemeBg = "searchMatchBg";
+type OptionalThemeBg = "searchMatchBg" | "panelBg";
 
 type ColorMode = "truecolor" | "256color";
 
@@ -272,6 +273,7 @@ function withThemeColorFallbacks(colors: ThemeJson["colors"]): ThemeJson["colors
 		thinkingMax: colors.thinkingMax ?? colors.thinkingXhigh,
 		searchMatchBg: colors.searchMatchBg ?? colors.selectedBg,
 		searchMatchText: colors.searchMatchText ?? colors.text,
+		panelBg: colors.panelBg ?? colors.toolPendingBg,
 	};
 }
 
@@ -314,6 +316,7 @@ export class Theme {
 		const backgrounds = {
 			...bgColors,
 			searchMatchBg: bgColors.searchMatchBg ?? bgColors.selectedBg,
+			panelBg: bgColors.panelBg ?? bgColors.toolPendingBg,
 		};
 		for (const [key, value] of Object.entries(backgrounds) as [ThemeBg, string | number][]) {
 			this.bgColors.set(key, bgAnsi(value, mode));
@@ -533,6 +536,7 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 	const bgColorKeys: Set<string> = new Set([
 		"selectedBg",
 		"searchMatchBg",
+		"panelBg",
 		"userMessageBg",
 		"customMessageBg",
 		"toolPendingBg",

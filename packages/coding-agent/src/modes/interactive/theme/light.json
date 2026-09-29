@@ -35,6 +35,7 @@
 		"scrollbarTrack": "lightGray",
 		"scrollbarThumb": "text",
 		"searchMatchBg": "selectedBg",
+		"panelBg": "toolPendingBg",
 		"searchMatchText": "text",
 		"userMessageBg": "userMsgBg",
 		"userMessageText": "text",

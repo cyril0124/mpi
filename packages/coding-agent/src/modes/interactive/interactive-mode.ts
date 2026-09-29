@@ -129,6 +129,14 @@ import { type AgentTab, TabManager, tabBusyPhrase, tabBusyReason } from "../../c
 import { isTabColorName, nextAvailableAgentTitle, TAB_COLOR_NAMES } from "../../core/mixcode/multi-tab/types.ts";
 import { deleteSessionFile } from "../../core/mixcode/session-delete.ts";
 import {
+	activeToast,
+	clearToast,
+	pushToast,
+	TOAST_DURATION_MS,
+	type ToastHost,
+	type ToastType,
+} from "../../core/mixcode/toast/toast.ts";
+import {
 	createVimTabState,
 	enterVimMode,
 	handleVimEnterArmKey,
@@ -207,6 +215,12 @@ import { type HomeAction, HomeView, type HomeViewModel } from "./components/mixc
 import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
 import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
 import { bindActiveTabShimmerRedraw } from "./components/mixcode/tab-shimmer.ts";
+import {
+	TOAST_MARGIN,
+	ToastCardComponent,
+	toastBoxWidth,
+	toastCardRows,
+} from "./components/mixcode/toast/toast-card.ts";
 import { WindowedTranscript } from "./components/mixcode/windowed-chat/windowed-transcript.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
@@ -510,6 +524,12 @@ export class InteractiveMode {
 	private readonly tabsWorkdir: string;
 	/** Vim-mode state used when no tab manager exists (single-session fallback). */
 	private fallbackVimState: VimTabState | undefined;
+	/** Toast slot used when no tab manager exists (single-session fallback). */
+	private fallbackToastHost: ToastHost | undefined;
+	private toastHandle: OverlayHandle | undefined;
+	private toastTimer: NodeJS.Timeout | undefined;
+	/** Bumped on every toast, so a replaced toast's timer cannot hide its successor. */
+	private toastGeneration = 0;
 	/** Most tabs reopened at startup; the remainder is reported, not restored. */
 	private static readonly RESTORE_TAB_LIMIT = 12;
 
@@ -2640,6 +2660,8 @@ export class InteractiveMode {
 		this.updateEditorBorderColor();
 		this.updateTerminalTitle();
 		this.activeTabIdForUi = tab.id;
+		// The incoming tab owns its own transient message, if it still has one.
+		this.syncToast();
 		this.ui.requestRender();
 		await this.ensureSessionBound();
 	}
@@ -2806,6 +2828,7 @@ export class InteractiveMode {
 		if (!manager) return;
 		if (manager.size <= 1) {
 			this.showWarning("Cannot close the last tab.");
+			this.notifyToast("warning", "Cannot close the last tab.");
 			return;
 		}
 		const closing = manager.getActive();
@@ -4351,6 +4374,79 @@ export class InteractiveMode {
 	}
 
 	// =========================================================================
+	// Toast notifications (transient typed messages)
+	// =========================================================================
+
+	/** Per-tab toast slot; falls back to a local slot without a tab manager. */
+	private toastHost(): ToastHost {
+		const activeTab = this.tabManager?.getActive();
+		if (activeTab) return activeTab;
+		this.fallbackToastHost ??= {};
+		return this.fallbackToastHost;
+	}
+
+	/** Record a typed message for the active tab and show it over the transcript. */
+	private notifyToast(type: ToastType, message: string): void {
+		pushToast(this.toastHost(), { type, message });
+		this.syncToast();
+	}
+
+	/**
+	 * Paint the active tab's live toast with the time it has left, and drop the
+	 * card when that tab has none. Runs on every push and every tab switch.
+	 */
+	private syncToast(): void {
+		const toast = activeToast(this.toastHost());
+		if (toast === undefined) {
+			this.hideToast();
+			return;
+		}
+		this.showToast(toast.type, toast.message, Math.max(0, TOAST_DURATION_MS - (Date.now() - toast.createdAt)));
+	}
+
+	/**
+	 * Paint a toast card in the top-right corner for `durationMs`, replacing any
+	 * card already on screen. A terminal too small for the card gets no card.
+	 */
+	private showToast(type: ToastType, message: string, durationMs: number): void {
+		this.hideToast();
+		const boxWidth = toastBoxWidth(type, message, this.ui.terminal.columns);
+		if (boxWidth === undefined) return;
+		const rows = toastCardRows(type, message, boxWidth);
+		const generation = ++this.toastGeneration;
+		this.toastHandle = this.ui.showOverlay(new ToastCardComponent(type, message), {
+			anchor: "top-right",
+			width: boxWidth,
+			// Right and top margins only: a narrow terminal can still hold the narrowest
+			// card flush against its left edge.
+			margin: { top: TOAST_MARGIN, right: TOAST_MARGIN, bottom: TOAST_MARGIN, left: 0 },
+			nonCapturing: true,
+			visible: (termWidth, termHeight) => termWidth >= boxWidth + TOAST_MARGIN && termHeight >= rows + TOAST_MARGIN,
+		});
+		const timer = setTimeout(() => {
+			if (generation !== this.toastGeneration) return;
+			// The card on screen belongs to this host: a tab switch re-ran syncToast,
+			// which replaced this timer.
+			clearToast(this.toastHost());
+			this.hideToast();
+			this.ui.requestRender();
+		}, durationMs);
+		timer.unref();
+		this.toastTimer = timer;
+		this.ui.requestRender();
+	}
+
+	/** Drop the card and its timer; the toast stays with the tab. */
+	private hideToast(): void {
+		if (this.toastTimer !== undefined) {
+			clearTimeout(this.toastTimer);
+			this.toastTimer = undefined;
+		}
+		this.toastHandle?.hide();
+		this.toastHandle = undefined;
+	}
+
+	// =========================================================================
 	// Vim mode (modal transcript navigation)
 	// =========================================================================
 
@@ -4518,10 +4614,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.editor.external", () => void this.handleOpenExternalEditor());
-		this.defaultEditor.onAction(
-			"app.message.copy",
-			() => void this.handleCopyCommand({ flashConfirmation: true, preferSelection: true }),
-		);
+		this.defaultEditor.onAction("app.message.copy", () => void this.handleCopyCommand({ preferSelection: true }));
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
 		this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
 		this.defaultEditor.onAction("app.session.new", () => this.handleClearCommand());
@@ -7419,9 +7512,11 @@ export class InteractiveMode {
 				}
 				try {
 					await copyToClipboard(text);
-					this.showStatus("Copied selected message to clipboard");
+					this.notifyToast("success", "Copied selected message to clipboard");
 				} catch (error) {
-					this.showError(error instanceof Error ? error.message : String(error));
+					const message = error instanceof Error ? error.message : String(error);
+					this.showError(message);
+					this.notifyToast("error", message);
 				}
 			};
 			return { component: selector, focus: selector };
@@ -8263,9 +8358,7 @@ export class InteractiveMode {
 		);
 	}
 
-	private async handleCopyCommand(
-		options: { flashConfirmation?: boolean; preferSelection?: boolean } = {},
-	): Promise<void> {
+	private async handleCopyCommand(options: { preferSelection?: boolean } = {}): Promise<void> {
 		if (
 			options.preferSelection &&
 			this.ui instanceof TuiAltScreen &&
@@ -8284,13 +8377,11 @@ export class InteractiveMode {
 
 		try {
 			await copyToClipboard(text);
-			if (options.flashConfirmation && this.ui instanceof TuiAltScreen) {
-				this.ui.flash("Copied!");
-			} else {
-				this.showStatus("Copied last agent message to clipboard");
-			}
+			this.notifyToast("success", "Copied last agent message to clipboard");
 		} catch (error) {
-			this.showError(error instanceof Error ? error.message : String(error));
+			const message = error instanceof Error ? error.message : String(error);
+			this.showError(message);
+			this.notifyToast("error", message);
 		}
 	}
 

@@ -38,6 +38,7 @@ const ThemeJsonSchema = Type.Object({
 		// Backgrounds & Content Text (11 required, 2 optional)
 		selectedBg: ColorValueSchema,
 		searchMatchBg: Type.Optional(ColorValueSchema),
+		panelBg: Type.Optional(ColorValueSchema),
 		searchMatchText: Type.Optional(ColorValueSchema),
 		userMessageBg: ColorValueSchema,
 		userMessageText: ColorValueSchema,

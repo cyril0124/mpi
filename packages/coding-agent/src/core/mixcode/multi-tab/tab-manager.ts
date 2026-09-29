@@ -16,6 +16,7 @@ import {
 } from "../../agent-session-runtime.ts";
 import { SessionManager } from "../../session-manager.ts";
 import { deleteSessionFile } from "../session-delete.ts";
+import type { ToastNotification } from "../toast/toast.ts";
 import { createVimTabState, transferVimMode, type VimTabState } from "../vim/vim-mode.ts";
 import { setTabStatus } from "./tab-state.ts";
 import { nextAvailableAgentTitle, TAB_COLOR_NAMES, type TabColorName, type TabStatus, uniquifyTitle } from "./types.ts";
@@ -37,6 +38,9 @@ export interface AgentTab {
 	draftInput: string;
 	/** Vim-mode modal state; at most one tab is active at a time. */
 	vim: VimTabState;
+	/** Transient toast shown over this tab's transcript; at most one at a time. */
+	toast?: ToastNotification;
+
 	readonly runtime: AgentSessionRuntime;
 	unsubscribe: () => void;
 }
@@ -364,6 +368,7 @@ export class TabManager {
 			unread: false,
 			draftInput: "",
 			vim: createVimTabState(),
+			toast: undefined,
 			runtime,
 			unsubscribe: () => {},
 		};
