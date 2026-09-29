@@ -83,4 +83,27 @@ describe("block hover", () => {
 		expect(hover.dispatch(mouse("press", 1, 1))).toBeUndefined();
 		expect(expanded).toBe(true);
 	});
+
+	it("keeps the gap row above the card out of the cue and out of the click", () => {
+		let clicks = 0;
+		const hover = new BlockHover((event) => {
+			if (event.type !== "click" || event.button !== "left") return undefined;
+			clicks += 1;
+			return { handled: true };
+		}, 1);
+
+		// The gap row answers no pointer, so nothing is cued and nothing toggles.
+		expect(hover.dispatch(mouse("move", 2, 0))).toMatchObject({ handled: true, render: false });
+		expect(hover.paint(["gap", "card"], 4)[0]).toBe("gap");
+		expect(hover.dispatch(mouse("click", 2, 0))).toBeUndefined();
+		expect(clicks).toBe(0);
+
+		// The card below it is the target, and the cue fills its rows only.
+		expect(hover.dispatch(mouse("move", 2, 1))).toMatchObject({ handled: true, render: true });
+		const painted = hover.paint(["gap", "card"], 4);
+		expect(painted[0]).toBe("gap");
+		expect(painted[1]).toContain("\x1b[48;2;58;58;74m");
+		expect(hover.dispatch(mouse("click", 2, 1))).toMatchObject({ handled: true });
+		expect(clicks).toBe(1);
+	});
 });

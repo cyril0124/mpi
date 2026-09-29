@@ -18,9 +18,16 @@ import { paintRowBackground } from "./pointer-hover.ts";
 export class BlockHover implements Component {
 	private hovered = false;
 	private readonly onClick: (event: TuiMouseEvent) => TuiMouseEventResult | undefined;
+	private readonly cardFirstRow: number;
 
-	constructor(onClick?: (event: TuiMouseEvent) => TuiMouseEventResult | undefined) {
+	/**
+	 * `cardFirstRow` is the block's first row that carries its own card: rows above it are
+	 * the blank gap a block may render to the message before it, which holds no card for the
+	 * cue to fill and no target for a click.
+	 */
+	constructor(onClick?: (event: TuiMouseEvent) => TuiMouseEventResult | undefined, cardFirstRow = 0) {
 		this.onClick = onClick ?? (() => undefined);
+		this.cardFirstRow = Math.max(0, cardFirstRow);
 	}
 
 	/** True while the pointer is over the block. */
@@ -34,8 +41,9 @@ export class BlockHover implements Component {
 	 * renderer reads "no component answered" as "the pointer left".
 	 */
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (event.type !== "move" || event.button !== "none") return this.onClick(event);
-		const inside = event.x >= 0 && event.y >= 0 && event.x < event.width && event.y < event.height;
+		const onCard = event.y >= this.cardFirstRow;
+		if (event.type !== "move" || event.button !== "none") return onCard ? this.onClick(event) : undefined;
+		const inside = onCard && event.x >= 0 && event.x < event.width && event.y < event.height;
 		const changed = inside !== this.hovered;
 		this.hovered = inside;
 		return { handled: true, render: changed };
@@ -46,10 +54,10 @@ export class BlockHover implements Component {
 		return dispatchMouseEvent(this, event);
 	}
 
-	/** Paint a block's freshly rendered lines while the pointer is over it. */
+	/** Paint a block's freshly rendered card while the pointer is over it. */
 	paint(lines: string[], width: number): string[] {
 		if (!this.hovered) return lines;
-		return lines.map((line) => paintRowBackground(line, width));
+		return lines.map((line, row) => (row < this.cardFirstRow ? line : paintRowBackground(line, width)));
 	}
 
 	/** Never rendered: the block that owns this state paints the cue itself. */

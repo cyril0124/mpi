@@ -40,6 +40,9 @@ import { BlockHover } from "./mixcode/hover/hover-block.ts";
 
 const FALLBACK_PREVIEW_LINES = 10;
 
+/** Blank rows a block paints above its card, so consecutive messages do not touch. */
+const CARD_GAP_ROWS = 1;
+
 export interface ToolExecutionOptions {
 	showImages?: boolean;
 	imageWidthCells?: number;
@@ -48,7 +51,8 @@ export interface ToolExecutionOptions {
 export class ToolExecutionComponent extends Container {
 	private contentBox: Box;
 	private contentText: Text;
-	private readonly hover = new BlockHover((event) => this.handleBlockClick(event));
+	// The card starts below the gap row, so the cue and the click skip it.
+	private readonly hover = new BlockHover((event) => this.handleBlockClick(event), CARD_GAP_ROWS);
 	private selfRenderContainer: Container;
 	private selfRenderHeight = 0;
 	private callRendererComponent?: Component;
@@ -98,7 +102,7 @@ export class ToolExecutionComponent extends Container {
 		this.ui = ui;
 		this.cwd = cwd;
 
-		this.addChild(new Spacer(1));
+		this.addChild(new Spacer(CARD_GAP_ROWS));
 
 		// Always create all shell variants. contentBox is used for default renderer-based composition.
 		// selfRenderContainer is used when the tool renders its own framing.

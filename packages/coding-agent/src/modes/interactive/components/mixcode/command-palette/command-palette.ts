@@ -37,8 +37,8 @@ const PALETTE_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 /** Rendered lines above the first command row: the top border, search row and separator. */
 const PALETTE_LINES_ABOVE_ROWS = 3;
 
-/** Frame column the entry rows start in: the left border plus its one-cell padding. */
-const PALETTE_ROWS_LEFT = 2;
+/** Column of an entry row's first cell inside the left border. */
+const PALETTE_ROWS_LEFT = 1;
 
 /**
  * Rows the panel spends on chrome, leaving `rowBudget - PALETTE_FRAME_ROWS` for list
@@ -129,7 +129,7 @@ export class CommandPaletteComponent implements Component {
 	private selectList: SelectList;
 	/** Rows painted by the last render, which is what a pointer row maps into. */
 	private lastRowCount = 0;
-	/** Entry names in the filtered order, so a reused row cannot inherit hover. */
+	/** Entry names in the order the list draws them, so a reused row cannot inherit hover. */
 	private visibleNames: string[] = [];
 	private readonly hover = new PointerHover();
 	private query = "";
@@ -154,6 +154,8 @@ export class CommandPaletteComponent implements Component {
 			label: commandLabel(entry.name),
 			description: entry.description,
 		}));
+		// The rows a pointer maps into, in the order the list draws them.
+		this.visibleNames = entries.map((entry) => entry.name);
 		const list = new SelectList(
 			items,
 			Math.min(Math.max(items.length, 1), this.maxVisibleRows),
@@ -170,7 +172,6 @@ export class CommandPaletteComponent implements Component {
 
 	private applyFilter(query: string): void {
 		const filtered = query ? fuzzyFilter(this.entries, query, (entry) => commandLabel(entry.name)) : this.entries;
-		this.visibleNames = filtered.map((entry) => entry.name);
 		this.selectList = this.buildSelectList(filtered);
 	}
 
@@ -182,13 +183,19 @@ export class CommandPaletteComponent implements Component {
 		return JSON.stringify([this.query, this.selectList.getSelectedItem()?.value, this.visibleNames]);
 	}
 
-	/** Entry rows of the frame just rendered; the panel frame and hint have no target. */
-	private hoverTargets(contentWidth: number): HoverTarget[] {
-		return Array.from({ length: this.lastRowCount }, (_, index) => ({
+	/**
+	 * Entry rows of the frame just rendered, spanning every cell between the panel borders.
+	 * The list appends a scroll indicator below the entries when they do not all fit, and
+	 * that row is not an entry: it answers no pointer.
+	 */
+	private hoverTargets(width: number): HoverTarget[] {
+		const entries = Math.min(this.visibleNames.length, this.maxVisibleRows);
+		const rowWidth = Math.max(1, width - 2);
+		return Array.from({ length: entries }, (_, index) => ({
 			id: String(index),
 			x: PALETTE_ROWS_LEFT,
 			y: PALETTE_LINES_ABOVE_ROWS + index,
-			width: contentWidth,
+			width: rowWidth,
 		}));
 	}
 
@@ -216,7 +223,7 @@ export class CommandPaletteComponent implements Component {
 		);
 		// The hover cue goes on after the frame is built, so it covers the row cells
 		// and not the panel borders.
-		this.hover.layout(this.hoverTargets(contentWidth), this.hoverRevision());
+		this.hover.layout(this.hoverTargets(width), this.hoverRevision());
 		return this.hover.paint(lines, width);
 	}
 

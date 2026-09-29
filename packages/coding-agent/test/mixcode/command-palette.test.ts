@@ -1,4 +1,11 @@
-import { fuzzyFilter, setKeybindings, stripTerminalSequences, type TUI, TuiMainScreen } from "@earendil-works/pi-tui";
+import {
+	fuzzyFilter,
+	setKeybindings,
+	sliceByColumn,
+	stripTerminalSequences,
+	type TUI,
+	TuiMainScreen,
+} from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defaultEditorTheme } from "../../../tui/test/test-themes.ts";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
@@ -227,6 +234,48 @@ describe("command palette", () => {
 		palette.handleMouse({ ...mouse("press"), x: 5, y: 4 });
 		palette.handleMouse({ ...mouse("click"), x: 5, y: 4 });
 		expect(runs).toEqual(["new"]);
+	});
+
+	it("cues a row across the cells between the borders and leaves the scroll indicator alone", () => {
+		// More commands than fit: the list paints its entries and then a scroll indicator
+		// row, which is not an entry and answers no pointer.
+		const many: CommandPaletteEntry[] = Array.from({ length: 12 }, (_, index) => ({
+			name: `cmd${String(index).padStart(2, "0")}`,
+			description: `command ${index}`,
+		}));
+		// One visible row: the frame is 7 rows and the budget 8.
+		const palette = new CommandPaletteComponent(
+			many,
+			8,
+			() => {},
+			() => {},
+		);
+		const cue = "\x1b[4m";
+		const painted = palette.render(40);
+		const entryRow = 3;
+		const indicatorRow = entryRow + 1;
+		expect(plain([painted[indicatorRow]!])).toContain("(1/12)");
+
+		// The entry is a target before any query is typed, and the cue covers the row's
+		// cells from the first to the last cell inside the borders.
+		expect(palette.handleMouse({ ...mouse("move"), x: 1, y: entryRow })).toEqual({
+			handled: true,
+			render: true,
+		});
+		const hovered = palette.render(40);
+		const row = hovered[entryRow]!;
+		expect(row).toContain(cue);
+		expect(sliceByColumn(row, 1, 38, true)).toContain(cue);
+		expect(sliceByColumn(row, 0, 1, true)).not.toContain(cue);
+
+		// The indicator row is not a target, and the cue above survives the move.
+		expect(palette.handleMouse({ ...mouse("move"), x: 1, y: indicatorRow })).toEqual({
+			handled: true,
+			render: true,
+		});
+		const afterIndicator = palette.render(40);
+		expect(afterIndicator[indicatorRow]).not.toContain(cue);
+		expect(afterIndicator[entryRow]).not.toContain(cue);
 	});
 
 	it("paints the characters the query matched", () => {
