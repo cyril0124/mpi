@@ -36,6 +36,8 @@ MixCode Home 是本 fork 的起始页面：一页列出所有已打开的 agent 
 
 每张卡片占三行加一个空行：标题与状态标签、`模型 · 上下文 · 最近时间`、以及最新的一条 assistant（其次 system、user）文本。选中的卡片带选中背景。列表会围绕选中项开窗，并在隐藏的两侧标记 `↑ older above` / `↓ newer below`。
 
+Home 上不画 footer：工作目录、用量与模型行、扩展状态以及编辑器上下的扩展 widget 都属于某个 agent，因此工作指示器同样隐藏；附着到 agent 后全部恢复。
+
 当表格可用宽度至少 114 列、可用高度至少 18 行时（约等于 120 列的终端，且高度已扣掉 masthead 与标签栏）页面分栏：左侧列表，右侧所选 agent 的对话。窄于此时对话收成列表下方的预览面板；视口极矮时所有行都留给列表。
 
 ## 键位
@@ -52,7 +54,7 @@ MixCode Home 是本 fork 的起始页面：一页列出所有已打开的 agent 
 
 ## 在 Home 上发送
 
-输入框是临时的：进入 Home 会清空它，其中的文本也永远不会变成标签页草稿。`enter` 发普通文本时直接提交到所选标签页的会话，Home 保持焦点，因此不用附着就能给某个 agent 派活；发给正在工作的 agent 会作为 steer 处理。`/命令` 与 `!shell` 作用于当前绑定的会话，所以会先附着到所选标签页，再走正常分发。`MIXCODE_DISPLAY_WORKDIR` 会替换 masthead 与每张卡片上的工作目录，`MIXCODE_DISPLAY_MODEL` 替换模型标签，便于录制时隐藏真实路径与提供方；两者默认不设置。发送不会清除目标标签页的未读标记，只有附着才会。
+输入框是临时的：进入 Home 会清空它，其中的文本也永远不会变成标签页草稿。为空时它会写出这条消息将发给谁（`Send to <agent>...  @ files  / commands`，名册为空时为 `Select an agent...`），并且 Home 上的输入框使用中性的 thinking 边框色，而不是当前绑定会话的颜色。`enter` 发普通文本时直接提交到所选标签页的会话，Home 保持焦点，因此不用附着就能给某个 agent 派活；发给正在工作的 agent 会作为 steer 处理。`/命令` 与 `!shell` 作用于当前绑定的会话，所以会先附着到所选标签页，再走正常分发。`MIXCODE_DISPLAY_WORKDIR` 会替换 masthead 与每张卡片上的工作目录，`MIXCODE_DISPLAY_MODEL` 替换模型标签，便于录制时隐藏真实路径与提供方；两者默认不设置。发送不会清除目标标签页的未读标记，只有附着才会。
 
 ## 动作按钮
 
@@ -63,9 +65,8 @@ MixCode Home 是本 fork 的起始页面：一页列出所有已打开的 agent 
 凡是 mixcode-pi 的 Home 依赖、而本 fork 没有的机制，本 fork 都保留自己的做法：
 
 - 没有 toast 浮层、标题 shimmer、包更新提示、加载阶段状态标签；
-- 没有 vim/zen 模式，因此没有 Home 与 agent 之间的模式交接；
-- 输入框没有 placeholder；
-- Home 上仍然显示 footer；
+- 没有 zen 模式；vim 模式是"每个标签页的对话区"状态，Home 既不进入它也不传递它；
+- 只有 Home 的空输入框会显示提示；agent 标签页的空输入框保持空白（mixcode-pi 的输入框那里也会显示提示）；
 - masthead 的 `N input` 计数永远不会出现，因为没有东西跟踪"等待用户输入"的标签页；
 - 启动落在恢复出来的标签页而不是 Home，以免覆盖本 fork 的标签页恢复；
 - 扩展的终端输入处理器优先于 Home 的按键，且 Home 上的文件补全使用当前绑定标签页的工作目录，而不是所选标签页的。

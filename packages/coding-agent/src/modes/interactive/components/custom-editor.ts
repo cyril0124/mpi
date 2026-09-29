@@ -1,4 +1,11 @@
-import { Editor, type EditorOptions, type EditorTheme, type TUI, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	Editor,
+	type EditorOptions,
+	type EditorTheme,
+	type TUI,
+	truncateToWidth,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 import type { AppKeybinding, KeybindingsManager } from "../../../core/keybindings.ts";
 import type { StatusIndicator } from "./status-indicator.ts";
 
@@ -34,6 +41,11 @@ export class CustomEditor extends Editor {
 	/** Handler for extension-registered shortcuts. Returns true if handled. */
 	public onExtensionShortcut?: (data: string) => boolean;
 	/**
+	 * Hint drawn after the caret while the composer is empty, already styled by
+	 * the caller. Returning undefined, or a non-empty composer, draws nothing.
+	 */
+	public getPlaceholder?: () => string | undefined;
+	/**
 	 * Handler for the vim-mode modal surface. Runs before every other binding
 	 * while vim mode is active and returns true when the key was consumed.
 	 */
@@ -52,6 +64,21 @@ export class CustomEditor extends Editor {
 
 	setWorkingStatusIndicator(indicator: StatusIndicator | undefined): void {
 		this.workingStatusIndicator = indicator;
+	}
+
+	override render(width: number): string[] {
+		const lines = super.render(width);
+		const placeholder = this.getText().length === 0 ? this.getPlaceholder?.() : undefined;
+		// Line 0 is the top border and the last one is the bottom border or the
+		// autocomplete list, so the caret always sits on line 1.
+		const bodyLine = lines[1];
+		if (!placeholder || bodyLine === undefined || width <= 0) return lines;
+		const cursorEnd = bodyLine.trimEnd();
+		const available = width - visibleWidth(cursorEnd);
+		if (available <= 0) return lines;
+		const hint = truncateToWidth(placeholder, available, "");
+		lines[1] = `${cursorEnd}${hint}${" ".repeat(Math.max(0, available - visibleWidth(hint)))}`;
+		return lines;
 	}
 
 	protected override renderTopBorder(width: number, hiddenLineCount: number): string {

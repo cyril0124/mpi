@@ -21,7 +21,7 @@ commit that causes it.
 | MixCode Home | no such surface; the transcript always shows the active session | a `home` pseudo-tab lists every open agent with a conversation preview | [MixCode Home](home.md) |
 | `left`/`right`/`up`/`down`/`enter`/`ctrl+f` | editor cursor, prompt history, submit | on Home they select, attach, send, and filter the roster; on agent tabs the editor keeps them | [MixCode Home](home.md) |
 | App-action keybinding handlers | a handler that matches consumes the key | a handler may return `false` to decline it; the raw key data is passed in | the Home bindings must not take `up`/`down`/`left`/`right`/`enter` from the composer, and `enter` also matches a bare newline (`ctrl+j`) |
-| Footer on Home | n/a (no Home surface) | the footer stays visible and keeps showing the bound session's model and context | the footer here is per-runtime chrome, not per-surface, so hiding it would need its own design |
+| Empty composer | draws nothing | on Home it names the target agent and frames the composer in the neutral thinking colour | the roster makes the target explicit, and Home has no thinking level of its own |
 
 ## Upstream pages and source text that are now stale
 

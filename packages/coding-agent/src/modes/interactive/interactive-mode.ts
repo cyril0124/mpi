@@ -476,6 +476,10 @@ export class InteractiveMode {
 	private readonly homeSelection = createHomeSelection();
 	/** Set while Home activation sits in the tab-switch queue, so a repeat cannot double-run it. */
 	private homeActivationQueued = false;
+	/** Footer children parked while Home hides that per-agent chrome. */
+	private homeParkedFooter: Component[] | undefined;
+	/** Status-area children parked while Home hides them. */
+	private homeParkedStatus: Component[] | undefined;
 	private homeView: HomeView | undefined;
 	/** Per-tab mapped transcript lines for the Home previews, keyed by tab id. */
 	private readonly homeMessageCache = new Map<string, HomeSnapshot>();
@@ -728,6 +732,7 @@ export class InteractiveMode {
 			autocompleteMaxVisible,
 			embedWorkingStatus: true,
 		});
+		this.defaultEditor.getPlaceholder = () => this.composerPlaceholder();
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
@@ -2223,6 +2228,10 @@ export class InteractiveMode {
 			clampHomeSelectedTabIndex(this.homeSelection, manager.list());
 			this.homeSelection.active = true;
 			this.setEditorText("");
+			this.updateEditorBorderColor();
+			this.parkFooterForHome();
+			this.hideStatusForHome();
+			this.renderWidgets();
 			this.documentContainer.clear();
 			if (this.homeView) this.documentContainer.addChild(this.homeView);
 			// The transcript's blocks are a different set now; drop the windowed height table.
@@ -2239,12 +2248,77 @@ export class InteractiveMode {
 		this.homeSelection.active = false;
 		this.homeView?.resetCapture();
 		this.setEditorText("");
+		this.updateEditorBorderColor();
+		this.restoreFooterAfterHome();
+		this.renderWidgets();
+		this.restoreStatusAfterHome();
 		this.documentContainer.clear();
 		this.documentContainer.addChild(this.headerContainer);
 		this.documentContainer.addChild(this.loadedResourcesContainer);
 		this.documentContainer.addChild(this.chatContainer);
 		// Back to the agent transcript: the windowed height table describes Home now.
 		this.windowedTranscript?.invalidate();
+	}
+
+	/** Home shows no footer: cwd, usage, and extension statuses are per-agent chrome. */
+	private parkFooterForHome(replace = false): void {
+		if (this.homeParkedFooter && !replace) return;
+		this.homeParkedFooter = [...this.footerContainer.children];
+		this.footerContainer.clear();
+	}
+
+	/**
+	 * Home paints no working chrome. The indicator stays tracked and the area's
+	 * other rows are parked, so the way back restores the same height.
+	 */
+	private hideStatusForHome(): void {
+		if (this.homeParkedStatus) return;
+		this.homeParkedStatus = [...this.statusContainer.children];
+		this.statusContainer.clear();
+		this.setEditorWorkingStatusIndicator(undefined);
+	}
+
+	/** Show the tracked indicator again, or put the parked rows back. */
+	private restoreStatusAfterHome(): void {
+		const parked = this.homeParkedStatus ?? [];
+		this.homeParkedStatus = undefined;
+		this.statusContainer.clear();
+		const indicator = this.activeStatusIndicator;
+		if (!indicator) {
+			for (const child of parked) this.statusContainer.addChild(child);
+			return;
+		}
+		if (this.setEditorWorkingStatusIndicator(indicator)) {
+			this.activeWorkingIndicatorEmbedded = true;
+			return;
+		}
+		this.activeWorkingIndicatorEmbedded = false;
+		this.statusContainer.addChild(indicator);
+	}
+
+	/** Put the footer back, whichever children were there (built-in or extension). */
+	private restoreFooterAfterHome(): void {
+		const parked = this.homeParkedFooter;
+		if (!parked) return;
+		this.homeParkedFooter = undefined;
+		// A tab switch restores its own footer through attachTabUi; only an empty
+		// container is this call's to refill.
+		if (this.footerContainer.children.length > 0) return;
+		for (const child of parked) this.footerContainer.addChild(child);
+	}
+
+	/**
+	 * Hint for the empty composer: on Home it names the agent the next message
+	 * goes to, the way the roster makes the target explicit.
+	 */
+	private composerPlaceholder(): string | undefined {
+		if (!this.homeSelection.active) return undefined;
+		const tabs = this.tabManager?.list();
+		const selected = tabs ? homeSelectedTab(this.homeSelection, tabs) : undefined;
+		return theme.fg(
+			"dim",
+			`${selected ? `Send to ${selected.title}...` : "Select an agent..."}  @ files  / commands`,
+		);
 	}
 
 	/** Editor text, whichever editor component the current tab installed. */
@@ -3475,6 +3549,8 @@ export class InteractiveMode {
 		this.activeWorkingIndicatorEmbedded = false;
 		this.statusContainer.clear();
 		this.setEditorWorkingStatusIndicator(undefined);
+		// Home paints no working chrome; the indicator waits for the way back.
+		if (this.homeSelection.active) return;
 		if (this.setEditorWorkingStatusIndicator(indicator)) {
 			this.activeWorkingIndicatorEmbedded = true;
 			return;
@@ -3496,6 +3572,7 @@ export class InteractiveMode {
 		if (
 			clearedIndicator &&
 			!clearedIndicatorWasEmbedded &&
+			!this.homeSelection.active &&
 			this.options.tuiMode === "regular" &&
 			this.ui.getClearOnShrink()
 		) {
@@ -3651,6 +3728,14 @@ export class InteractiveMode {
 	 */
 	private renderWidgets(): void {
 		if (!this.widgetContainerAbove || !this.widgetContainerBelow) return;
+		// Extension widgets are per-agent chrome and stay off the Home page. Their
+		// registration is untouched, so leaving Home paints them again.
+		if (this.homeSelection.active) {
+			this.widgetContainerAbove.clear();
+			this.widgetContainerBelow.clear();
+			this.ui.requestRender();
+			return;
+		}
 		this.renderWidgetContainer(this.widgetContainerAbove, this.extensionWidgetsAbove, true, true);
 		this.renderWidgetContainer(this.widgetContainerBelow, this.extensionWidgetsBelow, false, false);
 		this.ui.requestRender();
@@ -3703,6 +3788,9 @@ export class InteractiveMode {
 			this.customFooter = undefined;
 			this.footerContainer.addChild(this.footer);
 		}
+
+		// Home shows no footer: park whatever was just installed.
+		if (this.homeSelection.active) this.parkFooterForHome(true);
 
 		this.ui.requestRender();
 	}
@@ -4076,6 +4164,9 @@ export class InteractiveMode {
 				if (!customEditor.onExtensionShortcut) {
 					customEditor.onExtensionShortcut = (data: string) => this.defaultEditor.onExtensionShortcut?.(data);
 				}
+				if (!customEditor.getPlaceholder) {
+					customEditor.getPlaceholder = () => this.defaultEditor.getPlaceholder?.();
+				}
 				if (!customEditor.onVimKey) {
 					customEditor.onVimKey = (data: string) => this.defaultEditor.onVimKey?.(data) ?? false;
 				}
@@ -4096,7 +4187,8 @@ export class InteractiveMode {
 		}
 
 		this.editorContainer.addChild(this.editor as Component);
-		if (this.activeStatusIndicator) {
+		// Home paints no working chrome; restoreStatusAfterHome repaints on leave.
+		if (this.activeStatusIndicator && !this.homeSelection.active) {
 			this.statusContainer.clear();
 			this.activeWorkingIndicatorEmbedded = this.setEditorWorkingStatusIndicator(this.activeStatusIndicator);
 			if (!this.activeWorkingIndicatorEmbedded) {
@@ -5887,6 +5979,13 @@ export class InteractiveMode {
 	}
 
 	private updateEditorBorderColor(): void {
+		if (this.homeSelection.active) {
+			// Home is not an agent: frame the composer with the neutral thinking colour.
+			this.editor.borderColor = theme.getThinkingBorderColor("off");
+			this.activeStatusIndicator?.invalidate();
+			this.ui.requestRender();
+			return;
+		}
 		if (this.vimTabState().active) {
 			// Vim mode is a modal transcript surface; frame the locked editor distinctly.
 			this.editor.borderColor = (str: string) => theme.fg("borderAccent", str);

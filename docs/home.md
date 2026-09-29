@@ -40,6 +40,10 @@ the newest assistant (or system, or user) text. The selected card carries the se
 background. The roster windows around the selection and marks the hidden sides with
 `↑ older above` / `↓ newer below`.
 
+Home paints no footer: the working directory, the usage and model line, extension statuses and the
+extension widgets are per-agent chrome, so it also hides the working indicator. Everything comes back
+when an agent is attached.
+
 When the table body has at least 114 columns and 18 rows to work with (roughly a 120-column
 terminal, with the masthead and tab bar already taken out of the height) the page splits: roster
 on the left, the selected agent's conversation on the right. Below that the conversation
@@ -63,7 +67,10 @@ popup keeps the keys. `ctrl+j` inserts a newline in the composer instead of send
 
 ## Sending from Home
 
-The composer is ephemeral: entering Home clears it, and the text never becomes a tab draft.
+The composer is ephemeral: entering Home clears it, and the text never becomes a tab draft. While it
+is empty it names the agent the next message goes to (`Send to <agent>...  @ files  / commands`, or
+`Select an agent...` with an empty roster), and Home frames the composer in the neutral thinking colour
+rather than the bound session's.
 `enter` with plain text submits to the selected tab's session while Home stays focused, so an
 agent can be given work without attaching to it, and a message to an agent that is already
 working is taken as steering. A `/command` or a `!shell` line acts on the bound session, so it
@@ -85,9 +92,9 @@ dialog resets the capture. Both commands can also be typed into the composer.
 Where mixcode-pi's Home page relies on machinery this fork does not have, the fork keeps its own:
 
 - no toast overlay, title shimmer, package-update notice, or loading-phase status chip;
-- no vim/zen mode, so no mode hand-off between Home and an agent;
-- the composer has no placeholder text;
-- the footer stays visible on Home;
+- no zen mode; vim mode is a per-tab transcript surface, and Home neither enters it nor hands it on;
+- only the Home composer draws a hint while empty; an agent tab's composer stays blank (mixcode-pi's
+  composer draws one there too);
 - the masthead's `N input` counter never appears, because nothing tracks a tab waiting on the user;
 - startup lands on the restored tab rather than Home, so the fork's tab-layout restore is not
   overridden;

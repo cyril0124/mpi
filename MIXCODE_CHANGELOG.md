@@ -69,6 +69,12 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   `app.home.send`, `app.home.returnHome`, `app.home.toggleNonIdle` (defaults `up`, `down`,
   `right`, `enter`, `left`, `ctrl+f`). Each declines the key whenever Home is not the active
   surface, so the composer keeps them on agent tabs.
+- MixCode Home hides the footer, the working indicator and the extension widgets while it is shown:
+  the working directory, the usage and model line, the statuses and those widgets are per-agent
+  chrome.
+- MixCode Home names the target of the next message in the empty composer
+  (`Send to <agent>...  @ files  / commands`, or `Select an agent...` with an empty roster) and frames
+  the composer in the neutral thinking colour, since Home has no agent of its own.
 - `MIXCODE_DISPLAY_WORKDIR` and `MIXCODE_DISPLAY_MODEL` mask the workdir and model shown on
   MixCode Home, so a recording can hide the real paths and provider.
 - Response model mismatch notice: when a provider answers with a model other than the one
