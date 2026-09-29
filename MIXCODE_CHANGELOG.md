@@ -199,6 +199,11 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Fixed
 
+- Vim mode no longer survives a switch to MixCode Home. Tabbing from a tab in vim mode onto Home
+  left the modal surface active over a page that is neither a tab nor a transcript: the composer
+  swallowed every key, so no message could be typed for the roster's selected agent. Home now leaves
+  vim mode, which also stops the input card from claiming `[VIM]` there. See
+  [Vim Mode](docs/vim-mode.md).
 - The copy confirmation counted UTF-16 code units, so an emoji or a combining sequence was
   reported as two or more characters. It counts grapheme clusters now, the unit the terminal
   paints as one character.

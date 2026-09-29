@@ -42,6 +42,7 @@ type VimWiringContext = {
 	vimTabState: () => VimTabState;
 	enterActiveTabVimMode: () => void;
 	leaveVimModeIfUnavailable: () => void;
+	leaveVimMode: () => void;
 	handleVimKeyInput: (data: string) => boolean;
 };
 
@@ -53,6 +54,7 @@ type VimWiringPrototype = {
 	viewportTui(this: VimWiringContext): TuiAltScreen | undefined;
 	enterActiveTabVimMode(this: VimWiringContext): void;
 	leaveVimModeIfUnavailable(this: VimWiringContext): void;
+	leaveVimMode(this: VimWiringContext): void;
 	handleVimKeyInput(this: VimWiringContext, data: string): boolean;
 };
 
@@ -104,6 +106,7 @@ function makeWiringContext(options: {
 		vimTabState: () => proto.vimTabState.call(context),
 		enterActiveTabVimMode: () => proto.enterActiveTabVimMode.call(context),
 		leaveVimModeIfUnavailable: () => proto.leaveVimModeIfUnavailable.call(context),
+		leaveVimMode: () => proto.leaveVimMode.call(context),
 		handleVimKeyInput: (data) => proto.handleVimKeyInput.call(context, data),
 	};
 	return context;

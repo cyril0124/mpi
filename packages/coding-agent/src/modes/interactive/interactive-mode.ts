@@ -2358,6 +2358,9 @@ export class InteractiveMode {
 			// Entering Home from an agent the filter hides must still select a visible row.
 			clampHomeSelectedTabIndex(this.homeSelection, manager.list());
 			this.homeSelection.active = true;
+			// Vim is a modal surface over an agent transcript; Home is a different
+			// surface, so the composer must not stay locked behind it.
+			this.leaveVimMode();
 			this.setEditorText("");
 			this.updateEditorBorderColor();
 			this.parkFooterForHome();
@@ -4806,11 +4809,16 @@ export class InteractiveMode {
 	 * surface cannot survive a mode switch back to regular rendering.
 	 */
 	private leaveVimModeIfUnavailable(): void {
+		if (this.viewportTui() !== undefined) return;
+		this.leaveVimMode();
+	}
+
+	/** Leave the modal transcript surface, if this tab is on it. */
+	private leaveVimMode(): void {
 		const state = this.vimTabState();
-		if (state.active && this.viewportTui() === undefined) {
-			resetVimTabState(state);
-			this.refreshVimChrome();
-		}
+		if (!state.active) return;
+		resetVimTabState(state);
+		this.refreshVimChrome();
 	}
 
 	// =========================================================================

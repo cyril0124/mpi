@@ -56,6 +56,9 @@ exit.
 Vim mode is per tab and follows focus: switching tabs while vim mode is on hands the modal state to
 the tab being shown and clears it on the tab being left. At most one tab is in vim mode.
 
+MixCode Home is not a tab and not a transcript, so entering it leaves vim mode. The composer there
+belongs to the roster's selection, and leaving the modal surface on would swallow its keys.
+
 ## Feedback
 
 The arm prompt, jumps and refusals appear as a transient flash line in the transcript. A message that is not
