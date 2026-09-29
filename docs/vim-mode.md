@@ -17,11 +17,12 @@ regular in `/settings` → `tuiMode`, or set `"tuiMode": "regular"` in the setti
 | Entry | How |
 | --- | --- |
 | Command | `/vim` |
-| Keyboard | With an empty editor, nothing streaming or compacting, and no queued message: `ctrl+u`, then `u` or `ctrl+u` within one second |
+| Keyboard | With an empty editor and no queued message (the session may be working): `ctrl+u`, then `u` or `ctrl+u` within one second |
 | Exit | `q` |
 
-The keyboard entry arms a one-second window; any other key cancels it. Arming needs an empty editor, an idle
-session, and no queued message; otherwise `ctrl+u` keeps its normal delete-to-line-start binding.
+The keyboard entry arms a one-second window; any other key cancels it. Arming needs an empty editor and no
+queued message; the session may be working, which is when reading the arriving output matters most. Otherwise
+`ctrl+u` is left to its other bindings (with a queued message it edits that queue).
 
 While vim mode is on the editor is locked: it renders with the accent frame, ignores typing, and
 refuses to submit. Extension widgets above and below the editor are not rendered, so their rows go

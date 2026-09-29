@@ -5044,15 +5044,15 @@ export class InteractiveMode {
 		// they cannot reach the editor. Tab/tool/thinking actions pass through.
 		this.defaultEditor.onVimKey = (data) => this.handleVimKeyInput(data);
 		// Empty-editor `ctrl+u` arms vim entry; `u` or another `ctrl+u` confirms it.
-		// With queued messages ctrl+u edits a queue instead (the dequeue keybinding),
-		// so the vim arm declines and the key falls through to that action.
+		// A working session arms too, since the modal surface exists to read the
+		// arriving output. A queued message is the one thing that blocks it: `ctrl+u`
+		// edits that queue then (the dequeue keybinding), so the arm declines and the
+		// key falls through.
 		this.defaultEditor.onVimEnterArmKey = (data) => {
 			const state = this.vimTabState();
 			if (state.active) return false;
 			const canArm =
 				this.editor.getText().length === 0 &&
-				!this.session.isStreaming &&
-				!this.session.isCompacting &&
 				this.compactionQueuedMessages.length === 0 &&
 				!this.hasQueuedMessages();
 			const result = handleVimEnterArmKey(state, data, this.createVimHost(), canArm, Date.now());

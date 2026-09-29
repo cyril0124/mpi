@@ -251,6 +251,10 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Fixed
 
+- Vim mode could only be entered from an idle session: an empty-editor `ctrl+u` declined while the agent was
+  streaming or compacting, so the key fell through to its non-vim handler and the confirming `u` was typed into
+  the composer. Entry now needs only an empty composer and no queued message, so the modal reading surface can be
+  opened while output is arriving, which is when it is most useful. See [Vim Mode](docs/vim-mode.md).
 - Extensions loaded under `run.sh` (bun executing the built dist) resolved their
   `@earendil-works/*` imports through ambient `node_modules` (e.g. symlinks under
   `~/.pi/agent/node_modules` pointing into another checkout) instead of the running
