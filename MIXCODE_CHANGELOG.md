@@ -33,6 +33,10 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 - A tab bar above the editor showing each tab's title, one of eight named colors, and a
   live status (`idle`, `running`, `thinking`, `error`, `done`), so a tab's state is visible
   without switching to it.
+- A shimmer wave on the focused tab's title, so the focused chip is obvious without a second
+  color cue: the wave sweeps to the right edge and back over 2 s, rests for 1 s, and eases
+  into each turnaround. A colored chip inverts the lit cells instead, because theme
+  foregrounds have no contrast over a chip color.
 - Open tabs and named workspace layouts persist per workdir as `open_tabs.json` and
   `workspaces.json` in the agent state directory, so a restart reopens the same tabs.
 - Tab slash commands: `/new-session`, `/close-session`, `/close-all-sessions`,

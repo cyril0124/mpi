@@ -56,6 +56,11 @@ Glyph color comes from the theme: `error` uses the error color, an unread tab th
 `running`/`thinking` the accent color. A finished or unread tab stays emphasized (bold title)
 until it is focused. The active chip carries a leading `▌` focus mark, or `▐` on a colored chip.
 
+A highlight wave sweeps across the active tab's title: it reaches the right edge and returns in
+2 s, then the title rests for 1 s before the next pass. The wave eases into each turnaround and
+keeps the chip's own background, foreground, and focus mark; a colored chip inverts the lit cells
+instead of recoloring them, because theme foregrounds have no contrast over a chip color.
+
 ## Colors
 
 `/color <name>` accepts `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray`, or

@@ -197,6 +197,7 @@ import {
 import { type HomeAction, HomeView, type HomeViewModel } from "./components/mixcode/home/home-view.ts";
 import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
 import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
+import { bindActiveTabShimmerRedraw } from "./components/mixcode/tab-shimmer.ts";
 import { WindowedTranscript } from "./components/mixcode/windowed-chat/windowed-transcript.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
@@ -478,6 +479,8 @@ export class InteractiveMode {
 	private homeView: HomeView | undefined;
 	/** Per-tab mapped transcript lines for the Home previews, keyed by tab id. */
 	private readonly homeMessageCache = new Map<string, HomeSnapshot>();
+	/** Stopper for the interval that repaints the active tab's title shimmer. */
+	private stopTabShimmerRedraw: (() => void) | undefined;
 	/** Workdir that scopes the persisted open-tab layout. */
 	private readonly tabsWorkdir: string;
 	/** Vim-mode state used when no tab manager exists (single-session fallback). */
@@ -1015,6 +1018,15 @@ export class InteractiveMode {
 		// Start the UI before initializing extensions so session_start handlers can use interactive dialogs
 		this.ui.start();
 		this.isInitialized = true;
+		// The tab bar only exists alongside a tab manager; without one there is no
+		// chip to shimmer, so no repaint loop is started. Home carries no wave, and
+		// nothing wears the wave while it is the rendered surface.
+		if (this.tabManager) {
+			this.stopTabShimmerRedraw = bindActiveTabShimmerRedraw(
+				() => this.ui.requestRender(),
+				() => (this.homeSelection.active ? undefined : this.tabManager?.activeTab()?.activatedAt),
+			);
+		}
 
 		await this.themeController.applyFromSettings();
 
@@ -2150,6 +2162,8 @@ export class InteractiveMode {
 				unread: tab.unread,
 				recentRank: tab.id === activeId ? -1 : manager.recentRank(tab.id),
 				color: tab.color,
+				// Drives the active chip's title shimmer from the instant this tab took focus.
+				activatedAt: tab.activatedAt,
 			})),
 			activeId,
 			home: { id: HOME_TAB_ID, label: "MixCode Home" },
@@ -8441,6 +8455,8 @@ export class InteractiveMode {
 	}
 
 	stop(fullscreenExitOutput = this.settingsManager.getFullscreenExitOutput()): void {
+		this.stopTabShimmerRedraw?.();
+		this.stopTabShimmerRedraw = undefined;
 		this.disposeActiveSelector();
 		if (this.settingsManager.getShowTerminalProgress()) {
 			this.ui.terminal.setProgress(false);

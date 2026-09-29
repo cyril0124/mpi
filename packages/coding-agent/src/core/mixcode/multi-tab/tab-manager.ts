@@ -27,6 +27,8 @@ export interface AgentTab {
 	status: TabStatus;
 	/** True when a background tab finished a turn the user has not viewed yet. */
 	unread: boolean;
+	/** Non-persisted: when this tab last took focus, starting its title shimmer. */
+	activatedAt?: number;
 	workingStartedAt?: string;
 	lastWorkedDurationSeconds?: number;
 	/** When the tab last left a working status; drives the Home card's relative age. */
@@ -102,6 +104,7 @@ export class TabManager {
 		this.onTabClosed = options.onTabClosed;
 		const tab = this.attachTab(options.initialTitle, options.initialRuntime);
 		this.activeId = tab.id;
+		tab.activatedAt = Date.now();
 	}
 
 	get size(): number {
@@ -116,8 +119,17 @@ export class TabManager {
 		return this.tabs.find((tab) => tab.id === id);
 	}
 
+	/**
+	 * The focused tab, or undefined when the manager holds no tabs. A periodic
+	 * caller takes this read: `dispose` empties the list before its runtimes have
+	 * finished tearing down, so the focused tab can be gone between two ticks.
+	 */
+	activeTab(): AgentTab | undefined {
+		return this.get(this.activeId);
+	}
+
 	getActive(): AgentTab {
-		const tab = this.get(this.activeId);
+		const tab = this.activeTab();
 		if (!tab) throw new Error(`No active tab: ${this.activeId}`);
 		return tab;
 	}
@@ -130,7 +142,7 @@ export class TabManager {
 		const tab = this.get(id);
 		if (!tab) throw new Error(`Unknown tab: ${id}`);
 		const previous = this.get(this.activeId);
-		this.activeId = id;
+		this.setActive(tab);
 		tab.unread = false;
 		if (tab.status === "done") tab.status = "idle";
 		// Vim mode is a per-tab modal surface and follows focus to the tab being shown.
@@ -167,7 +179,7 @@ export class TabManager {
 				)
 			: nextAvailableAgentTitle(this.tabs.map((tab) => tab.title));
 		const tab = this.attachTab(title, runtime);
-		this.activeId = tab.id;
+		this.setActive(tab);
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
 		return tab;
@@ -191,7 +203,7 @@ export class TabManager {
 				)
 			: nextAvailableAgentTitle(this.tabs.map((tab) => tab.title));
 		const tab = this.attachTab(title, runtime);
-		this.activeId = tab.id;
+		this.setActive(tab);
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
 		return tab;
@@ -211,7 +223,7 @@ export class TabManager {
 		this.forgetRecent(id);
 		this.onTabClosed?.(id, index);
 		const wasActive = this.activeId === id;
-		if (wasActive) this.activeId = this.tabs[Math.min(index, this.tabs.length - 1)]!.id;
+		if (wasActive) this.setActive(this.tabs[Math.min(index, this.tabs.length - 1)]!);
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
 		await tab!.runtime.dispose();
@@ -312,6 +324,12 @@ export class TabManager {
 			tab.unsubscribe();
 			await tab.runtime.dispose();
 		}
+	}
+
+	/** Point focus at `tab` and restart its title shimmer. */
+	private setActive(tab: AgentTab): void {
+		this.activeId = tab.id;
+		tab.activatedAt = Date.now();
 	}
 
 	private noteRecent(id: string): void {

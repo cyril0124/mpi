@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { TabColorName, TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
 import { theme } from "../../../theme/theme.ts";
+import { applyActiveTabShimmer, COLORED_SHIMMER_STYLES, THEME_SHIMMER_STYLES } from "../tab-shimmer.ts";
 
 export interface TabBarItem {
 	id: string;
@@ -21,6 +22,8 @@ export interface TabBarItem {
 	/** MRU rank: 0/1 are the two most recently focused inactive tabs; -1 = other. */
 	recentRank: number;
 	color?: TabColorName;
+	/** Non-persisted: when this tab last took focus, starting its title shimmer. */
+	activatedAt?: number;
 }
 
 export interface TabBarModel {
@@ -69,26 +72,33 @@ const TAB_COLOR_SGR: Record<TabColorName, { bg: number; fg: number }> = {
 
 const tabColorPaints = new Map<TabColorName, (text: string) => string>();
 
-/** Chip painter for a tab color; re-opens the background after inner SGR resets. */
-export function tabColorPaint(color: TabColorName): (text: string) => string {
-	const cached = tabColorPaints.get(color);
-	if (cached) return cached;
-	const { bg, fg } = TAB_COLOR_SGR[color];
-	const start = `\x1b[${bg}m\x1b[${fg}m`;
-	const paint = (text: string) =>
-		`${start}${text
-			.replace(/\x1b\[0m/g, `\x1b[0m${start}`)
-			.replace(/\x1b\[39m/g, `\x1b[39m${start}`)
-			.replace(/\x1b\[49m/g, `\x1b[49m${start}`)}\x1b[39m\x1b[49m`;
-	tabColorPaints.set(color, paint);
-	return paint;
-}
-
 /** Text before the first printable cell of a painter's output (its open SGR sequence). */
 function paintOpenSeq(paint: (text: string) => string): string {
 	const marked = paint("\u0000");
 	const index = marked.indexOf("\u0000");
 	return index >= 0 ? marked.slice(0, index) : "";
+}
+
+/**
+ * Chip painter that re-opens its own SGR after an inner reset. The active chip's
+ * shimmer wave emits foreground, bold, and inverse resets mid-title, which would
+ * otherwise strip the chip's background and text color from the rest of it.
+ */
+function chipPaint(base: (text: string) => string): (text: string) => string {
+	const open = paintOpenSeq(base);
+	if (!open) return base;
+	return (text) => base(text.replace(/\x1b\[(0|22|27|39|49)m/g, (reset) => `${reset}${open}`));
+}
+
+/** Chip painter for a tab color: the color's contrast pair, reset-safe. */
+export function tabColorPaint(color: TabColorName): (text: string) => string {
+	const cached = tabColorPaints.get(color);
+	if (cached) return cached;
+	const { bg, fg } = TAB_COLOR_SGR[color];
+	const start = `\x1b[${bg}m\x1b[${fg}m`;
+	const paint = chipPaint((text: string) => `${start}${text}\x1b[39m\x1b[49m`);
+	tabColorPaints.set(color, paint);
+	return paint;
 }
 
 function glyphFor(item: TabBarItem): string {
@@ -123,22 +133,33 @@ function paintChip(
 	return `${painted.slice(0, index)}${glyphPaint(glyph)}${open}${painted.slice(index + glyph.length)}`;
 }
 
+/**
+ * A chip's title. The focused chip carries the shimmer wave, which supplies its
+ * own brightness steps; the chip paint around it supplies the weight and color
+ * of every unlit cell. An inactive completed tab stays emphasized until it is
+ * focused: bold in the success color, or on a colored chip just bold, because
+ * that chip's own foreground pair already has contrast.
+ */
+function chipTitle(item: TabBarItem, active: boolean, completed: boolean): string {
+	if (active) {
+		return theme.bold(
+			applyActiveTabShimmer(
+				item.title,
+				item.activatedAt,
+				Date.now(),
+				item.color ? COLORED_SHIMMER_STYLES : THEME_SHIMMER_STYLES,
+			),
+		);
+	}
+	if (item.color) return completed ? theme.bold(item.title) : item.title;
+	return completed ? theme.bold(theme.fg("success", item.title)) : item.title;
+}
+
 function renderChip(item: TabBarItem, active: boolean, markPainter: (text: string) => string): string {
 	const glyph = glyphFor(item);
 	const glyphPaint = glyphPainter(item);
-	// A completed tab stays emphasized until it is focused: bold label, plain
-	// foreground, success-colored glyph.
 	const completed = glyph === GLYPHS.done;
-	// A completed tab keeps its emphasis until it is focused: bold label in the
-	// completion color, regardless of recency.
-	const label = (text: string) => {
-		if (completed) return theme.bold(theme.fg("success", text));
-		return active ? theme.bold(text) : text;
-	};
-	// A colored chip keeps its own foreground pair, so completion shows there as
-	// the glyph plus a bold label rather than a recolored label.
-	const coloredLabel = (text: string) => (active || completed ? theme.bold(text) : text);
-	const body = ` ${glyph} ${(item.color ? coloredLabel : label)(item.title)} `;
+	const body = ` ${glyph} ${chipTitle(item, active, completed)} `;
 
 	if (item.color) {
 		const paint = tabColorPaint(item.color);
@@ -152,7 +173,11 @@ function renderChip(item: TabBarItem, active: boolean, markPainter: (text: strin
 	}
 
 	if (active) {
-		const paint = (text: string) => theme.bg("selectedBg", theme.fg("text", text));
+		// The completion color sits in the chip paint, not around the title, so the
+		// wave's inner resets re-open into it and every unlit cell keeps it; the
+		// wave colors only the lit cells.
+		const titleColor = completed ? "success" : "text";
+		const paint = chipPaint((text: string) => theme.bg("selectedBg", theme.fg(titleColor, text)));
 		const marked = `${markPainter(FOCUS_MARK)}${body.slice(1)}`;
 		return paintChip(paint, marked, glyph, glyphPaint);
 	}
