@@ -5,10 +5,10 @@
  * exercised without a terminal.
  */
 import { type Dirent, readdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, resolve, sep } from "node:path";
 import { resolvePath } from "../../../../../utils/paths.ts";
 import { formatCwdForFooter } from "../../footer.ts";
+import { homeDir } from "../home-dir.ts";
 
 /** What one directory read produced: names, or the reason it could not be read. */
 export interface WorkdirListing {
@@ -36,7 +36,7 @@ export function readWorkdirListing(browsingDir: string, showHidden: boolean): Wo
 		entries = readdirSync(browsingDir, { withFileTypes: true });
 	} catch (error) {
 		const code = (error as NodeJS.ErrnoException).code ?? "unknown error";
-		return { dirs: [], error: `parent unreadable: ${browsingDir} (${code})` };
+		return { dirs: [], error: `unreadable: ${browsingDir} (${code})` };
 	}
 	const dirs = entries
 		.filter((entry) => entry.isDirectory())
@@ -47,21 +47,12 @@ export function readWorkdirListing(browsingDir: string, showHidden: boolean): Wo
 }
 
 /**
- * Home directory the picker collapses, expands and highlights against. Read per
- * call and from the same variables the dock's meta row uses, so the breadcrumb
- * and the workdir badge never disagree about where `~` is.
- */
-export function pickerHome(): string {
-	return process.env.HOME || process.env.USERPROFILE || homedir();
-}
-
-/**
  * Resolve a workdir input: `~` expands to the home directory, an absolute path
  * stands on its own, and anything else resolves against `base`. Surrounding
  * whitespace is dropped.
  */
 export function resolveWorkdirInput(base: string, input: string): string {
-	return resolvePath(input.trim(), base, { homeDir: pickerHome() });
+	return resolvePath(input.trim(), base, { homeDir: homeDir() });
 }
 
 /**
@@ -125,7 +116,7 @@ export function rowIndexOfLabel(rows: readonly WorkdirRow[], label: string): num
  * absolute path otherwise, with the first absolute segment carrying its own
  * leading slash so the root never renders as `/ / tmp`.
  */
-export function workdirBreadcrumb(browsingDir: string, home: string = pickerHome()): string[] {
+export function workdirBreadcrumb(browsingDir: string, home: string = homeDir()): string[] {
 	const collapsed = formatCwdForFooter(browsingDir, home);
 	if (collapsed === "~" || collapsed.startsWith(`~${sep}`)) return collapsed.split(sep).filter(Boolean);
 	const parts = collapsed.split(sep).filter(Boolean);

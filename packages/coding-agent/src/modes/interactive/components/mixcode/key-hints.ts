@@ -5,14 +5,28 @@
  * `left`. A hint that points at an arrow key reads better with the glyph the
  * key carries.
  */
-import type { Keybinding } from "@earendil-works/pi-tui";
-import { keyText } from "../keybinding-hints.ts";
+import { getKeybindings, type Keybinding } from "@earendil-works/pi-tui";
+import { formatKeyText, keyText } from "../keybinding-hints.ts";
 
-/** One keybinding's key, with the cursor keys as glyphs. Empty when unbound. */
-export function arrowKeyText(keybinding: Keybinding): string {
-	return keyText(keybinding)
+/** Key text with the cursor keys as glyphs, so a hint reads `←` rather than `left`. */
+function formatKeyGlyphs(text: string): string {
+	return text
 		.replace(/\bup\b/g, "↑")
 		.replace(/\bdown\b/g, "↓")
 		.replace(/\bleft\b/g, "←")
 		.replace(/\bright\b/g, "→");
+}
+
+/** One keybinding's key, with the cursor keys as glyphs. Empty when unbound. */
+export function arrowKeyText(keybinding: Keybinding): string {
+	return formatKeyGlyphs(keyText(keybinding));
+}
+
+/**
+ * The keybinding's first key only, with the cursor keys as glyphs. A hint row with
+ * room for one key per action names the main one instead of every alternative.
+ */
+export function primaryKeyText(keybinding: Keybinding): string {
+	const [first] = getKeybindings().getKeys(keybinding);
+	return first === undefined ? "" : formatKeyGlyphs(formatKeyText(first));
 }

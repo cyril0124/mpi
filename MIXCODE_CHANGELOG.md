@@ -214,8 +214,14 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   field's picker, so the model selector and the thinking selector are reachable with the pointer
   instead of only through `/model`, `/models` and `Alt+T`. The regions are computed from the row
   that was rendered last, so a truncated or compacted row never answers for cells it no longer
-  paints, and a click on a gap, on the context meter or on the git branch stays inert. The workdir
-  is deliberately not clickable: the fork has no workdir picker.
+  paints, and a click on a gap, on the context meter or on the git branch stays inert.
+
+- The workdir picker reads its key hints from the configured bindings instead of fixed text, so a
+  rebound key keeps the row accurate, and it splits them over two rows, because the panel is too
+  narrow for one row naming all six actions and a clipped hint silently drops one. It also tells an
+  empty directory apart from a filter that matched nothing. The dock's workdir badge and the picker
+  now resolve the home directory through one helper, so `~` names the same path in both, and an
+  unreadable directory reports the directory that was read.
 
 - `/settings` is a centred floating panel in the MixCode style instead of a selector that replaces the
   editor area: a framed surface titled `Settings`, a dim `filter: type to filter  N/N` line in place of

@@ -7,13 +7,15 @@
  * block is dropped in fixed steps, so the row says as much as it can at the width
  * it was given and never leaves a partial block behind.
  *
- * The model and the thinking level are clickable: the render reports the cells each one
- * painted, and the dock footer opens that field's picker when a click lands inside them.
+ * The model, the thinking level and the workdir are clickable: the render reports the cells
+ * each one painted, and the dock footer opens that field's picker when a click lands inside
+ * them.
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
 import { formatCwdForFooter } from "../../footer.ts";
 import { compactWorkdir, padLine } from "../home/home-model.ts";
+import { homeDir } from "../home-dir.ts";
 import { sanitizeTerminalText } from "../terminal-text.ts";
 
 /** Bar cells in the context meter. */
@@ -74,7 +76,7 @@ export interface InputMetaData {
  */
 export function renderInputMeta(data: InputMetaData, width: number): InputMetaRender {
 	if (width <= 0) return { lines: [], regions: [] };
-	const workdir = formatCwdForFooter(data.workdir, process.env.HOME || process.env.USERPROFILE);
+	const workdir = formatCwdForFooter(data.workdir, homeDir());
 
 	// Absolute xxk/xxk lives on the card's top edge; this row keeps the meter only.
 	const contextBadge = ` ${contextBarAndPercentText(data.contextTokens, data.contextWindow)} `;
