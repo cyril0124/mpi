@@ -32,64 +32,26 @@ commit that causes it.
 | Settings list rows | one flat list of settings | `SettingItem` gained an optional `section` that renders a heading row | same as above |
 | Docked widget stack | no cap; the layout shrinks the slots when space runs out | the above and below slots share a row budget, cut whole rows are marked `… (widgets truncated)` | a tall widget stack otherwise squeezes the chat and the dock chrome |
 | Pointer hover feedback | no cue: lists ignore pointer motion, a message region answers clicks only, and the jump-to-end label is styled once | the cells under the pointer get a selection background and an underline (tab chips, command-palette rows), a message block that answers a click is filled as one rectangle, and the fullscreen renderer tells a component when the pointer leaves it, keeps the whole chrome unlit while an overlay is open, and drops every hover when the terminal is resized | the fork's clickable chrome needs a cue that does not move the keyboard selection or the active tab |
+| Mouse drag selection | selects any cell on screen, copies the cells verbatim, paints them with reverse video, and keeps following new output during the drag | scoped to the transcript, the prompt card and the notice panel; the copied text drops a framed surface's border rows, border columns, padding column and key-hint rows; the highlight uses the theme's `selectedBg`; a press holds the transcript so streaming output cannot move the selected rows, and the release leaves it there when the output grew past the viewport or the user scrolled | [Mouse Selection](mouse-selection.md) |
 
-## Upstream pages and source text that are now stale
-
-Deliberately left unpatched:
-
-| Page | Claim | Reality here |
-| --- | --- | --- |
-| `packages/coding-agent/docs/usage.md:49` | "Press `Shift+Tab` to cycle through supported levels" | the cycle key is `alt+t` |
-| `packages/coding-agent/docs/keybindings.md:155` | `app.thinking.cycle` default `shift+tab` | default is `alt+t` |
-| `packages/coding-agent/src/experimental/micro/README.md:30` | "Shift+Tab: cycle the current model's supported thinking levels" | micro's own status line reads the live binding, so only this hardcoded line is wrong |
-| `packages/coding-agent/docs/keybindings.md:152` | `app.model.cycleForward` default `ctrl+p` | no default key; `ctrl+p` is `app.palette` |
-| `packages/coding-agent/docs/models.md:33` | "`Ctrl+P` cycles through available models" | `ctrl+p` opens the command palette; only `shift+ctrl+p` still cycles, and backwards only |
-| `packages/coding-agent/src/cli/args.ts:303` (source text) | `--models` help calls them "patterns for Ctrl+P cycling" | `ctrl+p` opens the command palette; the cycle keys are `shift+ctrl+p`, `alt+p` on Windows and WSL |
-
-The pages above list neither the tab keybindings nor the tab slash commands; [Agent Tabs](tabs.md)
-is the reference for both.
-
-## Upstream files this fork edits
-
-Every one of these is a merge conflict waiting to happen, so keep the edits down to the wiring
-that calls into `mixcode/` code:
-
-- `packages/coding-agent/src/modes/interactive/interactive-mode.ts`
-- `packages/coding-agent/src/modes/interactive/components/session-selector.ts`
-- `packages/coding-agent/src/modes/interactive/components/custom-editor.ts`
-- `packages/coding-agent/src/core/keybindings.ts`
-- `packages/coding-agent/src/core/slash-commands.ts`
-- `packages/coding-agent/src/core/extensions/runner.ts`
-- `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
-- `packages/coding-agent/src/main.ts`
-- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: forwards the host's clipboard callback to the alternate screen
-- `packages/coding-agent/src/modes/interactive/theme/theme.ts`, `theme/dark.json`, `theme/light.json`,
-  `theme/theme-json.ts`, `theme/theme-schema.json`: the `panelBg` background a framed card fills with
-- `packages/coding-agent/test/extensions-runner.test.ts`
-- `packages/coding-agent/test/interactive-tui.test.ts`: the copy confirmations pin the toast
-- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: underlines the jump-to-end label while the pointer is over it
-- `packages/coding-agent/src/modes/interactive/components/tool-execution.ts`, `assistant-message.ts`,
-  `compaction-summary-message.ts`, `branch-summary-message.ts`, `skill-invocation-message.ts`: the
-  clickable region is the fork's `HoverRegion`, which paints the cue the framework's `MouseRegion`
-  does not
-- `packages/ai/src/api/openai-responses-shared.ts`: records the server-reported model on
-  Responses streams as `AssistantMessage.responseModel`
-- `packages/tui/src/layout-node.ts`: windowed layout node and scroll line provider
-- `packages/tui/src/components/settings-list.ts`: optional `section` heading on `SettingItem`
-- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section item
-- `packages/coding-agent/src/modes/interactive/theme/theme.ts`: `getSettingsListTheme` heading style
-- `packages/tui/src/layout.ts`: windowed scroll child, line provider on the scroll box
+- `packages/tui/src/layout.ts`: windowed scroll child, line provider on the scroll box,
+  `getComponentBox` for resolving a component to its committed box, and the `honorOffset` argument
+  a suspended scroll view passes to its windowed child
+- `packages/tui/src/components/scroll-view.ts`: `setFollowSuspended` / `isFollowSuspended` /
+  `resumeFollowEnd`, so a pointer gesture can hold the rows it is selecting over
 - `packages/tui/src/tui.ts`: the overlay mouse dispatch reports the overlay it hit, so a point
-  outside it can be told from a point on it
+  outside it can be told from a point on it; the `TuiSelectionOptions` contract, `hasCapturingOverlay`,
+  and the overlay rect lookup the surface resolver needs
 - `packages/tui/src/tui-alt-screen.ts`: reads content lines through the provider; public `scrollToPrompt`;
   an `onCopyResult` option lets the host confirm a clipboard write instead of the screen's own flash,
   and reports the copied text as a grapheme count; tracks the hovered component so the next move
   elsewhere, an overlay, or a pointer capture can send it a leave event; `scrollToEndIndicator`
-  receives whether the pointer is over the label
+  receives whether the pointer is over the label; a `selection` option scopes the drag to host surfaces
+  and takes the host's text cleanup and style
 - `packages/tui/src/utils.ts`: `countGraphemes`, moved there from the alternate screen so the
   coding-agent toast can report a copy in the same unit
 - `packages/tui/src/index.ts`: exports for the windowed node, mouse dispatch, the grapheme counter and
-  the image-line predicate
+  the image-line predicate, and the selection options
 - `AGENTS.md`, `.gitignore`
 
 The fork also adds keys to upstream's `keybindings.ts`, while

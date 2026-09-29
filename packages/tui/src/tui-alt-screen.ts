@@ -9,12 +9,14 @@ import { ScrollView } from "./components/scroll-view.ts";
 import { getKeybindings } from "./keybindings.ts";
 import { isKeyRelease } from "./keys.ts";
 import {
+	getComponentBox,
 	getLayoutBoxesAt,
 	getScrollbarGeometry,
 	getScrollLineProvider,
 	getScrollViewBox,
 	getScrollViewsAt,
 	type LayoutFrame,
+	type LayoutRect,
 	materializeScrollLines,
 	renderLayoutFrame,
 	type ScrollbarGeometry,
@@ -46,6 +48,7 @@ import {
 	type TuiMouseDispatchResult,
 	type TuiMouseDispatchTarget,
 	type TuiMouseEvent,
+	type TuiSelectionOptions,
 	type TuiStopOptions,
 	VIEWPORT_TUI,
 	type ViewportTUI,
@@ -88,6 +91,18 @@ const COPY_ERROR_FLASH_DURATION_MS = 5000;
 // so mirror common terminal word-selection behavior by keeping paths and kebab-case tokens whole.
 const TERMINAL_WORD_SELECTION_JOINERS = new Set(["/", "-"]);
 const wordSegmenter = getWordSegmenter();
+/** Sentinel a selection wrap is probed with to read its opening sequence. */
+const SELECTION_STYLE_PROBE = "\x01";
+
+/**
+ * Opening sequence of a host selection wrap, probed with a sentinel so the host keeps a plain
+ * `(text) => string`. An empty result means the wrap adds nothing to re-insert.
+ */
+function selectionHighlightOpen(highlight: (text: string) => string): string {
+	const marked = highlight(SELECTION_STYLE_PROBE);
+	const index = marked.indexOf(SELECTION_STYLE_PROBE);
+	return index > 0 ? marked.slice(0, index) : "";
+}
 
 interface CachedKittyImage {
 	transmissionGeneration: number;
@@ -173,6 +188,12 @@ interface SearchHighlightRange {
 	current: boolean;
 }
 
+/** The selectable surface a drag started in. */
+interface SelectionSurfaceHit {
+	kind: string;
+	component: Component;
+}
+
 export interface TuiAltScreenOptions {
 	/** Number of logical lines moved for each mouse-wheel event. */
 	wheelScrollLines?: number;
@@ -207,6 +228,12 @@ export interface TuiAltScreenOptions {
 	 * the alternate screen flashes its own one-line confirmation.
 	 */
 	onCopyResult?: (result: ClipboardResult) => void;
+	/**
+	 * Narrow and style the application-owned text selection: which surfaces may take one, how
+	 * their copied text is cleaned, and how selected cells are painted. Omit to keep the
+	 * selection screen-wide, reverse-video, and copied verbatim.
+	 */
+	selection?: TuiSelectionOptions;
 }
 
 /** What a clipboard write reported to the host. */
@@ -244,6 +271,11 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private selectionAutoScrollDirection: -1 | 0 | 1 = 0;
 	private selectionAutoScrollTimer?: NodeJS.Timeout;
 	private selectionPressActive = false;
+	private selectionSurface?: SelectionSurfaceHit;
+	/** The scroll view the current press suspended, if it suspended one. */
+	private selectionPinnedScrollView?: ScrollView;
+	/** Whether that view was following new output when the press started. */
+	private selectionResumeFollow = false;
 	private scrollbarDrag?: ScrollbarDrag;
 	private scrollbarHover?: ScrollView;
 	private scrollToEndIndicatorRect?: ScrollToEndIndicatorRect;
@@ -275,6 +307,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private copyOnSelect: boolean;
 	private readonly copySelection?: (text: string) => Promise<boolean | string>;
 	private readonly onCopyResult?: (result: ClipboardResult) => void;
+	private readonly selection?: TuiSelectionOptions;
 
 	constructor(
 		terminal: Terminal,
@@ -303,6 +336,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.copyOnSelect = options.copyOnSelect ?? true;
 		this.copySelection = options.copySelection;
 		this.onCopyResult = options.onCopyResult;
+		this.selection = options.selection;
 		this.addInputListener((data) => this.handleViewportInput(data));
 	}
 
@@ -375,7 +409,9 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.selectionInitialRange = undefined;
 		this.lastClick = undefined;
 		this.pressedUrl = undefined;
+		this.releaseSelectionScrollPin(this.selectionDragged ? "keep" : "resume-silently");
 		this.selectionDragged = false;
+		this.selectionSurface = undefined;
 		this.clearComponentMouseGesture();
 		this.lastComponentClick = undefined;
 		this.resetRenderState();
@@ -396,6 +432,8 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	}
 
 	protected override beforeTerminalStop(_options: TuiStopOptions): void {
+		// The layout root outlives this renderer, so a suspended scroll view has to be let go here.
+		this.releaseSelectionScrollPin("resume-silently");
 		this.closeSearch();
 		this.stopSelectionAutoScroll();
 		this.selectionPressActive = false;
@@ -716,6 +754,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			if (this.activeSearch?.component.setHoveredNavigationDirection(undefined)) this.requestRender();
 			this.stopScrollbarDrag();
 			this.pressedUrl = undefined;
+			this.releaseSelectionScrollPin(this.selectionDragged ? "keep" : "resume-silently");
 			this.selectionDragged = false;
 			this.clearComponentMouseGesture();
 			this.lastComponentClick = undefined;
@@ -929,6 +968,41 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.selectionInitialRange = undefined;
 		this.pressedUrl = undefined;
 		this.selectionDragged = false;
+		this.selectionSurface = undefined;
+		this.releaseSelectionScrollPin("keep");
+	}
+
+	/**
+	 * Hold a following scroll view still for the duration of the pointer press, so output that
+	 * arrives while the button is down cannot move the rows the selection is anchored to.
+	 */
+	private pinSelectionScrollView(scrollView: ScrollView | undefined): void {
+		this.selectionPinnedScrollView = undefined;
+		this.selectionResumeFollow = false;
+		if (!scrollView?.followEnd) return;
+		this.selectionPinnedScrollView = scrollView;
+		this.selectionResumeFollow = scrollView.isFollowingEnd;
+		scrollView.setFollowSuspended(true);
+	}
+
+	/**
+	 * End the press's hold on its scroll view. A press that left the rows and the end where they
+	 * were lets the view follow again; one that scrolled the view, or that the content grew past,
+	 * leaves it where the user was reading. `resume` repaints as it goes, `resume-silently` does
+	 * not, and `keep` never resumes.
+	 */
+	private releaseSelectionScrollPin(action: "keep" | "resume" | "resume-silently"): void {
+		const pinned = this.selectionPinnedScrollView;
+		// A gesture scroll and content that grew past the viewport both leave the user somewhere
+		// other than the end; anything else resumes following.
+		const staysPut = pinned?.wasScrolledWhileSuspended === true || pinned?.grewPastViewportWhileSuspended === true;
+		pinned?.setFollowSuspended(false);
+		if (action !== "keep" && !staysPut && this.selectionResumeFollow) {
+			if (action === "resume") pinned?.scrollToEnd();
+			else pinned?.resumeFollowEnd();
+		}
+		this.selectionPinnedScrollView = undefined;
+		this.selectionResumeFollow = false;
 	}
 
 	/**
@@ -1060,6 +1134,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 				if (this.hoverTarget && this.hoverTarget.component !== result.target.component) this.clearHoverTarget();
 				this.hoverTarget = result.target;
 			}
+			if (type === "release") this.releaseSelectionScrollPin("resume-silently");
 			if (type === "press") {
 				this.clearTextSelection();
 				this.mousePressTarget = result.target;
@@ -1238,6 +1313,8 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.lastClick = undefined;
 		this.pressedUrl = undefined;
 		this.selectionDragged = false;
+		this.selectionSurface = undefined;
+		this.releaseSelectionScrollPin("keep");
 		this.setScrollbarHover(target.scrollView);
 		const onThumb =
 			event.y >= target.geometry.thumbTop && event.y < target.geometry.thumbTop + target.geometry.thumbHeight;
@@ -1279,10 +1356,46 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			const point = this.getScrollSelectionPoint(scrollView, event.x, event.y);
 			if (point) return point;
 		}
+		// A selection that started on a plain surface follows that surface: a pointer outside it
+		// pins to the nearest cell instead of reaching a neighbouring surface.
+		const rect = scrollView ? undefined : this.activeSelectionRect();
+		if (rect) {
+			return {
+				row: Math.max(rect.y, Math.min(rect.y + rect.height - 1, event.y)),
+				col: Math.max(rect.x, Math.min(rect.x + rect.width - 1, event.x)),
+			};
+		}
 		return {
 			row: Math.max(0, Math.min(this.terminal.rows - 1, event.y)),
 			col: Math.max(0, Math.min(this.terminal.columns - 1, event.x)),
 		};
+	}
+
+	/** The surface the host publishes at the pointer, if one covers it. */
+	private resolveSelectionSurface(x: number, y: number): SelectionSurfaceHit | undefined {
+		for (const surface of this.selection?.surfaces?.() ?? []) {
+			const rect = this.getSelectionSurfaceRect(surface.component);
+			if (!rect || x < rect.x || x >= rect.x + rect.width || y < rect.y || y >= rect.y + rect.height) {
+				continue;
+			}
+			return { kind: surface.kind, component: surface.component };
+		}
+		return undefined;
+	}
+
+	/** Screen rect of the surface the current selection started in, in `layout`. */
+	private activeSelectionRect(layout = this.currentLayout): LayoutRect | undefined {
+		const component = this.selectionSurface?.component;
+		return component ? this.getSelectionSurfaceRect(component, layout) : undefined;
+	}
+
+	/** Screen rect of a published surface: an open overlay first, then the given committed layout. */
+	private getSelectionSurfaceRect(component: Component, layout = this.currentLayout): LayoutRect | undefined {
+		const overlay = this.overlayComponentRect(component);
+		if (overlay) return overlay;
+		if (!layout) return undefined;
+		if (component instanceof ScrollView) return getScrollViewBox(layout, component)?.rect;
+		return getComponentBox(layout, component)?.rect;
 	}
 
 	private getSelectionSourceLine(point: SelectionPoint): string {
@@ -1448,7 +1561,13 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			this.selectionPressActive = false;
 			this.stopSelectionAutoScroll();
 			if (!this.selectionAnchor) return;
-			this.updateSelectionFocus(point);
+			// A drag already set its endpoint on the last motion event, and a press that scrolled the
+			// view has an endpoint that no longer means the same row. Deriving it again from this
+			// event's screen row would copy rows the user never dragged over.
+			if (!this.selectionDragged && this.selectionPinnedScrollView?.movedWhileSuspended !== true) {
+				this.updateSelectionFocus(point);
+			}
+			this.releaseSelectionScrollPin("resume");
 			const isClick =
 				!this.selectionDragged &&
 				this.selectionAnchor.scrollView === point.scrollView &&
@@ -1495,11 +1614,18 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			return;
 		}
 		this.stopSelectionAutoScroll();
+		const surface =
+			this.selection?.surfaces === undefined ? undefined : this.resolveSelectionSurface(event.x, event.y);
+		// A scoped selection owns only its published surfaces; anywhere else keeps the event.
+		if (this.selection?.surfaces !== undefined && !surface) return;
 		this.selectionPressActive = true;
+		this.selectionSurface = surface;
 		const scrollView =
-			!this.hasOverlay() && this.currentLayout
-				? getScrollViewsAt(this.currentLayout, event.x, event.y)[0]
-				: undefined;
+			surface && surface.component instanceof ScrollView
+				? surface.component
+				: !this.hasOverlay() && this.currentLayout
+					? getScrollViewsAt(this.currentLayout, event.x, event.y)[0]
+					: undefined;
 		const anchor = this.getSelectionPoint(event, scrollView);
 		const word = this.getWordSelection(anchor);
 		const clickCount = this.getClickCount(anchor, word);
@@ -1509,6 +1635,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.selectionAnchor = range?.start ?? anchor;
 		this.selectionFocus = range?.end ?? anchor;
 		this.selectionDragged = false;
+		this.pinSelectionScrollView(scrollView);
 		this.pressedUrl = range
 			? undefined
 			: getOsc8LinkAtColumn(
@@ -1577,7 +1704,8 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			);
 		}
 		const text = lines.join("\n");
-		return text.length === 0 ? undefined : text;
+		const normalized = this.selection?.normalizeText?.(text, this.selectionSurface?.kind ?? "") ?? text;
+		return normalized.length === 0 ? undefined : normalized;
 	}
 
 	private async copySelectionToClipboard(): Promise<boolean> {
@@ -1689,6 +1817,13 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	}
 
 	private applySelectionHighlight(text: string): string {
+		const highlight = this.selection?.highlight;
+		if (highlight) {
+			const open = selectionHighlightOpen(highlight);
+			if (!open || !text.includes("\x1b")) return highlight(text);
+			// Re-open the host's style after every SGR so an inner reset cannot drop it.
+			return highlight(text.replace(/\x1b\[[0-9;:]*m/g, (sequence) => `${sequence}${open}`));
+		}
 		let result = "\x1b[7m";
 		let index = 0;
 		while (index < text.length) {
@@ -1733,6 +1868,14 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 					col: box.rect.x + selection.end.col,
 				},
 			};
+		} else {
+			const rect = this.activeSelectionRect(layout);
+			if (rect) {
+				minRow = Math.max(0, rect.y);
+				maxRow = Math.min(screen.length - 1, rect.y + rect.height - 1);
+				minColumn = Math.max(0, rect.x);
+				maxColumn = Math.min(this.terminal.columns, rect.x + rect.width);
+			}
 		}
 		return screen.map((line, row) => {
 			if (

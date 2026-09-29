@@ -29,7 +29,17 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 - The empty composer now hints in every state instead of only on Home: `Describe your next
   change...  @ files  / commands` on an agent tab, and the vim navigation keys while vim mode owns
   the input.
-
+- Mouse drag selection: a drag now selects only inside the transcript, the prompt card and the
+  notice panel, and the copied text is cleaned per surface, so dragging over the prompt card or the
+  notice no longer pastes that surface's frame and key-hint rows. Wide characters are kept whole,
+  the selection is painted with the theme's `selectedBg` (re-opened after every SGR, so a block
+  background cannot swallow it), and releasing copies through the existing toast. A press also pins a
+  following transcript for as long as the button is down, so output that streams in during a drag
+  cannot slide the selected rows away; releasing leaves the transcript where the user left it when
+  output arrived or they scrolled it, and a press that moved nothing follows again. The text cleanup
+  lives in `core/mixcode/selection/chat-selection.ts` and the surface registry in
+  `modes/interactive/mixcode/selection/`; pi-tui keeps owning the drag, the slicing and the edge
+  auto-scroll. See [Mouse Selection](docs/mouse-selection.md).
 - Toast notifications: a typed card in the top-right corner of the transcript, with a rounded frame,
   an icon and color per kind, a width that follows the terminal, and a three second lifetime. The
   copy command reports through it, a failing copy reports the error, and closing the last tab

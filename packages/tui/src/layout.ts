@@ -195,6 +195,7 @@ function layoutComponent(
 				requestedScrollTop,
 				viewportHeight,
 				WINDOW_OVERSCAN_LINES,
+				node.state.isFollowSuspended,
 			);
 			const scrollView = node.state as ScrollView;
 			if (renderedWindow.scrollTop !== requestedScrollTop) scrollView.scrollTo(renderedWindow.scrollTop);
@@ -498,6 +499,19 @@ export function getLayoutBoxesAt(frame: LayoutFrame, x: number, y: number): Layo
 	visit(frame.root, 0);
 	result.sort((a, b) => b.box.layer - a.box.layer || b.depth - a.depth);
 	return result.map(({ box }) => box);
+}
+
+/** The box that rendered `component` in the committed frame, if it is a layout node. */
+export function getComponentBox(frame: LayoutFrame, component: Component): LayoutBox | undefined {
+	const visit = (box: LayoutBox): LayoutBox | undefined => {
+		if (box.component === component) return box;
+		for (const child of box.children) {
+			const match = visit(child);
+			if (match) return match;
+		}
+		return undefined;
+	};
+	return visit(frame.root);
 }
 
 export function getScrollViewBox(frame: LayoutFrame, scrollView: ScrollView): LayoutBox | undefined {

@@ -152,6 +152,8 @@ export {
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
 	type TuiMouseEventType,
+	type TuiSelectionOptions,
+	type TuiSelectionSurface,
 	type TuiStopOptions,
 	type ViewportTUI,
 } from "./tui.ts";

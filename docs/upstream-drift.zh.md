@@ -21,6 +21,7 @@
 | 按标签页的设置项 | 无 | `Inline widgets` 读写 `mixcode_settings.json`，在 `/settings` 的 `MixCode` 分组中单独展示 | MixCode 的设置不写进 pi 的 `settings.json`，也不混进它的分组 |
 | 设置列表行 | 单一平铺列表 | `SettingItem` 新增可选 `section`，渲染为分组标题行 | 同上 |
 | 坞区组件堆叠 | 无上限；空间不够时由布局压缩槽位 | 上方与下方两个槽位共用一个行预算，被裁掉的行用 `… (widgets truncated)` 标出 | 否则很高的组件堆叠会挤掉对话区与坞区其他部分 |
+| 鼠标拖拽选中 | 屏幕上任意格子都可选中，原样复制该格子，用反显上色，拖动期间继续跟随新输出 | 只在对话区、输入卡片与 Notice 面板内生效；复制文本会去掉这些区域自身的边框、内缩与按键提示行；高亮使用主题的 `selectedBg`；按下会钉住对话区，使流式输出挪不动选中行，松开时若期间有输出或用户滚动过则停在那里 | [鼠标拖拽选中](mouse-selection.zh.md) |
 | MixCode Home | 没有此页面；transcript 始终显示当前会话 | `home` 伪标签页列出所有已打开 agent 并给出对话预览 | [MixCode Home](home.zh.md) |
 | `left`/`right`/`up`/`down`/`enter`/`ctrl+f` | 编辑器光标、历史、提交 | 在 Home 上用于选择/附着/发送/过滤列表；在 agent 标签页仍归编辑器 | [MixCode Home](home.zh.md) |
 | 应用动作键处理器 | 命中的处理器直接消费该按键 | 处理器可返回 `false` 主动放弃该键，并会收到原始按键数据 | Home 的绑定不能抢走输入框的 `up`/`down`/`left`/`right`/`enter`，而 `enter` 同时匹配裸换行（`ctrl+j`） |
@@ -58,7 +59,7 @@
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
-- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调转发给备用屏幕
+- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调与选中选项转发给备用屏幕
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`、`theme/dark.json`、`theme/light.json`、
   `theme/theme-json.ts`、`theme/theme-schema.json`：带框卡片填充用的 `panelBg` 背景色
 - `packages/coding-agent/test/extensions-runner.test.ts`
@@ -72,14 +73,15 @@
 - `packages/tui/src/components/settings-list.ts`：`SettingItem` 的可选 `section` 标题行
 - `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`：`MixCode` 分组条目
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`：`getSettingsListTheme` 的分组标题样式
-- `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒上的行提供者
-- `packages/tui/src/tui.ts`：浮层鼠标派发会返回命中的浮层，以便区分“在浮层外”与“在浮层上”
+- `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒上的行提供者、把组件解析到它在已提交帧里盒子的 `getComponentBox`，以及被挂起的滚动视图传给窗口化子组件的 `honorOffset` 参数
+- `packages/tui/src/components/scroll-view.ts`：`setFollowSuspended` / `isFollowSuspended` / `resumeFollowEnd`，让指针手势能钉住它正在选中的那些行
+- `packages/tui/src/tui.ts`：浮层鼠标派发会返回命中的浮层，以便区分“在浮层外”与“在浮层上”；`TuiSelectionOptions` 契约、`hasCapturingOverlay`，以及区域解析所需的浮层矩形查询
 - `packages/tui/src/tui-alt-screen.ts`：经提供者读取内容行；`scrollToPrompt` 改为公开；
   `onCopyResult` 选项让宿主自行确认复制结果，替代该屏幕自带的一行 flash，并按 grapheme 数报告复制长度；
   跟踪被 hover 的组件，以便后续移动到别处、打开浮层或指针被捕获时向其发送 leave 事件；
-  `scrollToEndIndicator` 会收到指针是否在标签上
+  `scrollToEndIndicator` 会收到指针是否在标签上；`selection` 选项把拖拽限定到宿主公布的区域，并交给宿主做文本清洗与着色
 - `packages/tui/src/utils.ts`：`countGraphemes` 从备选屏幕移到这里，让 coding-agent 的 toast 能用同一单位报告复制长度
-- `packages/tui/src/index.ts`：导出窗口化节点、鼠标派发、grapheme 计数器与图片行判定
+- `packages/tui/src/index.ts`：导出窗口化节点、鼠标派发、grapheme 计数器与图片行判定，以及选中选项
 - `AGENTS.md`、`.gitignore`
 
 本 fork 还给 `keybindings.ts` 加了键位绑定；`core/mixcode/multi-tab/tab-manager.ts` 与 `tab-state.ts` 是 fork 自有文件。

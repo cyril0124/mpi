@@ -29,6 +29,8 @@ export interface ScrollLayoutState {
 	readonly primary: boolean;
 	readonly overscroll: "chain" | "contain";
 	readonly viewportHeight: number;
+	/** A pointer gesture holds this view's rows, so the layout must not re-place them. */
+	readonly isFollowSuspended: boolean;
 	getContentWidth(width: number): number;
 	updateLayout(contentHeight: number, viewportHeight: number, requestRender: () => void): void;
 }
@@ -55,9 +57,17 @@ export interface WindowedLayoutState {
 	 * content row the first returned line corresponds to. `overscan` rows are
 	 * rendered above and below the viewport. The returned `start` may differ from
 	 * `scrollTop - overscan` when the window is assembled from the end of the content,
-	 * which happens when the caller is already at the end.
+	 * which happens when the caller is already at the end. `honorOffset` skips that
+	 * shortcut, for a caller that must keep the rows under the pointer where they are
+	 * even though the estimate still says the offset is the end of the content.
 	 */
-	renderWindow(width: number, scrollTop: number, height: number, overscan: number): RenderedLineWindow;
+	renderWindow(
+		width: number,
+		scrollTop: number,
+		height: number,
+		overscan: number,
+		honorOffset?: boolean,
+	): RenderedLineWindow;
 	/**
 	 * Lines for an arbitrary range. The range is resolved against the same
 	 * estimated heights as `lineCount`, so it is exact only for content that has
@@ -68,7 +78,6 @@ export interface WindowedLayoutState {
 	materialize(width: number): string[];
 }
 
-/** The rows, content offsets and total a windowed render returned for one request. */
 export interface RenderedLineWindow {
 	lines: string[];
 	/** Content row the first returned line corresponds to. */
@@ -89,14 +98,6 @@ export interface WindowedLayoutNode {
 	state: WindowedLayoutState;
 }
 
-/** Symbol a component implements to expose windowed content to the layout engine. */
-export const WINDOWED_NODE = Symbol.for("@earendil-works/pi-tui/windowed-node");
-
-/** A component that renders its content through `WindowedLayoutState`. */
-export interface WindowedLayoutComponent extends Component {
-	[WINDOWED_NODE](): WindowedLayoutNode;
-}
-
 export type LayoutNode = StackLayoutNode | ScrollLayoutNode | WindowedLayoutNode;
 
 export interface LayoutComponent extends Component {
@@ -114,6 +115,14 @@ export interface ScrollLineProvider {
 	getLines(start: number, count: number): string[];
 	/** Every line, exact; present when the source can render content it has not measured. */
 	materialize?(): string[];
+}
+
+/** Symbol a component implements to expose windowed content to the layout engine. */
+export const WINDOWED_NODE = Symbol.for("@earendil-works/pi-tui/windowed-node");
+
+/** A component that renders its content through `WindowedLayoutState`. */
+export interface WindowedLayoutComponent extends Component {
+	[WINDOWED_NODE](): WindowedLayoutNode;
 }
 
 export function getLayoutNode(component: Component): LayoutNode | undefined {

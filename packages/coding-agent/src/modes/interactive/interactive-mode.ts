@@ -28,6 +28,7 @@ import type {
 	OverlayHandle,
 	OverlayOptions,
 	TuiMainScreenRenderState,
+	TuiSelectionOptions,
 } from "@earendil-works/pi-tui";
 import * as TuiLayouts from "@earendil-works/pi-tui";
 import {
@@ -269,6 +270,7 @@ import { UserMessageSelectorComponent } from "./components/user-message-selector
 import { type ExternalEditorResult, editInExternalEditor } from "./external-editor.ts";
 import { type CommandSource, collectSlashCommands, type TabArgumentOption } from "./mixcode/command-list.ts";
 import { responseModelNoticeText } from "./mixcode/model-mismatch/notice.ts";
+import { createMouseSelectionOptions } from "./mixcode/selection/selection-surface.ts";
 import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
 import { shareSession } from "./session-share.ts";
 import {
@@ -804,6 +806,7 @@ export class InteractiveMode {
 			onRightClickPaste: this.onRightClickPaste,
 			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
 			onCopyResult: (result) => this.notifyCopyResult(result),
+			selection: this.mouseSelectionOptions(),
 		});
 		this.ui = createInteractiveTuiReference(() => this.renderer);
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
@@ -989,6 +992,19 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new DynamicBorder());
 	}
 
+	/**
+	 * Surfaces a fullscreen drag may select text inside: the transcript, the prompt card and the notice
+	 * panel. The closures read the live components, so they survive a renderer swap.
+	 */
+	private mouseSelectionOptions(): TuiSelectionOptions {
+		return createMouseSelectionOptions({
+			chat: () => (this.homeSelection.active ? undefined : this.transcriptScrollView),
+			input: () => this.editorContainer,
+			notice: () => this.consoleNotice?.component,
+			modalOpen: () => this.ui.hasCapturingOverlay(),
+		});
+	}
+
 	private mountInteractiveTui(tui: TuiMainScreen | TuiAltScreen, components: readonly Component[]): void {
 		for (const component of components) tui.addChild(component);
 		if (TuiLayouts.isViewportTUI(tui)) {
@@ -1034,6 +1050,7 @@ export class InteractiveMode {
 			onRightClickPaste: this.onRightClickPaste,
 			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
 			onCopyResult: (result) => this.notifyCopyResult(result),
+			selection: this.mouseSelectionOptions(),
 		});
 		nextUi.setClearOnShrink(clearOnShrink);
 		nextUi.onDebug = onDebug;

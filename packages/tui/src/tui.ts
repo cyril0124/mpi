@@ -4,6 +4,7 @@
 
 import { performance } from "node:perf_hooks";
 import { isKeyRelease, matchesKey } from "./keys.ts";
+import type { LayoutRect } from "./layout.ts";
 import type { Terminal } from "./terminal.ts";
 import {
 	isOsc11BackgroundColorResponse,
@@ -41,6 +42,31 @@ export interface TuiMouseEvent {
 	wheelDelta?: number;
 	/** Consecutive click count when type is click. */
 	clickCount?: number;
+}
+
+/** A host surface a mouse drag may select text inside. */
+export interface TuiSelectionSurface {
+	/** The component whose committed box bounds the selection. */
+	component: Component;
+	/** Opaque host token, handed back to `normalizeText`. */
+	kind: string;
+}
+
+/** How a host narrows and styles the application-owned text selection. */
+export interface TuiSelectionOptions {
+	/**
+	 * Selectable surfaces in priority order. A press that lands in none of them starts no
+	 * selection, leaving the event to the component under the pointer. Omit for a screen-wide
+	 * selection.
+	 */
+	surfaces?: () => readonly TuiSelectionSurface[];
+	/** Rewrite the copied text for the surface kind it came from. */
+	normalizeText?: (text: string, kind: string) => string;
+	/**
+	 * Paint the selected cells. The wrap's opening sequence is re-inserted after every SGR inside
+	 * the slice, so an inner reset cannot drop it. Defaults to reverse video.
+	 */
+	highlight?: (text: string) => string;
 }
 
 export interface TuiMouseEventResult {
@@ -439,6 +465,8 @@ export interface TUI extends Component {
 	showOverlay(component: Component, options?: OverlayOptions): OverlayHandle;
 	hideOverlay(): void;
 	hasOverlay(): boolean;
+	/** Whether a visible overlay that takes focus is open. */
+	hasCapturingOverlay(): boolean;
 	start(): void;
 	stop(options?: TuiStopOptions): void;
 	renderNow(force?: boolean): void;
@@ -862,6 +890,21 @@ export abstract class TuiBase extends Container implements TUI {
 			return entry.options.visible(this.terminal.columns, this.terminal.rows);
 		}
 		return true;
+	}
+
+	/** Whether a visible overlay that takes focus is open. */
+	hasCapturingOverlay(): boolean {
+		return this.getTopmostVisibleOverlay() !== undefined;
+	}
+
+	/** Screen rect of an open overlay rendering `component`, if any. */
+	protected overlayComponentRect(component: Component): LayoutRect | undefined {
+		for (let index = this.renderedOverlayLayouts.length - 1; index >= 0; index--) {
+			const layout = this.renderedOverlayLayouts[index]!;
+			if (layout.entry.component !== component) continue;
+			return { x: layout.col, y: layout.row, width: layout.width, height: layout.height };
+		}
+		return undefined;
 	}
 
 	/** Find the visual-frontmost visible capturing overlay, if any */

@@ -56,8 +56,8 @@ export class WindowedTranscript extends Container {
 	/** Measured heights currently in the table, maintained incrementally. */
 	private measuredSum = 0;
 	private measuredCount = 0;
-	/** Number of blocks the counters were last synced against. */
-	private syncedBlockCount = -1;
+	/** Block list the counters were last synced against. */
+	private syncedBlocks = -1;
 	private syncedFirst: Component | undefined;
 	private syncedLast: Component | undefined;
 	/** Rendered lines for the current pass, so one pass renders a block once. */
@@ -71,6 +71,7 @@ export class WindowedTranscript extends Container {
 		this.estimatedBlockHeight = Math.max(1, Math.floor(options.estimatedBlockHeight ?? ESTIMATED_BLOCK_HEIGHT));
 	}
 
+	/** The live block list, read fresh so messages can be added and removed. */
 	private blockList(): readonly Component[] {
 		return this.blocksSource();
 	}
@@ -81,7 +82,7 @@ export class WindowedTranscript extends Container {
 		this.measuredHeights = new WeakMap<Component, number>();
 		this.measuredSum = 0;
 		this.measuredCount = 0;
-		this.syncedBlockCount = -1;
+		this.syncedBlocks = -1;
 		for (const block of this.blockList()) block.invalidate?.();
 	}
 
@@ -99,12 +100,17 @@ export class WindowedTranscript extends Container {
 	}
 
 	/**
-	 * Plain `Component` path: the whole document, rendered exactly. It exists because
-	 * the class implements `Component`; the app reads the document through
-	 * `materialize` instead.
+	 * Whole document. Nothing in the running app calls this: the layout uses the
+	 * windowed protocol and the regular renderer mounts the plain document
+	 * container. It exists because a window is still a `Component`.
 	 */
 	override render(width: number): string[] {
-		return this.materialize(width);
+		const safeWidth = this.safeWidth(width);
+		this.ensureWidth(safeWidth);
+		this.passLines.clear();
+		const lines: string[] = [];
+		for (const block of this.blockList()) lines.push(...this.linesOf(block, safeWidth));
+		return lines;
 	}
 
 	lineCount(width: number): number {
@@ -180,7 +186,13 @@ export class WindowedTranscript extends Container {
 	 * the newest rows whatever the estimates above claim, and appending output cannot
 	 * move the rows above it: only blocks inside the window are ever measured.
 	 */
-	renderWindow(width: number, scrollTop: number, height: number, overscan: number): RenderedLineWindow {
+	renderWindow(
+		width: number,
+		scrollTop: number,
+		height: number,
+		overscan: number,
+		honorOffset = false,
+	): RenderedLineWindow {
 		const safeWidth = this.safeWidth(width);
 		const viewportHeight = Math.max(0, Math.floor(height));
 		const margin = Math.max(0, Math.floor(overscan));
@@ -189,8 +201,10 @@ export class WindowedTranscript extends Container {
 		if (viewportHeight === 0) return { lines: [], start: top, scrollTop: top, total: this.totalHeight() };
 
 		// A caller already at the end of the estimated content stays at the end once the
-		// walk has measured it, so the newest rows are painted on this frame too.
-		const atContentEnd = top + viewportHeight >= this.totalHeight();
+		// walk has measured it, so the newest rows are painted on this frame too. A caller that
+		// asks to honor its offset keeps the window around that offset instead, even while the
+		// estimate still looks like the content end.
+		const atContentEnd = !honorOffset && top + viewportHeight >= this.totalHeight();
 		this.measuredThisPass = false;
 		let window = this.collectWindow(safeWidth, top, viewportHeight, margin, atContentEnd);
 		// Each walk measures the blocks it paints, which moves the total and the row the
@@ -239,7 +253,8 @@ export class WindowedTranscript extends Container {
 			type: "windowed",
 			state: {
 				lineCount: (width) => this.lineCount(width),
-				renderWindow: (width, scrollTop, height, overscan) => this.renderWindow(width, scrollTop, height, overscan),
+				renderWindow: (width, scrollTop, height, overscan, honorOffset) =>
+					this.renderWindow(width, scrollTop, height, overscan, honorOffset),
 				getLines: (width, start, count) => this.getLines(width, start, count),
 				materialize: (width) => this.materialize(width),
 			},
@@ -275,21 +290,14 @@ export class WindowedTranscript extends Container {
 		const lines: string[] = [];
 		let offset = 0;
 		for (const block of this.blockList()) {
-			const tableHeight = this.heightOf(block);
-			if (offset + tableHeight <= start) {
-				// The block ends above the window, so it is never rendered and its table
-				// height is final: the walk just moves past it.
-				offset += tableHeight;
-			} else {
-				// Render once, then advance by the rendered height, the same after-render
-				// height `collectBackward` advances by.
+			const estimatedHeight = this.heightOf(block);
+			if (offset + estimatedHeight > start && offset < end) {
 				const blockLines = this.linesOf(block, width);
-				const renderedHeight = blockLines.length;
 				const from = Math.max(0, start - offset);
-				const to = Math.min(renderedHeight, end - offset);
+				const to = Math.min(blockLines.length, end - offset);
 				for (let index = from; index < to; index++) lines.push(blockLines[index] ?? "");
-				offset += renderedHeight;
 			}
+			offset += this.heightOf(block);
 			if (offset >= end) break;
 		}
 		return lines;
@@ -331,7 +339,7 @@ export class WindowedTranscript extends Container {
 		// Resync when the list changed outright: a different length, or a different first
 		// or last block, which covers appends, removals and a wholesale replacement.
 		if (
-			blocks.length !== this.syncedBlockCount ||
+			blocks.length !== this.syncedBlocks ||
 			blocks[0] !== this.syncedFirst ||
 			blocks[blocks.length - 1] !== this.syncedLast
 		) {
@@ -345,7 +353,7 @@ export class WindowedTranscript extends Container {
 			}
 			this.measuredSum = sum;
 			this.measuredCount = count;
-			this.syncedBlockCount = blocks.length;
+			this.syncedBlocks = blocks.length;
 			this.syncedFirst = blocks[0];
 			this.syncedLast = blocks[blocks.length - 1];
 		}
@@ -398,6 +406,6 @@ export class WindowedTranscript extends Container {
 		this.measuredHeights = new WeakMap<Component, number>();
 		this.measuredSum = 0;
 		this.measuredCount = 0;
-		this.syncedBlockCount = -1;
+		this.syncedBlocks = -1;
 	}
 }
