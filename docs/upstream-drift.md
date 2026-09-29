@@ -29,6 +29,7 @@ commit that causes it.
 | Per-tab settings | none | `Inline widgets` also reads and writes `mixcode_settings.json`, shown in its own `MixCode` section of `/settings` | MixCode settings stay out of pi's `settings.json` and out of its section |
 | Settings list rows | one flat list of settings | `SettingItem` gained an optional `section` that renders a heading row | same as above |
 | Docked widget stack | no cap; the layout shrinks the slots when space runs out | the above and below slots share a row budget, cut whole rows are marked `… (widgets truncated)` | a tall widget stack otherwise squeezes the chat and the dock chrome |
+| Pointer hover feedback | no cue: lists ignore pointer motion, a message region answers clicks only, and the jump-to-end label is styled once | the cells under the pointer get a selection background and an underline (tab chips, command-palette rows), a message block that answers a click is filled as one rectangle, and the fullscreen renderer tells a component when the pointer leaves it, keeps the whole chrome unlit while an overlay is open, and drops every hover when the terminal is resized | the fork's clickable chrome needs a cue that does not move the keyboard selection or the active tab |
 
 ## Upstream pages and source text that are now stale
 
@@ -64,6 +65,11 @@ that calls into `mixcode/` code:
   `theme/theme-json.ts`, `theme/theme-schema.json`: the `panelBg` background a framed card fills with
 - `packages/coding-agent/test/extensions-runner.test.ts`
 - `packages/coding-agent/test/interactive-tui.test.ts`: the copy confirmations pin the toast
+- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: underlines the jump-to-end label while the pointer is over it
+- `packages/coding-agent/src/modes/interactive/components/tool-execution.ts`, `assistant-message.ts`,
+  `compaction-summary-message.ts`, `branch-summary-message.ts`, `skill-invocation-message.ts`: the
+  clickable region is the fork's `HoverRegion`, which paints the cue the framework's `MouseRegion`
+  does not
 - `packages/ai/src/api/openai-responses-shared.ts`: records the server-reported model on
   Responses streams as `AssistantMessage.responseModel`
 - `packages/tui/src/layout-node.ts`: windowed layout node and scroll line provider
@@ -71,12 +77,17 @@ that calls into `mixcode/` code:
 - `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section item
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`: `getSettingsListTheme` heading style
 - `packages/tui/src/layout.ts`: windowed scroll child, line provider on the scroll box
+- `packages/tui/src/tui.ts`: the overlay mouse dispatch reports the overlay it hit, so a point
+  outside it can be told from a point on it
 - `packages/tui/src/tui-alt-screen.ts`: reads content lines through the provider; public `scrollToPrompt`;
   an `onCopyResult` option lets the host confirm a clipboard write instead of the screen's own flash,
-  and reports the copied text as a grapheme count
+  and reports the copied text as a grapheme count; tracks the hovered component so the next move
+  elsewhere, an overlay, or a pointer capture can send it a leave event; `scrollToEndIndicator`
+  receives whether the pointer is over the label
 - `packages/tui/src/utils.ts`: `countGraphemes`, moved there from the alternate screen so the
   coding-agent toast can report a copy in the same unit
-- `packages/tui/src/index.ts`: exports for the windowed node, mouse dispatch, and the grapheme counter
+- `packages/tui/src/index.ts`: exports for the windowed node, mouse dispatch, the grapheme counter and
+  the image-line predicate
 - `AGENTS.md`, `.gitignore`
 
 The fork also adds keys to upstream's `keybindings.ts`, while

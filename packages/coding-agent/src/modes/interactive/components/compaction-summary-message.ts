@@ -1,7 +1,17 @@
-import { Box, Container, Markdown, type MarkdownTheme, MouseRegion, Spacer, Text } from "@earendil-works/pi-tui";
+import {
+	Box,
+	Container,
+	Markdown,
+	type MarkdownTheme,
+	Spacer,
+	Text,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
+} from "@earendil-works/pi-tui";
 import type { CompactionSummaryMessage } from "../../../core/messages.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { keyText } from "./keybinding-hints.ts";
+import { BlockHover } from "./mixcode/hover/hover-block.ts";
 
 /**
  * Component that renders a compaction message with collapsed/expanded state.
@@ -11,6 +21,7 @@ export class CompactionSummaryMessageComponent extends Box {
 	private expanded = false;
 	private message: CompactionSummaryMessage;
 	private markdownTheme: MarkdownTheme;
+	private readonly hover = new BlockHover((event) => this.handleBlockClick(event));
 
 	constructor(message: CompactionSummaryMessage, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
 		super(1, 1, (t) => theme.bg("customMessageBg", t));
@@ -57,12 +68,21 @@ export class CompactionSummaryMessageComponent extends Box {
 			);
 		}
 
-		this.addChild(
-			new MouseRegion(content, (event) => {
-				if (event.type !== "click" || event.button !== "left") return undefined;
-				this.setExpanded(!this.expanded);
-				return { handled: true };
-			}),
-		);
+		this.addChild(content);
+	}
+
+	override render(width: number): string[] {
+		return this.hover.paint(super.render(width), width);
+	}
+
+	override handleMouse(event: TuiMouseEvent): ReturnType<Box["handleMouse"]> {
+		return this.hover.dispatch(event);
+	}
+
+	/** A primary click anywhere on the card toggles it. */
+	private handleBlockClick(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "click" || event.button !== "left") return undefined;
+		this.setExpanded(!this.expanded);
+		return { handled: true };
 	}
 }

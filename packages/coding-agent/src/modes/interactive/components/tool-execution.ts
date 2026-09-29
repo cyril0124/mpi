@@ -5,11 +5,11 @@ import {
 	Container,
 	getCapabilities,
 	Image,
-	MouseRegion,
 	Spacer,
 	Text,
 	type TUI,
 	type TuiMouseEvent,
+	type TuiMouseEventResult,
 } from "@earendil-works/pi-tui";
 import type { ToolDefinition, ToolRenderContext, ToolRenderResultOptions } from "../../../core/extensions/types.ts";
 import type { Theme } from "../theme/theme.ts";
@@ -36,6 +36,7 @@ import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/rend
 import { convertToPng } from "../../../utils/image-convert.ts";
 import { theme } from "../theme/theme.ts";
 import { keyHint } from "./keybinding-hints.ts";
+import { BlockHover } from "./mixcode/hover/hover-block.ts";
 
 const FALLBACK_PREVIEW_LINES = 10;
 
@@ -47,7 +48,7 @@ export interface ToolExecutionOptions {
 export class ToolExecutionComponent extends Container {
 	private contentBox: Box;
 	private contentText: Text;
-	private contentTextRegion: MouseRegion;
+	private readonly hover = new BlockHover((event) => this.handleBlockClick(event));
 	private selfRenderContainer: Container;
 	private selfRenderHeight = 0;
 	private callRendererComponent?: Component;
@@ -104,13 +105,12 @@ export class ToolExecutionComponent extends Container {
 		// contentText is reserved for generic fallback rendering when no tool definition exists.
 		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
-		this.contentTextRegion = this.createResultRegion(this.contentText);
 		this.selfRenderContainer = new Container();
 
 		if (this.hasRendererDefinition()) {
 			this.addChild(this.getRenderShell() === "self" ? this.selfRenderContainer : this.contentBox);
 		} else {
-			this.addChild(this.contentTextRegion);
+			this.addChild(this.contentText);
 		}
 
 		this.updateDisplay();
@@ -170,14 +170,6 @@ export class ToolExecutionComponent extends Container {
 			text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")}${theme.fg("muted", ")")}`;
 		}
 		return new Text(text, 0, 0);
-	}
-
-	private createResultRegion(component: Component): MouseRegion {
-		return new MouseRegion(component, (event) => {
-			if (!this.result || event.type !== "click" || event.button !== "left") return undefined;
-			this.setExpanded(!this.expanded);
-			return { handled: true };
-		});
 	}
 
 	updateArgs(args: any): void {
@@ -288,20 +280,33 @@ export class ToolExecutionComponent extends Container {
 					lines.push(...imageComponent.render(width));
 				}
 			}
-			return lines;
+			return this.hover.paint(lines, width);
 		}
 
-		return super.render(width);
+		return this.hover.paint(super.render(width), width);
 	}
 
 	override handleMouse(event: TuiMouseEvent): ReturnType<Container["handleMouse"]> {
-		if (!this.hasRendererDefinition() || this.getRenderShell() !== "self") return super.handleMouse(event);
-		if (event.y <= 0 || event.y > this.selfRenderHeight) return undefined;
-		return this.selfRenderContainer.handleMouse({
-			...event,
-			y: event.y - 1,
-			height: this.selfRenderHeight,
-		});
+		// A self-rendering tool owns its own rows, so its own controls see the event first.
+		if (this.hasRendererDefinition() && this.getRenderShell() === "self") {
+			if (event.y > 0 && event.y <= this.selfRenderHeight) {
+				const handled = this.selfRenderContainer.handleMouse({
+					...event,
+					y: event.y - 1,
+					height: this.selfRenderHeight,
+				});
+				if (handled) return handled;
+			}
+		}
+		// The whole block is the pointer target, so the cue covers the card a click acts on.
+		return this.hover.dispatch(event) ?? super.handleMouse(event);
+	}
+
+	/** A primary click anywhere on the block expands or collapses it. */
+	private handleBlockClick(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "click" || event.button !== "left" || !this.result) return undefined;
+		this.setExpanded(!this.expanded);
+		return { handled: true };
 	}
 
 	private updateDisplay(): void {
@@ -322,17 +327,17 @@ export class ToolExecutionComponent extends Container {
 
 			const callRenderer = this.getCallRenderer();
 			if (!callRenderer) {
-				renderContainer.addChild(this.createResultRegion(this.createCallFallback()));
+				renderContainer.addChild(this.createCallFallback());
 				hasContent = true;
 			} else {
 				try {
 					const component = callRenderer(this.args, theme, this.getRenderContext(this.callRendererComponent));
 					this.callRendererComponent = component;
-					renderContainer.addChild(this.createResultRegion(component));
+					renderContainer.addChild(component);
 					hasContent = true;
 				} catch {
 					this.callRendererComponent = undefined;
-					renderContainer.addChild(this.createResultRegion(this.createCallFallback()));
+					renderContainer.addChild(this.createCallFallback());
 					hasContent = true;
 				}
 			}
@@ -342,7 +347,7 @@ export class ToolExecutionComponent extends Container {
 				if (!resultRenderer) {
 					const component = this.createResultFallback();
 					if (component) {
-						renderContainer.addChild(this.createResultRegion(component));
+						renderContainer.addChild(component);
 						hasContent = true;
 					}
 				} else {
@@ -354,13 +359,13 @@ export class ToolExecutionComponent extends Container {
 							this.getRenderContext(this.resultRendererComponent),
 						);
 						this.resultRendererComponent = component;
-						renderContainer.addChild(this.createResultRegion(component));
+						renderContainer.addChild(component);
 						hasContent = true;
 					} catch {
 						this.resultRendererComponent = undefined;
 						const component = this.createResultFallback();
 						if (component) {
-							renderContainer.addChild(this.createResultRegion(component));
+							renderContainer.addChild(component);
 							hasContent = true;
 						}
 					}

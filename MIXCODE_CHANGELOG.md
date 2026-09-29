@@ -119,6 +119,17 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   [Extension Widget Row Budget](docs/widget-layout.md).
 - `core/mixcode/mixcode-settings.ts` reads and writes `mixcode_settings.json` in the state
   directory shared with mixcode-pi, so both agents see the same global settings.
+- Pointer hover feedback: passive mouse motion highlights what a click would hit, without
+  moving the keyboard selection, the active tab, the editor draft, or the scroll position.
+  Tab chips, command-palette rows and the transcript blocks that answer a click (agent tool
+  calls, compaction and branch summaries, skill invocations, the thinking block) paint the
+  hovered cells with the selection background and an underline, so the cue stays visible in a
+  monochrome theme; a block is painted as one rectangle, row padding and blank rows included,
+  and the jump-to-end label underlines while the pointer is over it. A primary click anywhere
+  on a block expands or collapses it. The fullscreen renderer tells the component under the
+  pointer when the pointer leaves it, drops the cue when an overlay is open, and drops it when
+  the terminal is resized. Hover needs all-motion mouse reporting, which the fullscreen
+  renderer only asks for outside tmux, zellij and screen.
 
 ### Changed
 
@@ -164,6 +175,8 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   bar's overflow hints and the scroll-box assembly in pi-tui's layout now each have one
   implementation, and names, comments and magic numbers were brought back in line with what the
   code does. No behaviour change beyond the fixes below and the renames above.
+- `TuiAltScreen`'s `scrollToEndIndicator` callback now receives whether the pointer is over
+  the label, so a caller can style the hovered state.
 
 ### Fixed
 

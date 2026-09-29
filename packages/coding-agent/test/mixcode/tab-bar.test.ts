@@ -1,3 +1,4 @@
+import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
 import { TabBar, type TabBarModel } from "../../src/modes/interactive/components/mixcode/multi-tab/tab-bar.ts";
 import { initTheme, theme } from "../../src/modes/interactive/theme/theme.ts";
@@ -38,9 +39,21 @@ function click(x: number, y: number) {
 	};
 }
 
+/** Passive pointer motion; hover moves the cue and never activates a tab. */
+function move(x: number, y: number) {
+	return { ...click(x, y), type: "move" as const, button: "none" as const };
+}
+
+/** The theme hover background sequence; the theme exists only once a test has initialized it. */
+function hoverBackgroundOpen(): string {
+	const painted = theme.bg("selectedBg", "\u0001");
+	const markerIndex = painted.indexOf("\u0001");
+	return markerIndex > 0 ? painted.slice(0, markerIndex) : "";
+}
+
 /** Layout assertions read the plain text; colors are asserted separately. */
 function plain(text: string): string {
-	return text.replace(/\x1b\[[0-9;]*m/g, "");
+	return stripTerminalSequences(text);
 }
 
 describe("tab bar layout", () => {
@@ -141,6 +154,51 @@ describe("tab bar layout", () => {
 		const row = bar.render(80)[0]!;
 		expect(row).toContain("✓");
 		expect(row).toContain(theme.bold(theme.fg("success", "done-tab")));
+	});
+});
+
+describe("tab bar hover", () => {
+	it("highlights the chip under the pointer without activating it", () => {
+		const selected: string[] = [];
+		const bar = new TabBar(
+			() => model(3, 0),
+			(id) => selected.push(id),
+		);
+		bar.render(80);
+
+		// t1 sits in columns 9..16, between the active chip and the last one.
+		expect(bar.handleMouse(move(10, 0))).toEqual({ handled: true, render: true });
+		expect(bar.handleMouse(move(11, 0))).toEqual({ handled: true, render: false });
+		const lines = bar.render(80);
+		expect(plain(lines[0]!).trimEnd()).toBe("▌- tab0   - tab1   - tab2");
+		// The cue covers the chip under the pointer and no other chip. The underline is
+		// re-opened after every inner reset, so its first occurrence marks the cue's start.
+		const cue = lines[0]!.indexOf("\x1b[4m");
+		expect(cue).toBeGreaterThan(0);
+		expect(plain(lines[0]!.slice(cue))).toContain(" - tab1 ");
+		expect(plain(lines[0]!.slice(0, cue))).not.toContain(" - tab1 ");
+		expect(lines[0]!.slice(cue)).toContain(hoverBackgroundOpen());
+		expect(lines[0]!.slice(lines[0]!.indexOf("tab1"))).not.toContain("\x1b[4m");
+		expect(selected).toEqual([]);
+	});
+
+	it("clears the cue when the pointer leaves the chips or the active tab changes", () => {
+		let current = model(2, 0);
+		const bar = new TabBar(
+			() => current,
+			() => {},
+		);
+		bar.render(80);
+		expect(bar.handleMouse(move(10, 0))).toEqual({ handled: true, render: true });
+		expect(bar.render(80)[0]).toContain("\x1b[4m");
+
+		// The rule row holds no chip, so the move ends the hover.
+		expect(bar.handleMouse(move(10, 1))).toEqual({ handled: true, render: true });
+		expect(bar.render(80)[0]).not.toContain("\x1b[4m");
+
+		expect(bar.handleMouse(move(10, 0))).toEqual({ handled: true, render: true });
+		current = { ...current, activeId: "t1" };
+		expect(bar.render(80)[0]).not.toContain("\x1b[4m");
 	});
 });
 

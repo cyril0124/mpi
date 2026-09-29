@@ -17,6 +17,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { isWorkingStatus, type TabColorName, type TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
 import { theme } from "../../../theme/theme.ts";
+import { type HoverTarget, PointerHover } from "../hover/pointer-hover.ts";
 import { applyActiveTabShimmer, COLORED_SHIMMER_STYLES, THEME_SHIMMER_STYLES } from "../tab-shimmer.ts";
 
 export interface TabBarItem {
@@ -47,6 +48,14 @@ export interface TabBarModel {
 	rulePainter?: (text: string) => string;
 	/** Row cap for the bar; the rest of the tabs collapse into overflow counts. */
 	maxRows?: number;
+}
+
+/** Visible cells of one chip in the last rendered frame, in zero-based coordinates. */
+interface ChipRect {
+	id: string;
+	row: number;
+	start: number;
+	end: number;
 }
 
 const GLYPHS: Record<TabStatus, string> = {
@@ -267,7 +276,10 @@ function packedHomeNeedsAbbreviation(label: string, width: number): boolean {
 export class TabBar implements Component {
 	private readonly getModel: () => TabBarModel;
 	private readonly onSelect: (id: string) => void;
-	private hitRegions: Array<{ id: string; row: number; start: number; end: number }> = [];
+	private hitRegions: ChipRect[] = [];
+	private readonly hover = new PointerHover();
+	/** Active tab of the last render; a switch cancels a highlight on the chip that lost focus. */
+	private hoverRevision: string | undefined;
 
 	constructor(getModel: () => TabBarModel, onSelect: (id: string) => void) {
 		this.getModel = getModel;
@@ -275,13 +287,30 @@ export class TabBar implements Component {
 	}
 
 	invalidate(): void {
-		// No cached state to invalidate.
+		this.hover.reset();
 	}
 
 	render(width: number): string[] {
+		const lines = this.renderLines(width);
+		this.hover.layout(this.hoverTargets(), this.hoverRevision);
+		return this.hover.paint(lines, width);
+	}
+
+	/** Chip rectangles of the frame just rendered, which the pointer hit-tests against. */
+	private hoverTargets(): HoverTarget[] {
+		return this.hitRegions.map((region) => ({
+			id: region.id,
+			x: region.start,
+			y: region.row,
+			width: region.end - region.start + 1,
+		}));
+	}
+
+	private renderLines(width: number): string[] {
 		this.hitRegions = [];
 		if (width <= 0) return [];
 		const model = this.getModel();
+		this.hoverRevision = model.activeId;
 		if (model.tabs.length === 0 && !model.home) return [];
 		const markPainter = model.rulePainter ?? ((text: string) => theme.fg("borderMuted", text));
 
@@ -447,15 +476,25 @@ export class TabBar implements Component {
 	}
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (event.button !== "left") return undefined;
-		if (event.type !== "click" && event.type !== "press") return undefined;
-		const row = event.y < 0 ? -1 : event.y;
-		if (row < 0) return undefined;
-		const region = this.hitRegions.find(
-			(entry) => entry.row === row && event.x >= entry.start && event.x <= entry.end,
-		);
-		if (!region) return undefined;
+		// Passive motion only moves the highlight; it never activates a tab. The move is
+		// always answered, so the dispatcher knows this component still owns the pointer.
+		if (event.type === "move" && event.button === "none") {
+			return { handled: true, render: this.hover.move(event.x, event.y) };
+		}
+		// Every other pointer event drops a highlight the pointer may have left behind.
+		const cleared = this.hover.clear();
+		const repaintIfCleared = (): TuiMouseEventResult | undefined =>
+			cleared ? { handled: true, render: true } : undefined;
+		if (event.button !== "left" || (event.type !== "click" && event.type !== "press")) return repaintIfCleared();
+		const region = this.chipAt(event.x, event.y);
+		if (!region) return repaintIfCleared();
 		this.onSelect(region.id);
 		return { handled: true };
+	}
+
+	/** Chip whose visible cells hold the pointer in the last rendered frame. */
+	private chipAt(x: number, y: number): ChipRect | undefined {
+		if (y < 0) return undefined;
+		return this.hitRegions.find((entry) => entry.row === y && x >= entry.start && x <= entry.end);
 	}
 }

@@ -28,10 +28,12 @@ export function createInteractiveTui(options: InteractiveTuiOptions): TuiMainScr
 			searchMatchStyle: (text) => theme.underline(styleSearchMatch(text)),
 			searchCurrentMatchStyle: (text) => theme.bold(theme.inverse(styleSearchMatch(text))),
 			searchNavigationButtonStyle: (text, hovered) => (hovered ? theme.underline(text) : text),
-			scrollToEndIndicator: () => {
+			scrollToEndIndicator: (hovered) => {
 				const shortcut = keyDisplayText("tui.altScreen.bottom");
 				const label = ` ↓ Jump to latest message${shortcut ? ` · ${shortcut}` : ""} `;
-				return theme.bg("selectedBg", theme.fg("text", label));
+				const text = theme.bg("selectedBg", theme.fg("text", label));
+				// Underline marks the pointer over the label, like the search buttons.
+				return hovered ? theme.underline(text) : text;
 			},
 			openUrl: openBrowser,
 			onRightClickPaste: options.onRightClickPaste,

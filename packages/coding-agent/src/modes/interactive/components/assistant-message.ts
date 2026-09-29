@@ -1,8 +1,9 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { Container, Markdown, type MarkdownTheme, MouseRegion, Spacer, Text } from "@earendil-works/pi-tui";
+import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
+import { HoverRegion } from "./mixcode/hover/hover-region.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
@@ -161,7 +162,7 @@ export class AssistantMessageComponent extends Container {
 							},
 						);
 				this.contentContainer.addChild(
-					new MouseRegion(thinkingComponent, (event) => {
+					new HoverRegion(thinkingComponent, (event) => {
 						if (event.type !== "click" || event.button !== "left") return undefined;
 						this.thinkingVisibilityOverrides.set(runIndex, !hidden);
 						if (this.lastMessage) this.updateContent(this.lastMessage);

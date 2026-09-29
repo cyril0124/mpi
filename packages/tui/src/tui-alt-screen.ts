@@ -39,6 +39,7 @@ import {
 	compositeTuiLine,
 	dispatchMouseEvent,
 	type OverlayHandle,
+	type OverlayOptions,
 	retargetMouseEvent,
 	TuiBase,
 	type TuiMouseButton,
@@ -76,6 +77,8 @@ const OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
 const OSC133_PROMPT_START = /^\x1b\]133;A(?:\x07|\x1b\\)/;
 const PAGE_SCROLL_OVERLAP = 4;
 const ALT_WHEEL_SCROLL_MULTIPLIER = 5;
+/** Button bits SGR reports for motion with no button held; `decodeMouseButton` maps them to "none". */
+const SGR_NO_BUTTON = 3;
 const MAX_CACHED_OFFSCREEN_KITTY_IMAGES = 16;
 const MAX_CACHED_OFFSCREEN_KITTY_TRANSMISSION_BYTES = 32 * 1024 * 1024;
 const MAX_CACHED_OFFSCREEN_KITTY_DECODED_BYTES = 64 * 1024 * 1024;
@@ -183,9 +186,10 @@ export interface TuiAltScreenOptions {
 	searchNavigationButtonStyle?: (text: string, hovered: boolean) => string;
 	/**
 	 * Render a clickable jump-to-end label. It is centered on the last row of a follow-end
-	 * primary scroll view while that view is scrolled away from its end.
+	 * primary scroll view while that view is scrolled away from its end. `hovered` is true
+	 * while the pointer is over the label.
 	 */
-	scrollToEndIndicator?: () => string;
+	scrollToEndIndicator?: (hovered: boolean) => string;
 	/** Open an OSC 8 hyperlink activated with a primary-button click. */
 	openUrl?: (url: string) => void;
 	/** Handle an unmodified secondary-button press for clipboard paste. Currently enabled on Windows only. */
@@ -243,6 +247,9 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private scrollbarDrag?: ScrollbarDrag;
 	private scrollbarHover?: ScrollView;
 	private scrollToEndIndicatorRect?: ScrollToEndIndicatorRect;
+	private scrollToEndIndicatorHover = false;
+	/** Component the pointer last hovered; it is sent a leave event when the pointer leaves. */
+	private hoverTarget?: TuiMouseDispatchTarget;
 	private activeSearch?: ActiveSearch;
 	private pressedUrl?: string;
 	private selectionDragged = false;
@@ -262,7 +269,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private readonly searchMatchStyle: (text: string) => string;
 	private readonly searchCurrentMatchStyle: (text: string) => string;
 	private readonly searchNavigationButtonStyle: (text: string, hovered: boolean) => string;
-	private readonly scrollToEndIndicator?: () => string;
+	private readonly scrollToEndIndicator?: (hovered: boolean) => string;
 	private readonly openUrl?: (url: string) => void;
 	private readonly onRightClickPaste?: () => void;
 	private copyOnSelect: boolean;
@@ -394,6 +401,8 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.selectionPressActive = false;
 		this.stopScrollbarHover();
 		this.stopScrollbarDrag();
+		this.hoverTarget = undefined;
+		this.scrollToEndIndicatorHover = false;
 		this.clearComponentMouseGesture();
 		this.flashes.dispose();
 		if (!this.altScreenActive) return;
@@ -728,6 +737,8 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 				wheelDelta: wheelEvent.direction * this.getWheelScrollLines(wheelEvent.button),
 			});
 			const overlay = this.dispatchMouseToOverlay(event);
+			// A wheel is not a hover: the surface under the pointer may have scrolled.
+			this.clearHoverTarget();
 			const result = overlay.result ?? (overlay.hit ? undefined : this.dispatchMouseToLayout(event));
 			if (result) {
 				if (this.applyMouseDispatchResult(event, result)) this.requestRender();
@@ -743,6 +754,9 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			return { consume: true };
 		}
 		if (this.isMouseSequence(data)) return { consume: true };
+
+		// A key is not a hover either, and the surface the pointer rests on may redraw.
+		this.clearHoverTarget();
 
 		const keybindings = getKeybindings();
 		const isRelease = isKeyRelease(data);
@@ -917,6 +931,49 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.selectionDragged = false;
 	}
 
+	/**
+	 * Show an overlay and drop the pointer's hover cue. The overlay takes the pointer, so
+	 * the chrome beneath it must not keep a highlight the pointer no longer reaches.
+	 */
+	override showOverlay(component: Component, options?: OverlayOptions): OverlayHandle {
+		const handle = super.showOverlay(component, options);
+		this.clearHoverTarget();
+		// The label is chrome the overlay now covers.
+		this.scrollToEndIndicatorHover = false;
+		return handle;
+	}
+
+	/**
+	 * Take the hover cue off the component the pointer last hovered. A component only learns
+	 * that the pointer left it from a move event, so a move outside every cell is sent to the
+	 * target it was last inside of. That target is the component that answered the move, so the
+	 * leave is dispatched in the target's own coordinates; a scrolled or windowed box reports
+	 * content coordinates and its screen origin cannot be turned back into a pointer position.
+	 */
+	private clearHoverTarget(): void {
+		const target = this.hoverTarget;
+		if (!target) return;
+		this.hoverTarget = undefined;
+		const leave = {
+			...this.createMouseEvent("move", SGR_NO_BUTTON, -1, -1),
+			width: target.width,
+			height: target.height,
+		};
+		const result = dispatchMouseEvent(target.component, leave);
+		if (result && this.applyMouseDispatchResult(leave, result)) this.requestRender();
+	}
+
+	/** Track the pointer over the jump-to-end label; true when the hovered state changed. */
+	private updateScrollToEndIndicatorHover(x: number, y: number): boolean {
+		const rect = this.scrollToEndIndicatorRect;
+		const inside = Boolean(
+			rect && !this.hasOverlay() && y === rect.row && x >= rect.column && x < rect.column + rect.width,
+		);
+		if (inside === this.scrollToEndIndicatorHover) return false;
+		this.scrollToEndIndicatorHover = inside;
+		return true;
+	}
+
 	private handleMouseEvent(raw: SgrMouseEvent): void {
 		const isMotion = (raw.button & 32) !== 0;
 		const type: TuiMouseEvent["type"] = raw.release
@@ -927,6 +984,9 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 					: "drag"
 				: "press";
 		const event = this.createMouseEvent(type, raw.button, raw.x, raw.y);
+
+		// A press, click, drag, wheel or release is not a hover: drop the cue it left behind.
+		if (type !== "move") this.clearHoverTarget();
 
 		if (this.mouseCapture || this.mousePressTarget) {
 			const target = this.mouseCapture ?? this.mousePressTarget!;
@@ -951,21 +1011,55 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			return;
 		}
 
-		if (this.handleSearchMouseEvent(raw)) return;
+		if (this.handleSearchMouseEvent(raw)) {
+			this.clearHoverTarget();
+			return;
+		}
 
 		const overlay = this.dispatchMouseToOverlay(event);
 		if (!overlay.hit) {
-			if (this.handleScrollToEndIndicatorMouseEvent(raw)) return;
+			if (type === "move" && this.hasOverlay()) {
+				// A visible overlay owns the pointer: the chrome beneath it keeps no hover, even
+				// for a move outside the overlay's own rectangle.
+				this.clearHoverTarget();
+				this.stopScrollbarHover();
+				this.scrollToEndIndicatorHover = false;
+				return;
+			}
+			if (type === "move" && this.updateScrollToEndIndicatorHover(raw.x, raw.y)) this.requestRender();
+			if (this.handleScrollToEndIndicatorMouseEvent(raw)) {
+				this.clearHoverTarget();
+				return;
+			}
+			if (type === "move" && this.scrollToEndIndicatorHover) {
+				// The label sits over the last transcript row; the block beneath it is not hovered.
+				this.clearHoverTarget();
+				return;
+			}
 			const scrollbarHandled = this.handleScrollbarMouseEvent(raw);
 			if (!this.scrollbarDrag) this.updateScrollbarHover(raw.x, raw.y);
-			if (scrollbarHandled) return;
+			if (scrollbarHandled) {
+				this.clearHoverTarget();
+				return;
+			}
+			if (this.scrollbarHover) this.clearHoverTarget();
 		} else {
 			this.stopScrollbarHover();
+			// An overlay takes the pointer from the chrome beneath it, but the overlay's own
+			// hover stays: the pointer is still on the component that tracks it.
+			if (this.hoverTarget && this.hoverTarget.component !== overlay.component) this.clearHoverTarget();
 		}
 
+		// A move that reaches another component ends the previous component's hover, and a
+		// move that reaches none ends it too. The target is compared by component, since a
+		// scrolled or windowed box reports content coordinates, not screen ones.
 		const result = overlay.result ?? (overlay.hit ? undefined : this.dispatchMouseToLayout(event));
 		if (result) {
 			const render = this.applyMouseDispatchResult(event, result);
+			if (type === "move") {
+				if (this.hoverTarget && this.hoverTarget.component !== result.target.component) this.clearHoverTarget();
+				this.hoverTarget = result.target;
+			}
 			if (type === "press") {
 				this.clearTextSelection();
 				this.mousePressTarget = result.target;
@@ -976,6 +1070,8 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			return;
 		}
 
+		// A move that reached no component leaves nothing hovered.
+		if (type === "move") this.clearHoverTarget();
 		if (this.handleRightClickPaste(raw)) return;
 		this.handleSelectionMouseEvent(raw);
 	}
@@ -1663,26 +1759,49 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	}
 
 	private compositeScrollToEndIndicator(screen: string[], layout: LayoutFrame, width: number): string[] {
+		// A label whose cells moved is no longer the label the pointer was over.
+		const previousRect = this.scrollToEndIndicatorRect;
 		this.scrollToEndIndicatorRect = undefined;
 		const scrollView = layout.primaryScrollView ?? this.implicitScrollView;
-		if (!this.scrollToEndIndicator || !scrollView.followEnd || scrollView.isFollowingEnd) return screen;
+		if (!this.scrollToEndIndicator || !scrollView.followEnd || scrollView.isFollowingEnd) {
+			this.scrollToEndIndicatorHover = false;
+			return screen;
+		}
 		const box = getScrollViewBox(layout, scrollView);
 		const clip = box?.clip;
-		if (!clip || clip.width <= 0 || clip.height <= 0) return screen;
+		if (!clip || clip.width <= 0 || clip.height <= 0) {
+			this.scrollToEndIndicatorHover = false;
+			return screen;
+		}
 		const row = clip.y + clip.height - 1;
-		if (row >= screen.length || isImageLine(screen[row] ?? "")) return screen;
+		if (row >= screen.length || isImageLine(screen[row] ?? "")) {
+			this.scrollToEndIndicatorHover = false;
+			return screen;
+		}
 		const scrollbarColumn = box ? getScrollbarGeometry(box)?.column : undefined;
-		const label = truncateToWidth(this.scrollToEndIndicator(), clip.width, "");
+		const label = truncateToWidth(this.scrollToEndIndicator(this.scrollToEndIndicatorHover), clip.width, "");
 		const labelWidth = visibleWidth(label);
 		const column = clip.x + Math.floor((clip.width - labelWidth) / 2);
 		const rightEdge = scrollbarColumn ?? clip.x + clip.width;
 		const availableWidth = Math.max(0, rightEdge - column);
 		const text = truncateToWidth(label, availableWidth, "");
 		const textWidth = visibleWidth(text);
-		if (textWidth === 0) return screen;
+		if (textWidth === 0) {
+			this.scrollToEndIndicatorHover = false;
+			return screen;
+		}
 		const result = [...screen];
 		result[row] = compositeTuiLine(result[row] ?? "", text, column, textWidth, width);
 		this.scrollToEndIndicatorRect = { row, column, width: textWidth };
+		if (
+			this.scrollToEndIndicatorHover &&
+			previousRect &&
+			(previousRect.row !== row || previousRect.column !== column || previousRect.width !== textWidth)
+		) {
+			// This frame drew the label with the old hover; repaint it where it sits now.
+			this.scrollToEndIndicatorHover = false;
+			this.requestRender();
+		}
 		return result;
 	}
 
@@ -1704,6 +1823,13 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		if (this.stopped || !this.altScreenActive) return;
 		const width = Math.max(1, this.terminal.columns);
 		const height = Math.max(1, this.terminal.rows);
+		if (this.previousScreenWidth !== width || this.previousScreenHeight !== height) {
+			// The geometry every hover was measured against just moved. Drop it; the next move
+			// re-establishes whatever is under the pointer.
+			this.clearHoverTarget();
+			this.stopScrollbarHover();
+			this.scrollToEndIndicatorHover = false;
+		}
 		const root = this.layoutRoot ?? this.implicitScrollView;
 		let nextLayout = renderLayoutFrame(root, width, height, () => this.requestRender());
 		if (this.refreshSearch(nextLayout)) {

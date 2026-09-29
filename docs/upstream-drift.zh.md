@@ -26,6 +26,8 @@
 | 应用动作键处理器 | 命中的处理器直接消费该按键 | 处理器可返回 `false` 主动放弃该键，并会收到原始按键数据 | Home 的绑定不能抢走输入框的 `up`/`down`/`left`/`right`/`enter`，而 `enter` 同时匹配裸换行（`ctrl+j`） |
 | 空输入框 | 不显示任何内容 | Home 上会写出目标 agent，并用中性的 thinking 边框色 | 名册已经明确了目标，而 Home 自身没有 thinking 等级 |
 | 交互模式下的控制台输出 | `console.log` 等方法直接写到终端 | 画进底部居中的 `Notice` 弹窗（不进对话记录）；`/console-history` 把最近 1000 行交给外部编辑器打开，带时间戳与产生它的标签页 | [控制台历史](console-history.zh.md) |
+| Home 上的 footer | 不适用（上游没有 Home 页面） | footer 仍然显示，并继续展示当前绑定会话的模型与上下文 | 本 fork 的 footer 属于 runtime 而不是页面，隐藏它需要单独设计 |
+| 指针 hover 反馈 | 无提示：列表忽略指针移动，消息区域只响应点击，跳到底部标签只有一种样式 | 指针下的单元格获得选中背景与下划线（标签页 chip、命令面板行）；响应点击的消息块整块填充为一个矩形；全屏渲染器在指针离开后告知对应组件，浮层打开期间保持整个界面无高亮，终端尺寸变化时清除所有 hover | 本 fork 的可点击界面需要一个不改变键盘选择与活动标签页的提示 |
 
 ## 已过期的上游页面与源码文案
 
@@ -59,6 +61,9 @@
   `theme/theme-json.ts`、`theme/theme-schema.json`：带框卡片填充用的 `panelBg` 背景色
 - `packages/coding-agent/test/extensions-runner.test.ts`
 - `packages/coding-agent/test/interactive-tui.test.ts`：复制确认改为断言 toast
+- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：指针位于跳到底部标签上时加下划线
+- `packages/coding-agent/src/modes/interactive/components/tool-execution.ts`、`assistant-message.ts`、
+  `compaction-summary-message.ts`、`branch-summary-message.ts`、`skill-invocation-message.ts`：可点击区域改用 fork 的 `HoverRegion`，框架自带的 `MouseRegion` 不会绘制高亮
 - `packages/ai/src/api/openai-responses-shared.ts`：把 Responses 流中服务器报告的模型名记录到
   `AssistantMessage.responseModel`
 - `packages/tui/src/layout-node.ts`：窗口化布局节点与滚动行提供者
@@ -66,10 +71,13 @@
 - `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`：`MixCode` 分组条目
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`：`getSettingsListTheme` 的分组标题样式
 - `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒上的行提供者
+- `packages/tui/src/tui.ts`：浮层鼠标派发会返回命中的浮层，以便区分“在浮层外”与“在浮层上”
 - `packages/tui/src/tui-alt-screen.ts`：经提供者读取内容行；`scrollToPrompt` 改为公开；
-  `onCopyResult` 选项让宿主自行确认复制结果，替代该屏幕自带的一行 flash，并按 grapheme 数报告复制长度
+  `onCopyResult` 选项让宿主自行确认复制结果，替代该屏幕自带的一行 flash，并按 grapheme 数报告复制长度；
+  跟踪被 hover 的组件，以便后续移动到别处、打开浮层或指针被捕获时向其发送 leave 事件；
+  `scrollToEndIndicator` 会收到指针是否在标签上
 - `packages/tui/src/utils.ts`：`countGraphemes` 从备选屏幕移到这里，让 coding-agent 的 toast 能用同一单位报告复制长度
-- `packages/tui/src/index.ts`：导出窗口化节点、鼠标派发与 grapheme 计数器
+- `packages/tui/src/index.ts`：导出窗口化节点、鼠标派发、grapheme 计数器与图片行判定
 - `AGENTS.md`、`.gitignore`
 
 本 fork 还给 `keybindings.ts` 加了键位绑定；`core/mixcode/multi-tab/tab-manager.ts` 与 `tab-state.ts` 是 fork 自有文件。

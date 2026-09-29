@@ -1,4 +1,4 @@
-import { fuzzyFilter, setKeybindings, type TUI, TuiMainScreen } from "@earendil-works/pi-tui";
+import { fuzzyFilter, setKeybindings, stripTerminalSequences, type TUI, TuiMainScreen } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defaultEditorTheme } from "../../../tui/test/test-themes.ts";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
@@ -49,7 +49,24 @@ const ENTRIES: CommandPaletteEntry[] = [
 
 function plain(lines: string[]): string {
 	// Colors are asserted nowhere here; only which rows and marker are on screen.
-	return lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "")).join("\n");
+	return lines.map((line) => stripTerminalSequences(line)).join("\n");
+}
+
+/** Pointer event for the palette's own hit testing. */
+function mouse(type: "move" | "press" | "click") {
+	return {
+		type,
+		button: type === "move" ? ("none" as const) : ("left" as const),
+		x: 5,
+		y: 4,
+		screenX: 5,
+		screenY: 4,
+		width: 80,
+		height: 24,
+		shift: false,
+		alt: false,
+		ctrl: false,
+	};
 }
 
 /** Show a component the way the app does, and wait for it to paint. */
@@ -175,6 +192,41 @@ describe("command palette", () => {
 		} finally {
 			ui.stop();
 		}
+	});
+
+	it("paints the row under the pointer without moving the selection or accepting it", () => {
+		const runs: string[] = [];
+		const palette = new CommandPaletteComponent(
+			ENTRIES,
+			ROW_BUDGET,
+			(name) => runs.push(name),
+			() => {},
+		);
+		const rows = () => palette.render(80);
+		// The match highlight shares the selected background color, so the cue is
+		// identified by its underline.
+		const cue = "\x1b[4m";
+
+		// Entry rows start below the frame, the search row and the separator; a row
+		// only becomes a hover target once the palette has painted it.
+		rows();
+		expect(palette.handleMouse({ ...mouse("move"), x: 5, y: 4 })).toEqual({ handled: true, render: true });
+		expect(palette.handleMouse({ ...mouse("move"), x: 5, y: 4 })).toEqual({ handled: true, render: false });
+		const painted = rows();
+		expect(plain(painted)).toContain("→ /model");
+		expect(painted[4]).toContain(cue);
+		expect(painted[3]).not.toContain(cue);
+		expect(runs).toEqual([]);
+
+		// Filtering replaces the rows, so the cue cannot follow the row index.
+		palette.handleInput("t");
+		expect(rows().join("\n")).not.toContain(cue);
+
+		// A click after hovering still accepts the row under the pointer.
+		palette.handleInput("\x7f");
+		palette.handleMouse({ ...mouse("press"), x: 5, y: 4 });
+		palette.handleMouse({ ...mouse("click"), x: 5, y: 4 });
+		expect(runs).toEqual(["new"]);
 	});
 
 	it("paints the characters the query matched", () => {

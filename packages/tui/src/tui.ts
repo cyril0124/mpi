@@ -821,7 +821,12 @@ export abstract class TuiBase extends Container implements TUI {
 	}
 
 	/** Dispatch to the visually topmost overlay under the pointer. */
-	protected dispatchMouseToOverlay(event: TuiMouseEvent): { hit: boolean; result?: TuiMouseDispatchResult } {
+	protected dispatchMouseToOverlay(event: TuiMouseEvent): {
+		hit: boolean;
+		result?: TuiMouseDispatchResult;
+		/** The overlay component the pointer is over, which owns the pointer while it is open. */
+		component?: Component;
+	} {
 		for (let index = this.renderedOverlayLayouts.length - 1; index >= 0; index--) {
 			const layout = this.renderedOverlayLayouts[index]!;
 			if (
@@ -842,9 +847,10 @@ export abstract class TuiBase extends Container implements TUI {
 			return result
 				? {
 						hit: true,
+						component: layout.entry.component,
 						result: result.focus ? { ...result, focusTarget: layout.entry.component } : result,
 					}
-				: { hit: true };
+				: { hit: true, component: layout.entry.component };
 		}
 		return { hit: false };
 	}
