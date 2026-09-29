@@ -40,6 +40,11 @@ the newest assistant (or system, or user) text. The selected card carries the se
 background. The roster windows around the selection and marks the hidden sides with
 `↑ older above` / `↓ newer below`.
 
+When the startup check finds outdated extension packages, Home lists them above the roster:
+`Package Updates Available`, the command that updates them, and one line per package. A viewport too
+short for the list keeps the first entries and ends with `… more package updates · pi update
+--extensions`.
+
 Home paints no footer: the working directory, the usage and model line, extension statuses and the
 extension widgets are per-agent chrome, so it also hides the working indicator. Everything comes back
 when an agent is attached.
@@ -91,7 +96,7 @@ dialog resets the capture. Both commands can also be typed into the composer.
 
 Where mixcode-pi's Home page relies on machinery this fork does not have, the fork keeps its own:
 
-- no toast overlay, title shimmer, package-update notice, or loading-phase status chip;
+- no toast overlay, title shimmer, or loading-phase status chip;
 - no zen mode; vim mode is a per-tab transcript surface, and Home neither enters it nor hands it on;
 - only the Home composer draws a hint while empty; an agent tab's composer stays blank (mixcode-pi's
   composer draws one there too);

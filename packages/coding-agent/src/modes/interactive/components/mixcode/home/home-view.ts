@@ -50,6 +50,8 @@ export interface HomeViewModel {
 	workingCount: number;
 	/** Tabs waiting on the user; the activity line prints it only above zero. */
 	inputCount: number;
+	/** Outdated extension packages the startup check reported; absent when it found none. */
+	packageUpdates?: readonly string[];
 	agents: readonly HomeAgentEntry[];
 	selectedIndex: number;
 	nonIdleOnly: boolean;
@@ -324,8 +326,13 @@ function renderHome(view: HomeViewModel, width: number, height: number | undefin
 		theme.fg("borderMuted", "─".repeat(bodyWidth)),
 		...(roomy ? [""] : []),
 	];
-	const headerBudget = height === undefined ? header.length : Math.max(0, height - 4);
-	const top = header.slice(0, headerBudget);
+	const updates = renderPackageUpdateNotice(view.packageUpdates ?? [], bodyWidth);
+	// The roster keeps at least four rows: the notice list is what gets clipped.
+	const headerBudget = height === undefined ? header.length + updates.length : Math.max(0, height - 4);
+	const top = [...header, ...updates].slice(0, headerBudget);
+	if (updates.length > 0 && header.length + updates.length > headerBudget && top.length > header.length) {
+		top[top.length - 1] = theme.fg("warning", "… more package updates · pi update --extensions");
+	}
 	const body = renderAgentViewTable(view, bodyWidth, height === undefined ? undefined : height - top.length, actions, {
 		x: inset,
 		y: top.length,
@@ -416,6 +423,20 @@ function renderAgentViewTable(
 		lines.push(...renderPreviewPanel(selected, width, budget === undefined ? panelRows : budget - 1 - lines.length));
 	}
 	return finish(lines);
+}
+
+/**
+ * Outdated-package block above the roster: the heading, the command that updates
+ * them, and one line per package. A trailing blank row separates it from the table.
+ */
+function renderPackageUpdateNotice(packages: readonly string[], width: number): string[] {
+	if (packages.length === 0) return [];
+	return [
+		theme.fg("warning", theme.bold("Package Updates Available")),
+		theme.fg("dim", "pi update --extensions"),
+		...packages.map((name) => theme.fg("dim", truncateToWidth(`- ${singleLinePreview(name)}`, width, "…"))),
+		"",
+	];
 }
 
 /** Hints joined by two spaces, dropping from the middle until the row fits. */

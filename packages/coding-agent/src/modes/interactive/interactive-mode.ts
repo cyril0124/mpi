@@ -476,6 +476,8 @@ export class InteractiveMode {
 	private readonly homeSelection = createHomeSelection();
 	/** Set while Home activation sits in the tab-switch queue, so a repeat cannot double-run it. */
 	private homeActivationQueued = false;
+	/** Extension packages the startup check found outdated; shown on Home and in the transcript. */
+	private packageUpdates: string[] = [];
 	/** Footer children parked while Home hides that per-agent chrome. */
 	private homeParkedFooter: Component[] | undefined;
 	/** Status-area children parked while Home hides them. */
@@ -1188,8 +1190,11 @@ export class InteractiveMode {
 		// Start package update check asynchronously
 		this.checkForPackageUpdates()
 			.then((updates) => {
+				this.packageUpdates = updates;
 				if (updates.length > 0) {
 					this.showPackageUpdateNotification(updates);
+					// Home renders the same list above the roster.
+					this.ui.requestRender();
 				}
 			})
 			.finally(() => {
@@ -2368,6 +2373,7 @@ export class InteractiveMode {
 				const snapshot = this.homeSnapshotFor(tab);
 				return { card: this.homeCardFor(tab, snapshot), messages: snapshot.messages };
 			}),
+			packageUpdates: this.packageUpdates,
 			selectedIndex: this.homeSelection.selectedIndex,
 			nonIdleOnly: this.homeSelection.nonIdleOnly,
 			// A dialog that opens over the page must drop any captured button press.

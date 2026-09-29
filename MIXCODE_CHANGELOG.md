@@ -69,6 +69,8 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   `app.home.send`, `app.home.returnHome`, `app.home.toggleNonIdle` (defaults `up`, `down`,
   `right`, `enter`, `left`, `ctrl+f`). Each declines the key whenever Home is not the active
   surface, so the composer keeps them on agent tabs.
+- MixCode Home lists outdated extension packages above the roster, with the command that updates
+  them, when the startup check finds any.
 - MixCode Home hides the footer, the working indicator and the extension widgets while it is shown:
   the working directory, the usage and model line, the statuses and those widgets are per-agent
   chrome.
