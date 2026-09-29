@@ -7,6 +7,7 @@
  */
 import { type AutocompleteItem, fuzzyFilter, type SlashCommand } from "@earendil-works/pi-tui";
 import type { AgentSession } from "../../../core/agent-session.ts";
+import { TAB_COLOR_NAMES } from "../../../core/mixcode/multi-tab/types.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../../core/slash-commands.ts";
 import type { SourceInfo } from "../../../core/source-info.ts";
 import type { AuthSelectorProvider } from "../components/oauth-selector.ts";
@@ -21,6 +22,19 @@ export type CommandSource = {
 	describe(description: string | undefined, sourceInfo?: SourceInfo): string | undefined;
 	/** Providers offered as `/login` argument completions. */
 	loginProviders(): AuthSelectorProvider[];
+	/** Open agent tabs offered as `/tab` argument completions; empty without multi-tab. */
+	tabArguments(): TabArgumentOption[];
+	/** Saved workspace names offered by the `/...-workspace` argument completions. */
+	workspaceNames(): string[];
+};
+
+/** One open agent tab offered as a `/tab` argument completion. */
+export type TabArgumentOption = {
+	/** 1-based position matching the `/tab <index>` form. */
+	index: number;
+	title: string;
+	/** Short descriptor shown beside the title, e.g. `running · active`. */
+	description?: string;
 };
 
 type LoginProviderCompletionOption = {
@@ -40,6 +54,24 @@ function createFuzzyAutocompleteItems<T>(
 	const filtered = fuzzyFilter(items, prefix, getSearchText);
 	if (filtered.length === 0) return null;
 	return filtered.map(toAutocompleteItem);
+}
+
+/**
+ * Attach a plain string-list completion to each named command. `values` is read
+ * per keystroke, so tab and workspace commands always see current state.
+ */
+function attachValueCompletions(commands: SlashCommand[], names: readonly string[], values: () => string[]): void {
+	for (const name of names) {
+		const command = commands.find((candidate) => candidate.name === name);
+		if (!command) continue;
+		command.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null =>
+			createFuzzyAutocompleteItems(
+				values(),
+				prefix,
+				(value) => value,
+				(value) => ({ value, label: value }),
+			);
+	}
 }
 
 function getLoginProviderCompletionOptions(
@@ -139,6 +171,25 @@ export function collectSlashCommands(source: CommandSource): SlashCommand[] {
 				description: formatLoginProviderCompletionDescription(provider),
 			}));
 		};
+	}
+
+	attachValueCompletions(slashCommands, ["color"], () => [...TAB_COLOR_NAMES, "clear"]);
+	attachValueCompletions(slashCommands, ["close-session", "delete-session"], () => ["yes", "y"]);
+	attachValueCompletions(slashCommands, ["restore-workspace", "delete-workspace"], () => source.workspaceNames());
+
+	const tabCommand = slashCommands.find((command) => command.name === "tab");
+	if (tabCommand) {
+		tabCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null =>
+			createFuzzyAutocompleteItems(
+				source.tabArguments(),
+				prefix,
+				(tab) => `${tab.index} ${tab.title}`,
+				(tab) => ({
+					value: tab.title,
+					label: `${tab.index}. ${tab.title}`,
+					...(tab.description && { description: tab.description }),
+				}),
+			);
 	}
 
 	// Convert prompt templates to SlashCommand format for autocomplete

@@ -197,7 +197,7 @@ import { TrustSelectorComponent } from "./components/trust-selector.ts";
 import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import { editInExternalEditor } from "./external-editor.ts";
-import { type CommandSource, collectSlashCommands } from "./mixcode/command-list.ts";
+import { type CommandSource, collectSlashCommands, type TabArgumentOption } from "./mixcode/command-list.ts";
 import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
 import { shareSession } from "./session-share.ts";
 import {
@@ -766,6 +766,8 @@ export class InteractiveMode {
 			skillCommands: mode.skillCommands,
 			describe: (description, sourceInfo) => mode.prefixAutocompleteDescription(description, sourceInfo),
 			loginProviders: () => mode.getLoginProviderOptions(),
+			tabArguments: () => mode.getTabArgumentOptions(),
+			workspaceNames: () => mode.getWorkspaceNames(),
 		};
 	}
 
@@ -2736,6 +2738,28 @@ export class InteractiveMode {
 			return;
 		}
 		await this.activateTab(tab);
+	}
+
+	/** Open tabs as `/tab` argument completions; empty when multi-tab is unavailable. */
+	private getTabArgumentOptions(): TabArgumentOption[] {
+		const manager = this.tabManager;
+		if (!manager) return [];
+		const activeId = manager.getActive().id;
+		return manager.list().map((tab, index) => ({
+			index: index + 1,
+			title: tab.title,
+			description: tab.id === activeId ? `${tab.status} · active` : tab.status,
+		}));
+	}
+
+	/** Saved workspace names for the `/...-workspace` argument completions. */
+	private getWorkspaceNames(): string[] {
+		try {
+			return readWorkspaces(this.tabsWorkdir).map((workspace) => workspace.name);
+		} catch {
+			// A corrupt workspaces file must not break the editor; the command reports it.
+			return [];
+		}
 	}
 
 	/** `/color [name|clear]` sets or clears the active tab's chip color. */
