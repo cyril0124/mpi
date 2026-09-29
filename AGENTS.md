@@ -27,6 +27,12 @@
 - Never hardcode key checks (e.g. `matchesKey(keyData, "ctrl+x")`). Add defaults to `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` so they stay configurable.
 - Never modify `packages/ai/src/models.generated.ts` directly; update `packages/ai/scripts/generate-models.ts` instead, then regenerate. Including the resulting `models.generated.ts` diff is always OK, even if regeneration includes unrelated upstream model metadata changes.
 
+## Synced Features
+
+- Code synced from mixcode lives in a `mixcode/` folder inside the package and area it affects, e.g. `packages/coding-agent/src/core/mixcode/<feature>/` and `packages/coding-agent/src/modes/interactive/components/mixcode/<feature>/`, keeping mixcode's file names.
+- A helper the synced code shares with existing code stays one level up under `mixcode/`, e.g. `packages/coding-agent/src/core/mixcode/session-delete.ts`.
+- Tests for a `mixcode/` feature live in that package's `test/mixcode/` folder, one file per module under test, never in an upstream-owned test file such as `test/interactive-mode-*.test.ts`. `packages/tui` is the exception: its runner globs only `test/*.test.ts`, so fork tests there are flat `test/mixcode-<module>.test.ts` files.
+
 ## Commands
 
 - After code changes (not docs): `npm run check` (full output, no tail). Fix all errors, warnings, and infos before committing. Does not run tests.
@@ -40,6 +46,12 @@
 - For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
 - Never commit unless the user asks.
 
+## Test Writing
+
+- Skip tests when the behavior is certain: no test file, no separate verification run, and say so instead of adding a test that only restates the change.
+- Do not add trivial tests. A test that restates a getter, a passthrough, or the simplest happy path proves nothing and still costs maintenance.
+- Prefer end-to-end tests: verify the feature works, not that individual functions return expected values. Reach for a unit test only for logic that cannot be exercised end to end.
+
 ## Dependency and Install Security
 
 - Treat npm dep and lockfile changes as reviewed code. Direct external deps stay pinned to exact versions.
@@ -48,6 +60,10 @@
 - If dep metadata changes, refresh `package-lock.json` with `npm install --package-lock-only --ignore-scripts`.
 - If `packages/coding-agent/npm-shrinkwrap.json` needs regen, run `node scripts/generate-coding-agent-shrinkwrap.mjs` (verify with `--check` or `npm run check`). New deps with lifecycle scripts require review and an explicit allowlist entry in that script; never add one silently.
 - Pre-commit blocks lockfile commits unless `PI_ALLOW_LOCKFILE_CHANGE=1`. Don't bypass unless the user wants the lockfile change committed.
+
+## Upstream Fork
+
+This checkout is a fork of pi, not an upstream working tree. Fork-local rules live in [MIXCODE.md](MIXCODE.md) and fork documentation in [docs/](docs/README.md) — no upstream page under `packages/` is edited for fork behavior. Read `MIXCODE.md` before any fork work.
 
 ## Git
 
@@ -103,13 +119,15 @@ For testing pi's interactive mode, load and follow [.pi/skills/interactive-testi
 
 Location: `packages/*/CHANGELOG.md` (one per package).
 
+Changes this fork makes go to `MIXCODE_CHANGELOG.md` at the repo root instead of `packages/*/CHANGELOG.md`, and land in the same commit as the change. Group entries under the upstream tag they sit on (e.g. `## Unreleased — base pi v0.87.1`), newest entry first, with the same `### Added` / `### Changed` / `### Fixed` / `### Removed` sections.
+
 Sections under `## [Unreleased]`: `### Breaking Changes` (API changes requiring migration), `### Added`, `### Changed`, `### Fixed`, `### Removed`.
 
 Rules:
 
 - All new entries go under `## [Unreleased]`. Read the full section first and append to existing subsections; never duplicate them.
 - Released version sections (e.g. `## [0.12.2]`) are immutable; never modify them.
-- Do not create changelog entries when working on a branch other than `main` or pull request
+- Do not create `packages/*/CHANGELOG.md` entries when working on a branch other than `main` or pull request.
 
 Attribution:
 
