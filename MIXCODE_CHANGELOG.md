@@ -64,6 +64,14 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   surface, so the composer keeps them on agent tabs.
 - `MIXCODE_DISPLAY_WORKDIR` and `MIXCODE_DISPLAY_MODEL` mask the workdir and model shown on
   MixCode Home, so a recording can hide the real paths and provider.
+- Response model mismatch notice: when a provider answers with a model other than the one
+  requested, the transcript says so under that reply
+  (`[Model mismatch] requested X → returned Y · via provider`). Restoring a session or
+  switching a branch brings them back, because they derive from the `responseModel` metadata
+  each assistant message carries. The OpenAI Responses adapters (OpenAI, Azure, Codex) now
+  capture that metadata, alongside the existing Anthropic Messages and OpenAI Completions
+  capture. Shown with the `showCacheMissNotices` setting; the message itself keeps its
+  requested model and persisted content.
 
 ### Changed
 

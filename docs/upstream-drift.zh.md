@@ -49,6 +49,8 @@
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
 - `packages/coding-agent/test/extensions-runner.test.ts`
+- `packages/ai/src/api/openai-responses-shared.ts`：把 Responses 流中服务器报告的模型名记录到
+  `AssistantMessage.responseModel`
 - `packages/tui/src/layout-node.ts`：窗口化布局节点与滚动行提供者
 - `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒上的行提供者
 - `packages/tui/src/tui-alt-screen.ts`：经提供者读取内容行；`scrollToPrompt` 改为公开

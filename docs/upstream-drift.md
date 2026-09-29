@@ -53,6 +53,8 @@ that calls into `mixcode/` code:
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
 - `packages/coding-agent/test/extensions-runner.test.ts`
+- `packages/ai/src/api/openai-responses-shared.ts`: records the server-reported model on
+  Responses streams as `AssistantMessage.responseModel`
 - `packages/tui/src/layout-node.ts`: windowed layout node and scroll line provider
 - `packages/tui/src/layout.ts`: windowed scroll child, line provider on the scroll box
 - `packages/tui/src/tui-alt-screen.ts`: reads content lines through the provider; public `scrollToPrompt`

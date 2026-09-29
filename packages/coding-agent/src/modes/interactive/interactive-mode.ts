@@ -220,6 +220,7 @@ import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import { editInExternalEditor } from "./external-editor.ts";
 import { type CommandSource, collectSlashCommands, type TabArgumentOption } from "./mixcode/command-list.ts";
+import { responseModelNoticeText } from "./mixcode/model-mismatch/notice.ts";
 import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
 import { shareSession } from "./session-share.ts";
 import {
@@ -4939,6 +4940,7 @@ export class InteractiveMode {
 						this.streamingMessage.errorMessage = errorMessage;
 					}
 					this.streamingComponent.updateContent(this.streamingMessage, false);
+					this.maybeShowResponseModelNotice(this.streamingMessage);
 
 					if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
 						if (!errorMessage) {
@@ -5405,6 +5407,7 @@ export class InteractiveMode {
 						}
 					}
 				}
+				this.maybeShowResponseModelNotice(message);
 				if (message.stopReason !== "aborted" && message.stopReason !== "error") {
 					const miss = cacheMisses.get(message);
 					if (miss) this.addCacheMissNotice(miss);
@@ -5514,6 +5517,22 @@ export class InteractiveMode {
 		this.chatContainer.addChild(
 			new Text(theme.fg("warning", `Anthropic dropped ${droppedCount} ${noun} (details in session)`), 1, 0),
 		);
+	}
+
+	/**
+	 * Show a transcript notice when the provider answered with a model other than
+	 * the one requested. Display only: the message keeps its own model, and a
+	 * rebuild derives the notice from the persisted metadata again.
+	 */
+	private maybeShowResponseModelNotice(message: AssistantMessage): void {
+		if (!this.settingsManager.getShowCacheMissNotices()) return;
+		const text = responseModelNoticeText(message);
+		if (text) this.addResponseModelNotice(text);
+	}
+
+	private addResponseModelNotice(text: string): void {
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("warning", text), 1, 0));
 	}
 
 	/**
