@@ -98,8 +98,9 @@ Where mixcode-pi's Home page relies on machinery this fork does not have, the fo
 
 - no toast overlay, title shimmer, or loading-phase status chip;
 - no zen mode; vim mode is a per-tab transcript surface, and Home neither enters it nor hands it on;
-- only the Home composer draws a hint while empty; an agent tab's composer stays blank (mixcode-pi's
-  composer draws one there too);
+- the empty composer's hint names its own surface rather than mixcode-pi's: Home names the target
+  agent, an agent tab reads `Describe your next change...  @ files  / commands`, and vim mode lists
+  its navigation keys;
 - the masthead's `N input` counter never appears, because nothing tracks a tab waiting on the user;
 - startup lands on the restored tab rather than Home, so the fork's tab-layout restore is not
   overridden;

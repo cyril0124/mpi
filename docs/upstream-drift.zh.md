@@ -24,9 +24,11 @@
 | MixCode Home | 没有此页面；transcript 始终显示当前会话 | `home` 伪标签页列出所有已打开 agent 并给出对话预览 | [MixCode Home](home.zh.md) |
 | `left`/`right`/`up`/`down`/`enter`/`ctrl+f` | 编辑器光标、历史、提交 | 在 Home 上用于选择/附着/发送/过滤列表；在 agent 标签页仍归编辑器 | [MixCode Home](home.zh.md) |
 | 应用动作键处理器 | 命中的处理器直接消费该按键 | 处理器可返回 `false` 主动放弃该键，并会收到原始按键数据 | Home 的绑定不能抢走输入框的 `up`/`down`/`left`/`right`/`enter`，而 `enter` 同时匹配裸换行（`ctrl+j`） |
-| 空输入框 | 不显示任何内容 | Home 上会写出目标 agent，并用中性的 thinking 边框色 | 名册已经明确了目标，而 Home 自身没有 thinking 等级 |
+| 空输入框 | 不显示任何内容 | agent 标签页提示 `Describe your next change...  @ files  / commands`，Vim 标签页列出导航键位，Home 上写出目标 agent 并用中性的 thinking 边框色 | 名册明确了目标；Home 自身没有 thinking 等级；输入框也说明它能接受什么 |
 | 交互模式下的控制台输出 | `console.log` 等方法直接写到终端 | 画进底部居中的 `Notice` 弹窗（不进对话记录）；`/console-history` 把最近 1000 行交给外部编辑器打开，带时间戳与产生它的标签页 | [控制台历史](console-history.zh.md) |
-| Home 上的 footer | 不适用（上游没有 Home 页面） | footer 仍然显示，并继续展示当前绑定会话的模型与上下文 | 本 fork 的 footer 属于 runtime 而不是页面，隐藏它需要单独设计 |
+| 输入框边框 | 输入框上下各一条平直的分隔线 | 圆角卡片，上边框承载工作状态、模式徽标、标签页名与精确上下文用量 | 输入区无需额外表头即可说明当前 agent 与上下文；见 [输入坞区](input-dock.zh.md) |
+| 编辑器坞区页脚 | 两行：工作目录与会话名，然后是 token 与费用合计加 `percent (auto)`，同一行右侧是模型名与 thinking 等级；注册了扩展状态时再加一行 | 一行 meta：模型、thinking 与工作目录、八格上下文进度条与 git 分支，再接扩展状态行 | 标签页名与精确 token 数已由卡片上边框承载，模型标签带 provider，进度条也比百分比更易读；见 [输入坞区](input-dock.zh.md) |
+| Home 上的页脚 | 无此页面 | Home 会收起坞区页脚，因此没有 meta 行 | 名册已经列出每个 agent 及其上下文，而 Home 自身没有会话 |
 | 指针 hover 反馈 | 无提示：列表忽略指针移动，消息区域只响应点击，跳到底部标签只有一种样式 | 指针下的单元格获得选中背景与下划线（标签页 chip、命令面板行）；响应点击的消息块整块填充为一个矩形；全屏渲染器在指针离开后告知对应组件，浮层打开期间保持整个界面无高亮，终端尺寸变化时清除所有 hover | 本 fork 的可点击界面需要一个不改变键盘选择与活动标签页的提示 |
 
 ## 已过期的上游页面与源码文案

@@ -27,6 +27,8 @@ merge. Every place where this fork's behavior and upstream's documentation disag
   editor dock — the setting, the per-tab toggle, the row budget, and `/widgets`.
 - **[Extension Widget Row Budget](widget-layout.md)**: how the dock caps a widget stack, and how
   that cap differs from the per-widget line cap.
+- **[Input Dock](input-dock.md)**: the rounded card around the composer, the tab name and exact
+  context usage on its top edge, and the meta row that replaces pi's status footer.
 
 ## Fork Mechanics
 

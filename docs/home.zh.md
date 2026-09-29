@@ -68,7 +68,8 @@ Home 上不画 footer：工作目录、用量与模型行、扩展状态以及�
 
 - 没有 toast 浮层、标题 shimmer、加载阶段状态标签；
 - 没有 zen 模式；vim 模式是"每个标签页的对话区"状态，Home 既不进入它也不传递它；
-- 只有 Home 的空输入框会显示提示；agent 标签页的空输入框保持空白（mixcode-pi 的输入框那里也会显示提示）；
+- 空输入框的提示按各自界面来写，而不是照抄 mixcode-pi：Home 写出目标 agent，agent 标签页是
+  `Describe your next change...  @ files  / commands`，Vim 模式列出它的导航键位；
 - masthead 的 `N input` 计数永远不会出现，因为没有东西跟踪"等待用户输入"的标签页；
 - 启动落在恢复出来的标签页而不是 Home，以免覆盖本 fork 的标签页恢复；
 - 扩展的终端输入处理器优先于 Home 的按键，且 Home 上的文件补全使用当前绑定标签页的工作目录，而不是所选标签页的。

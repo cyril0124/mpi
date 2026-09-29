@@ -18,6 +18,18 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Added
 
+- Input dock: the composer is framed by a rounded card whose top edge carries the working status,
+  the mode badges (`[VIM]`, `[SHELL]`, `↑ N`), the tab name and the exact context usage
+  (`12.3k/200k`), and whose bottom edge carries `↓ N more`. Under it sits one meta row with the
+  model, the thinking level and the workdir on the left and an eight-cell context meter plus the git
+  branch on the right, followed by the extension status row. Both replace pi's flat editor rules and
+  its status footer, so the dock states which agent and which context the input belongs to
+  without a separate header. The card needs ten columns; below that the plain editor is kept so the
+  working status always has a row. See [Input Dock](docs/input-dock.md).
+- The empty composer now hints in every state instead of only on Home: `Describe your next
+  change...  @ files  / commands` on an agent tab, and the vim navigation keys while vim mode owns
+  the input.
+
 - Toast notifications: a typed card in the top-right corner of the transcript, with a rounded frame,
   an icon and color per kind, a width that follows the terminal, and a three second lifetime. The
   copy command reports through it, a failing copy reports the error, and closing the last tab
@@ -133,6 +145,13 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Changed
 
+- The built-in footer is now the dock meta row. pi's footer rows (the working directory with the
+  session name, then the token and cost totals with `percent (auto)` beside the right-aligned model
+  and thinking level) are gone from the dock: the card's top edge carries the name and the exact
+  token counts, and the meta row carries the rest. The `(auto)` marker, the cumulative `↑ ↓ R W`
+  and cache-hit line, the cost total, and the `(sub)` subscription and `• xp` markers are no longer
+  drawn there; `/session` still prints the token, cache and cost sections, and `/settings` still
+  reports auto-compaction. See [Input Dock](docs/input-dock.md).
 - The fullscreen transcript's clipboard confirmation: the alternate screen hands the result to the
   host through a new `onCopyResult` option, so a mouse-selection copy reports with the same toast as
   the copy command instead of the screen's own one-line flash.

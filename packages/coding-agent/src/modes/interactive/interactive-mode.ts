@@ -81,6 +81,7 @@ import { findExtensionStackMatches, recordCrash, takeUnnotifiedCrash } from "../
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVEL_OPTIONS } from "../../core/defaults.ts";
 import type {
 	AutocompleteProviderFactory,
+	ContextUsage,
 	EditorFactory,
 	ExtensionCommandContext,
 	ExtensionContext,
@@ -201,7 +202,6 @@ import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.ts";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.ts";
-import { CustomEditor } from "./components/custom-editor.ts";
 import { CustomEntryComponent } from "./components/custom-entry.ts";
 import { CustomMessageComponent } from "./components/custom-message.ts";
 import { DaxnutsComponent } from "./components/daxnuts.ts";
@@ -210,7 +210,7 @@ import { EarendilAnnouncementComponent } from "./components/earendil-announcemen
 import { ExtensionEditorComponent } from "./components/extension-editor.ts";
 import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
-import { FooterComponent, formatTokens } from "./components/footer.ts";
+import { type FooterComponent, formatTokens } from "./components/footer.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { createMermaidMarkdownTransformer } from "./components/mermaid.ts";
@@ -233,6 +233,9 @@ import {
 	InlineWidgetsComponent,
 	type InlineWidgetTabState,
 } from "./components/mixcode/inline-widgets/inline-widgets.ts";
+import { MixcodeDockFooter } from "./components/mixcode/input-dock/dock-footer.ts";
+import { exactContextUsageText, type InputMetaData } from "./components/mixcode/input-dock/input-meta.ts";
+import { type EditorCardChrome, MixcodePromptEditor } from "./components/mixcode/input-dock/prompt-editor.ts";
 import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
 import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
 import { bindActiveTabShimmerRedraw } from "./components/mixcode/tab-shimmer.ts";
@@ -551,6 +554,16 @@ export class InteractiveMode {
 	private homeView: HomeView | undefined;
 	/** Per-tab mapped transcript lines for the Home previews, keyed by tab id. */
 	private readonly homeMessageCache = new Map<string, HomeSnapshot>();
+	/** Last context reading, reused until the active session's messages or model change. */
+	private contextUsageCache:
+		| {
+				session: AgentSession;
+				source: readonly AgentMessage[];
+				length: number;
+				model: AgentSession["state"]["model"];
+				value: ContextUsage | undefined;
+		  }
+		| undefined;
 	/** Stopper for the interval that repaints the active tab's title shimmer. */
 	private stopTabShimmerRedraw: (() => void) | undefined;
 	/** Workdir that scopes the persisted open-tab layout. */
@@ -583,7 +596,7 @@ export class InteractiveMode {
 	private fullscreenLayoutRoot: Component | undefined;
 	private pendingMessagesContainer: Container;
 	private statusContainer: Container;
-	private defaultEditor: CustomEditor;
+	private defaultEditor: MixcodePromptEditor;
 	private editor: EditorComponent;
 	private editorComponentFactory: EditorFactory | undefined;
 	private autocompleteProvider: AutocompleteProvider | undefined;
@@ -826,17 +839,18 @@ export class InteractiveMode {
 		setKeybindings(this.keybindings);
 		const editorPaddingX = this.settingsManager.getEditorPaddingX();
 		const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
-		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, {
+		this.defaultEditor = new MixcodePromptEditor(this.ui, getEditorTheme(), this.keybindings, {
 			paddingX: editorPaddingX,
 			autocompleteMaxVisible,
 			embedWorkingStatus: true,
 		});
 		this.defaultEditor.getPlaceholder = () => this.composerPlaceholder();
+		this.defaultEditor.setCardChrome(() => this.editorCardChrome());
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
-		this.footer = new FooterComponent(this.session, this.footerDataProvider);
+		this.footer = new MixcodeDockFooter(this.session, this.footerDataProvider, () => this.dockMetaData());
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footerContainer = new Container();
 		this.footerContainer.addChild(this.footer);
@@ -2440,13 +2454,87 @@ export class InteractiveMode {
 	 * goes to, the way the roster makes the target explicit.
 	 */
 	private composerPlaceholder(): string | undefined {
-		if (!this.homeSelection.active) return undefined;
+		if (this.homeSelection.active) {
+			const tabs = this.tabManager?.list();
+			const selected = tabs ? homeSelectedTab(this.homeSelection, tabs) : undefined;
+			return theme.fg(
+				"dim",
+				`${selected ? `Send to ${selected.title}...` : "Select an agent..."}  @ files  / commands`,
+			);
+		}
+		if (this.vimTabState().active) {
+			return theme.fg("dim", "Vim: → newer · Shift+→ older · j/k scroll · q exit");
+		}
+		return theme.fg("dim", "Describe your next change...  @ files  / commands");
+	}
+
+	/**
+	 * Labels for the input card: the active tab's name and its exact context
+	 * usage. Home composes for the agent its roster selects, so the card names
+	 * that agent instead of the tab that is not in front.
+	 */
+	private editorCardChrome(): EditorCardChrome {
+		const home = this.homeSelection.active;
 		const tabs = this.tabManager?.list();
-		const selected = tabs ? homeSelectedTab(this.homeSelection, tabs) : undefined;
-		return theme.fg(
-			"dim",
-			`${selected ? `Send to ${selected.title}...` : "Select an agent..."}  @ files  / commands`,
-		);
+		const title = home
+			? tabs
+				? homeSelectedTab(this.homeSelection, tabs)?.title
+				: undefined
+			: this.tabManager?.activeTab()?.title;
+		// Home composes for a tab it is not attached to, so the composer shows no
+		// live context reading there.
+		const usage = home ? undefined : this.contextUsage();
+		const tokens = usage?.tokens ?? undefined;
+		const contextWindow = usage?.contextWindow ?? this.session.state.model?.contextWindow ?? 0;
+		return {
+			title: title ?? "New message",
+			contextText: home ? "" : exactContextUsageText(tokens, contextWindow),
+			contextWarning: tokens !== undefined && contextWindow > 0 && tokens >= contextWindow * 0.85,
+			vimMode: this.vimTabState().active,
+			shellMode: this.isBashMode,
+		};
+	}
+
+	/** Session data for the dock meta row under the input card. */
+	private dockMetaData(): InputMetaData {
+		const state = this.session.state;
+		const model = state.model;
+		const usage = this.contextUsage();
+		const thinking = state.thinkingLevel || "off";
+		return {
+			workdir: this.displayWorkdir(this.sessionManager.getCwd()),
+			model: process.env.MIXCODE_DISPLAY_MODEL?.trim() || (model ? `${model.provider}/${model.id}` : "-"),
+			thinking: process.env.MIXCODE_DISPLAY_THINKING?.trim() || thinking.charAt(0).toUpperCase() + thinking.slice(1),
+			gitBranch: this.footerDataProvider.getGitBranch() ?? undefined,
+			contextTokens: usage?.tokens,
+			contextWindow: usage?.contextWindow ?? model?.contextWindow ?? 0,
+			extensionStatuses: this.footerDataProvider.getExtensionStatuses(),
+			statusesHidden: this.vimTabState().active,
+		};
+	}
+
+	/**
+	 * Context reading for the card edge and the dock meta row, kept until the
+	 * session's messages change. `getContextUsage()` rebuilds the session
+	 * projection, and both readers run on every TUI frame.
+	 */
+	private contextUsage(): ContextUsage | undefined {
+		const session = this.session;
+		const source = session.messages;
+		const model = session.state.model;
+		const cached = this.contextUsageCache;
+		if (
+			cached &&
+			cached.session === session &&
+			cached.source === source &&
+			cached.length === source.length &&
+			cached.model === model
+		) {
+			return cached.value;
+		}
+		const value = session.getContextUsage();
+		this.contextUsageCache = { session, source, length: source.length, model, value };
+		return value;
 	}
 
 	/** Editor text, whichever editor component the current tab installed. */
