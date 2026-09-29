@@ -18,6 +18,10 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Added
 
+- User messages carry their send time at the right end of their first row (`Sep 29, 9:29 PM`),
+  painted dim. The reading comes from the message's own timestamp, so a resumed session shows when each
+  message was sent; the body renders narrow enough that no text can reach it, and a message without a
+  timestamp is drawn exactly as before.
 - Extension widget side panel: `→` (`app.widgets.panel`) on an empty composer opens a per-tab
   right-hand column that collects the above- and below-editor widgets beside the chat, so they stop
   stacking around the composer. The column carries a pinned `Widgets` title, a dim section rule per

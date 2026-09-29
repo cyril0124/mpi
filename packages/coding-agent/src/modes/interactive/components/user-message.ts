@@ -2,6 +2,7 @@ import { Box, Container, Markdown, type MarkdownTheme } from "@earendil-works/pi
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
+import { ClockedMessageBody, formatMessageClock } from "./mixcode/message-clock.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
@@ -15,18 +16,22 @@ export class UserMessageComponent extends Container {
 	private markdownTheme: MarkdownTheme;
 	private outputPad: number;
 	private markdownTransformers: readonly MarkdownTransformer[];
+	/** Send time of the message, drawn at the right end of the block's first row. */
+	private timestamp: number | undefined;
 
 	constructor(
 		text: string,
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
+		timestamp?: number,
 	) {
 		super();
 		this.text = text;
 		this.markdownTheme = markdownTheme;
 		this.outputPad = outputPad;
 		this.markdownTransformers = markdownTransformers;
+		this.timestamp = timestamp;
 		this.rebuild();
 	}
 
@@ -38,22 +43,21 @@ export class UserMessageComponent extends Container {
 	private rebuild(): void {
 		this.clear();
 		const contentBox = new Box(this.outputPad, 1, (content: string) => theme.bg("userMessageBg", content));
-		contentBox.addChild(
-			new Markdown(
-				this.text,
-				0,
-				0,
-				this.markdownTheme,
-				{
-					color: (content: string) => theme.fg("userMessageText", content),
-				},
-				{
-					preserveOrderedListMarkers: true,
-					preserveBackslashEscapes: true,
-					transform: createMarkdownTransform("user", false, this.markdownTransformers),
-				},
-			),
+		const body = new Markdown(
+			this.text,
+			0,
+			0,
+			this.markdownTheme,
+			{
+				color: (content: string) => theme.fg("userMessageText", content),
+			},
+			{
+				preserveOrderedListMarkers: true,
+				preserveBackslashEscapes: true,
+				transform: createMarkdownTransform("user", false, this.markdownTransformers),
+			},
 		);
+		contentBox.addChild(new ClockedMessageBody(body, formatMessageClock(this.timestamp)));
 		this.addChild(contentBox);
 	}
 
