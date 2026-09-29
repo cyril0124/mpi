@@ -39,9 +39,13 @@ badges give way to it, and it takes the tab name's place before it would disappe
 ```
 
 The model, the thinking level and the workdir sit on the left; the context meter and the git branch
-on the right. The model reads as `<provider>/<model-id>`, so a session on a proxy or an aggregator
-still names the provider it is really going through. The meter has eight cells and is green below
-50%, accent from 50%, and red from 80%.
+on the right. All three left-hand fields are click targets: the pointer lights the field up and a
+press opens its picker, so the model selector, the thinking selector and the workdir picker are all
+reachable with the pointer. See [Workdir](tabs.md#workdir). The workdir only has a target when the
+row actually drew one: an extension footer that owns the row, or a row too narrow for the path,
+leaves nothing to click. The model reads as `<provider>/<model-id>`, so a session on a proxy or an
+aggregator still names the provider it is really going through. The meter has eight cells and is
+green below 50%, accent from 50%, and red from 80%.
 
 Every piece degrades in a fixed order as the terminal narrows: the branch goes first, then the
 meter, then the workdir compacts segment by segment, and the model drops to its id alone before it
@@ -49,10 +53,6 @@ truncates. The right block is dropped whole rather than squeezing the workdir ou
 
 The second row appears when extensions publish status texts, and is hidden while vim mode is
 active.
-
-The model and the thinking level are click targets: the pointer lights the field up, and a click
-opens its picker, so the model selector and the thinking selector are reachable with the pointer.
-The workdir is not clickable, because the fork has no workdir picker.
 
 ## What the dock no longer shows
 

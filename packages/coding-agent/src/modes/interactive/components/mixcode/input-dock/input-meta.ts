@@ -33,7 +33,7 @@ const GLYPHS = {
 } as const;
 
 /** A meta-row field that opens a picker when clicked. */
-export type MetaAction = "models" | "thinking";
+export type MetaAction = "models" | "thinking" | "workdir";
 
 /**
  * Cells one clickable field painted in the row, 0-based and relative to the
@@ -221,12 +221,12 @@ function layoutInputMetaLeft(mode: MetaMode, workdirPath: string, width: number,
 			return { text: "", regions: [], fits: false, workdirIntact: false };
 		}
 		pieces.push({ text: mode.gap });
-		pieces.push({ text: theme.fg("accent", workdirPath) });
+		pieces.push({ action: "workdir", text: theme.fg("accent", workdirPath) });
 		workdirIntact = true;
 	} else if (workdirBudget >= 4) {
 		pieces.push({ text: mode.gap });
 		const workdir = compactWorkdir(workdirPath, workdirBudget);
-		pieces.push({ text: theme.fg("accent", workdir) });
+		pieces.push({ action: "workdir", text: theme.fg("accent", workdir) });
 		// Segment-compressed paths are fine; `...` truncation counts as obscured.
 		workdirIntact = !workdir.includes("...");
 	}

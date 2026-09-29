@@ -40,6 +40,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "logout", description: "Remove provider authentication" },
 	{ name: "new", description: "Start a new session" },
 	{ name: "new-session", description: "Open a new agent tab", argumentHint: "[title]" },
+	{ name: "workdir", description: "Change the active tab's working directory", argumentHint: "[path]" },
 	{ name: "close-session", description: "Close the current agent tab", argumentHint: "[yes]" },
 	{ name: "close-all-sessions", description: "Close every agent tab except the current one" },
 	{ name: "delete-session", description: "Delete the current tab's session file", argumentHint: "[yes]" },

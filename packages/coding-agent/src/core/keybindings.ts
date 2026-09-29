@@ -40,6 +40,10 @@ export interface AppKeybindings {
 	"app.tab.close": true;
 	"app.home.returnHome": true;
 	"app.widgets.panel": true;
+	"app.workdir.parent": true;
+	"app.workdir.enterDir": true;
+	"app.workdir.toggleHidden": true;
+	"app.workdir.clearQuery": true;
 	"app.home.selectPrevious": true;
 	"app.home.selectNext": true;
 	"app.home.attach": true;
@@ -195,6 +199,22 @@ export const KEYBINDINGS = {
 	"app.widgets.panel": {
 		defaultKeys: "right",
 		description: "Toggle the extension widget side panel when the composer is empty",
+	},
+	"app.workdir.parent": {
+		defaultKeys: "left",
+		description: "Workdir picker: go to the parent directory",
+	},
+	"app.workdir.enterDir": {
+		defaultKeys: "tab",
+		description: "Workdir picker: enter the highlighted directory",
+	},
+	"app.workdir.toggleHidden": {
+		defaultKeys: "ctrl+h",
+		description: "Workdir picker: show or hide dot-directories",
+	},
+	"app.workdir.clearQuery": {
+		defaultKeys: "ctrl+u",
+		description: "Workdir picker: clear the filter",
 	},
 	"app.home.selectPrevious": { defaultKeys: "up", description: "Select the previous agent on MixCode Home" },
 	"app.home.selectNext": { defaultKeys: "down", description: "Select the next agent on MixCode Home" },

@@ -18,6 +18,14 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Added
 
+- `/workdir [path]` moves the active tab onto another working directory, and without a path it opens
+  a directory picker over the composer. The session keeps running: the transcript is unchanged, the
+  agent's cwd-bound services are rebuilt in the new directory, and the session header records it so a
+  later resume starts there. The picker browses directories only, with `left` for the parent, `tab`
+  to walk into a directory, `enter` to apply the one being browsed, `ctrl+h` for dot-directories, and
+  a `/`- or `~`-prefixed filter that becomes a typed path. The workdir cells of the dock meta row
+  join the model and thinking cells as click targets, and a press opens the same picker. See
+  [Agent Tabs](docs/tabs.md#workdir) and [Input Dock](docs/input-dock.md).
 - User messages carry their send time at the right end of their first row (`Sep 29, 9:29 PM`),
   painted dim. The reading comes from the message's own timestamp, so a resumed session shows when each
   message was sent; the body renders narrow enough that no text can reach it, and a message without a

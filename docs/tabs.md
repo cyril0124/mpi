@@ -30,12 +30,42 @@ moved the thinking cycle to `alt+t`. See [Upstream Drift](upstream-drift.md).
 | `/rename <title>` | Rename the current tab and its session. |
 | `/tabs` | List the open tabs. |
 | `/tab <index\|title>` | Focus an open tab. |
+| `/workdir [path]` | Move the current tab onto another working directory. With a path the move happens at once; without one a directory picker opens. See [Workdir](#workdir). |
 | `/color [name\|clear]` | Set the current tab's chip color; without an argument or with `clear` the color is removed. |
 | `/group-colored-tabs` | Sort tabs so colored ones lead, aggregated by color in palette order. |
 | `/mark-done` | Flag the current tab as finished in the tab bar. |
 | `/save-workspace <name>` | Save the current tab layout under a name. |
 | `/restore-workspace <name>` | Reopen a saved layout, closing tabs that are not part of it. |
 | `/delete-workspace <name>` | Delete a saved tab layout. |
+
+## Workdir
+
+`/workdir <path>` moves the current tab onto another working directory. The session itself keeps
+running: the transcript is unchanged, the agent's cwd-bound services are rebuilt for the new
+directory, and the session header records it, so resuming that session later starts in the same
+place. A relative path resolves against the tab's current working directory and a leading `~`
+expands to the home directory. Moving onto the directory the tab is already in reports
+`workdir unchanged` and does nothing, and a path that is not an existing directory reports
+`Error: workdir not found or not a directory: <path>`.
+
+`/workdir` without a path opens the picker, which is the same surface the workdir badge in the meta
+row opens. It browses directories, never files:
+
+| Key | Behavior |
+| --- | --- |
+| `up` / `down` | Move the highlight through the listed directories. |
+| `left` (`app.workdir.parent`) | Go to the parent directory, highlighting the one just left. Nothing happens at `/`. |
+| `tab` (`app.workdir.enterDir`) | Walk into the highlighted directory. |
+| `enter` (`tui.select.confirm`) | Apply the directory being browsed — not the highlighted row. |
+| `ctrl+h` (`app.workdir.toggleHidden`) | Show or hide dot-directories. |
+| `ctrl+u` (`app.workdir.clearQuery`) | Clear the filter. |
+| `esc` (`tui.select.cancel`) | Close the picker without moving. |
+| any printable key | Filter the rows by a case-insensitive substring of the directory name. A query holding `/` or starting with `~` becomes a single `custom path` row instead, and Enter applies the typed path. |
+
+The panel opens with the browsing directory as a home-collapsed breadcrumb, its last row counts the
+listed directories and names the keys, and a listing longer than the window is marked with
+`... (N more above)` / `... (N more below)`. A move applies to the tab it was made in; the other tabs
+keep theirs.
 
 ## Tab bar
 

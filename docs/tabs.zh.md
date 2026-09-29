@@ -27,12 +27,39 @@
 | `/rename <title>` | 重命名当前标签页及其会话。 |
 | `/tabs` | 列出已打开的标签页。 |
 | `/tab <index\|title>` | 聚焦指定标签页。 |
+| `/workdir [path]` | 把当前标签页切到另一个工作目录。带路径时立即切换，不带路径时打开目录选择器。见 [工作目录](#工作目录)。 |
 | `/color [name\|clear]` | 设置当前标签页底色；不带参数或传 `clear` 则清除。 |
 | `/group-colored-tabs` | 重排标签页：有颜色的排前面，按调色板顺序聚合。 |
 | `/mark-done` | 在标签栏把当前标签页标记为已完成。 |
 | `/save-workspace <name>` | 把当前标签页布局存成命名工作区。 |
 | `/restore-workspace <name>` | 恢复命名工作区，关闭不属于该布局的标签页。 |
 | `/delete-workspace <name>` | 删除命名工作区。 |
+
+## 工作目录
+
+`/workdir <path>` 把当前标签页切到另一个工作目录。会话本身继续运行：对话记录不变，agent 的
+与 cwd 绑定的服务在新目录下重建，会话头也记录新目录，因此之后恢复该会话会从同一位置开始。相对
+路径按标签页当前工作目录解析，开头的 `~` 展开为家目录。切到标签页当前所在的目录会提示
+`workdir unchanged` 并什么都不做；路径不是已存在的目录时报
+`Error: workdir not found or not a directory: <path>`。
+
+不带路径的 `/workdir` 打开选择器，也就是 meta 行上的工作目录徽标所打开的那个界面。它只浏览
+目录，不列文件：
+
+| 按键 | 行为 |
+| --- | --- |
+| `up` / `down` | 在列出的目录间移动高亮。 |
+| `left`（`app.workdir.parent`） | 回到上级目录，并高亮刚离开的那个。位于 `/` 时无效。 |
+| `tab`（`app.workdir.enterDir`） | 进入高亮的目录。 |
+| `enter`（`tui.select.confirm`） | 应用当前正在浏览的目录 —— 而不是高亮的那一行。 |
+| `ctrl+h`（`app.workdir.toggleHidden`） | 显示或隐藏点开头的目录。 |
+| `ctrl+u`（`app.workdir.clearQuery`） | 清空过滤词。 |
+| `esc`（`tui.select.cancel`） | 关闭选择器，不做任何切换。 |
+| 任意可打印字符 | 按目录名做大小写不敏感的子串过滤。含 `/` 或以 `~` 开头的过滤词会变成单独的 `custom path` 行，回车即应用该路径。 |
+
+面板第一行把正在浏览的目录显示为家目录折叠的面包屑，最后一行给出目录数量与按键说明，超过窗口
+的列表用 `... (N more above)` / `... (N more below)` 标出。切换只作用于发起它的那个标签页，
+其他标签页保持各自的工作目录。
 
 ## 标签栏
 

@@ -26,8 +26,9 @@ commit that causes it.
 | Empty composer | draws nothing | agent tabs hint `Describe your next change...  @ files  / commands  ← Home · → widgets`, vim tabs list the navigation keys, and Home names the target agent in the neutral thinking colour | the roster makes the target explicit, Home has no thinking level of its own, and the composer states what it accepts; the two key labels are read from the configured keybindings, and the widgets half is left out in TUI modes that do not split the chat |
 | Interactive console output | `console.log` and the other console methods write to the tty | painted into a bottom-centered `Notice` panel (not the transcript); `/console-history` opens the last 1,000 lines in the external editor with timestamp and emitting tab | [Console History](console-history.md) |
 | Prompt editor frame | two flat rules above and below the composer | a rounded card whose top edge carries the working status, the mode badges, the tab name and the exact context usage, and whose body holds its text one column off the left border | the input area names the agent and its context without a separate header row; see [Input Dock](input-dock.md) |
-| Editor dock footer | two rows: pwd with the session name, then token and cost totals with `percent (auto)` beside the right-aligned model and thinking level, plus an extension status row when one is registered | one meta row: model, thinking and workdir, an eight-cell context meter and the git branch, then the extension status row; the model and the thinking level answer a click, opening their pickers | the card's top edge already carries the name and the exact token counts, the model label names its provider, and the meter reads faster than a percentage; see [Input Dock](input-dock.md) |
+| Editor dock footer | two rows: pwd with the session name, then token and cost totals with `percent (auto)` beside the right-aligned model and thinking level, plus an extension status row when one is registered | one meta row: model, thinking and workdir, an eight-cell context meter and the git branch, then the extension status row; the model, the thinking level and the workdir answer a click, opening their pickers | the card's top edge already carries the name and the exact token counts, the model label names its provider, and the meter reads faster than a percentage; see [Input Dock](input-dock.md) |
 | Footer on Home | n/a (no Home surface) | Home parks the dock footer, so it carries no meta row | the roster already names each agent and shows its context, and Home has no session of its own |
+| Working directory | fixed at startup: `--workdir`, or the process cwd; a session keeps it for its whole life | `/workdir [path]` moves the active tab onto another directory, and the meta row's workdir badge opens the picker | pointing a tab at another project should not mean restarting the agent; see [Workdir](tabs.md#workdir) |
 | Extension widgets | fixed dock above/below the editor | at the chat tail by default, with a row budget and `/widgets`, since [`ui.inlineWidgets`](inline-widgets.md) defaults to on | a tall widget otherwise steals rows from the whole editor dock |
 | Per-tab settings | none | `Inline widgets` also reads and writes `mixcode_settings.json`, shown in its own `MixCode` section of `/settings` | MixCode settings stay out of pi's `settings.json` and out of its section |
 | Settings list rows | one flat list of settings | `SettingItem` gained an optional `section` that renders a heading row | same as above |
@@ -71,8 +72,8 @@ commit that causes it.
   fullscreen default
 - `AGENTS.md`, `.gitignore`
 
-The fork also adds keys to upstream's `keybindings.ts`, while
-`core/mixcode/multi-tab/tab-manager.ts` and `tab-state.ts` are fork-owned.
+The fork also adds keys to upstream's `keybindings.ts` — the `app.workdir.*` bindings the workdir
+picker answers — while `core/mixcode/multi-tab/tab-manager.ts` and `tab-state.ts` are fork-owned.
 
 ## Paths that exist only in this fork
 

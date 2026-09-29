@@ -31,7 +31,8 @@
 | 空输入框 | 不显示任何内容 | agent 标签页提示 `Describe your next change...  @ files  / commands  ← Home · → widgets`，Vim 标签页列出导航键位，Home 上写出目标 agent 并用中性的 thinking 边框色 | 名册明确了目标；Home 自身没有 thinking 等级；输入框也说明它能接受什么。两个按键提示取自实际键位绑定，在不会分栏的 TUI 模式下不显示侧栏那一半 |
 | 交互模式下的控制台输出 | `console.log` 等方法直接写到终端 | 画进底部居中的 `Notice` 弹窗（不进对话记录）；`/console-history` 把最近 1000 行交给外部编辑器打开，带时间戳与产生它的标签页 | [控制台历史](console-history.zh.md) |
 | 输入框边框 | 输入框上下各一条平直的分隔线 | 圆角卡片，上边框承载工作状态、模式徽标、标签页名与精确上下文用量，卡片内文字与左边框之间空出一格 | 输入区无需额外表头即可说明当前 agent 与上下文；见 [输入坞区](input-dock.zh.md) |
-| 编辑器坞区页脚 | 两行：工作目录与会话名，然后是 token 与费用合计加 `percent (auto)`，同一行右侧是模型名与 thinking 等级；注册了扩展状态时再加一行 | 一行 meta：模型、thinking 与工作目录、八格上下文进度条与 git 分支，再接扩展状态行；模型与 thinking 可以点击，点击即打开各自的选择器 | 标签页名与精确 token 数已由卡片上边框承载，模型标签带 provider，进度条也比百分比更易读；见 [输入坞区](input-dock.zh.md) |
+| 编辑器坞区页脚 | 两行：工作目录与会话名，然后是 token 与费用合计加 `percent (auto)`，同一行右侧是模型名与 thinking 等级；注册了扩展状态时再加一行 | 一行 meta：模型、thinking 与工作目录、八格上下文进度条与 git 分支，再接扩展状态行；模型、thinking 与工作目录都可点击，按下即打开各自的选择器 | 标签页名与精确 token 数已由卡片上边框承载，模型标签带 provider，进度条也比百分比更易读；见 [输入坞区](input-dock.zh.md) |
+| 工作目录 | 启动时确定：`--workdir` 或进程 cwd；会话整个生命周期都用它 | `/workdir [path]` 把活动标签页切到另一个目录，meta 行上的工作目录徽标打开同一个选择器 | 把标签页指向另一个项目不该意味着重启 agent；见 [工作目录](tabs.zh.md#工作目录) |
 | Home 上的页脚 | 无此页面 | Home 会收起坞区页脚，因此没有 meta 行 | 名册已经列出每个 agent 及其上下文，而 Home 自身没有会话 |
 | 用户消息块 | 带背景的消息文本块 | 同一块内容，但在首行右端显示发送时间（`Sep 29, 9:29 PM`：短月份、日、时、分，取终端自身区域设置），以暗色绘制，正文渲染宽度相应收窄，任何文字都不会压到时间上 | 消息块自身说明了发送时刻，长对话无需打开会话列表就能按时间阅读 |
 | 指针 hover 反馈 | 无提示：列表忽略指针移动，消息区域只响应点击，跳到底部标签只有一种样式 | 指针下的单元格获得选中背景与下划线（标签页 chip、命令面板行、坞区 meta 行的模型与 thinking 字段）；响应点击的消息块整块填充为一个矩形；全屏渲染器在指针离开后告知对应组件，浮层打开期间保持整个界面无高亮，终端尺寸变化时清除所有 hover | 本 fork 的可点击界面需要一个不改变键盘选择与活动标签页的提示 |
@@ -92,7 +93,7 @@
 - `packages/coding-agent/test/settings-manager.test.ts`：TUI 模式断言改为 fork 的 fullscreen 默认值
 - `AGENTS.md`、`.gitignore`
 
-本 fork 还给 `keybindings.ts` 加了键位绑定；`core/mixcode/multi-tab/tab-manager.ts` 与 `tab-state.ts` 是 fork 自有文件。
+本 fork 还给 `keybindings.ts` 加了键位绑定 —— 工作目录选择器响应的 `app.workdir.*`；`core/mixcode/multi-tab/tab-manager.ts` 与 `tab-state.ts` 是 fork 自有文件。
 
 ## 只存在于本 fork 的路径
 

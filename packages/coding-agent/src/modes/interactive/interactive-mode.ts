@@ -162,6 +162,7 @@ import {
 	TAB_COLOR_NAMES,
 } from "../../core/mixcode/multi-tab/types.ts";
 import { deleteSessionFile } from "../../core/mixcode/session-delete.ts";
+import { persistSessionCwd, writeSessionFile } from "../../core/mixcode/session-workdir.ts";
 import {
 	activeToast,
 	clearToast,
@@ -208,7 +209,7 @@ import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelo
 import { copyToClipboard, readClipboardText } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
 import { parseGitUrl } from "../../utils/git.ts";
-import { getCwdRelativePath } from "../../utils/paths.ts";
+import { getCwdRelativePath, resolvePath } from "../../utils/paths.ts";
 import { getPiUserAgent } from "../../utils/pi-user-agent.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { loadAllHighlightLanguages } from "../../utils/syntax-highlight.ts";
@@ -286,6 +287,11 @@ import {
 	type WidgetPanelTabState,
 } from "./components/mixcode/widget-panel/widget-panel.ts";
 import { WindowedTranscript } from "./components/mixcode/windowed-chat/windowed-transcript.ts";
+import {
+	WORKDIR_PICKER_HEIGHT_PERCENT,
+	WORKDIR_PICKER_WIDTH_PERCENT,
+	WorkdirPickerComponent,
+} from "./components/mixcode/workdir-picker/workdir-picker.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
@@ -2601,6 +2607,10 @@ export class InteractiveMode {
 			this.showModelSelector();
 			return;
 		}
+		if (action === "workdir") {
+			this.openWorkdirPicker();
+			return;
+		}
 		this.showThinkingSelector();
 	}
 
@@ -3101,6 +3111,109 @@ export class InteractiveMode {
 		this.tabUi.delete(tabId);
 		for (const widget of ui.widgetsAbove.values()) widget.dispose?.();
 		for (const widget of ui.widgetsBelow.values()) widget.dispose?.();
+	}
+
+	/**
+	 * `/workdir [path]`: with a path, move the active tab there; without one, open the
+	 * picker and let it choose. The picker opens on the tab's current workdir.
+	 */
+	private async handleWorkdirCommand(target: string): Promise<void> {
+		if (!target) {
+			this.openWorkdirPicker();
+			return;
+		}
+		await this.applyWorkdir(target);
+	}
+
+	/**
+	 * Open the workdir picker over the dock. The picker answers the keyboard only;
+	 * the workdir badge in the meta row opens this same overlay.
+	 */
+	private openWorkdirPicker(): void {
+		// A capturing overlay owns the screen, so a click must not stack a second picker under it.
+		if (this.ui.hasCapturingOverlay()) return;
+		let handle: OverlayHandle | undefined;
+		const picker = new WorkdirPickerComponent({
+			startDir: this.sessionManager.getCwd(),
+			terminalRows: () => this.ui.terminal.rows,
+			onChoose: (dir) => {
+				handle?.hide();
+				void this.applyWorkdir(dir);
+			},
+			onCancel: () => handle?.hide(),
+		});
+		handle = this.ui.showOverlay(picker, {
+			anchor: "center",
+			width: `${WORKDIR_PICKER_WIDTH_PERCENT}%`,
+			maxHeight: `${WORKDIR_PICKER_HEIGHT_PERCENT}%`,
+			margin: 1,
+		});
+	}
+
+	/**
+	 * Move the active tab onto `target`. The picker resolves its own paths, so `target` is a path
+	 * as typed: relative to the tab's workdir, or absolute.
+	 */
+	private async applyWorkdir(target: string): Promise<void> {
+		// A move tears the session down and rebuilds it, so the same two preconditions
+		// `/reload` refuses on apply here: nothing may be mid-turn.
+		if (this.session.isStreaming) {
+			this.showError("Cannot change workdir while the agent is streaming");
+			return;
+		}
+		if (this.session.isCompacting) {
+			this.showError("Cannot change workdir while compaction is running");
+			return;
+		}
+
+		const current = this.sessionManager.getCwd();
+		const resolved = resolvePath(target, current);
+		if (resolved === resolvePath(current)) {
+			this.notifyToast("info", "workdir unchanged");
+			return;
+		}
+		let isDir = false;
+		try {
+			isDir = fs.statSync(resolved).isDirectory();
+		} catch {
+			isDir = false;
+		}
+		if (!isDir) {
+			this.showError(`workdir not found or not a directory: ${resolved}`);
+			return;
+		}
+
+		await this.reopenActiveSession(resolved);
+	}
+
+	/**
+	 * Reopen the active tab's session at `resolved`: its cwd-bound services are rebuilt there and
+	 * the session header records the new directory, so a later resume starts in the same place. The
+	 * transcript is kept. A failure is reported and leaves the tab where it was.
+	 */
+	private async reopenActiveSession(resolved: string): Promise<void> {
+		const sessionFile = this.sessionManager.getSessionFile();
+		try {
+			// The new directory may hold its own project resources, so it gets the same trust
+			// decision a resume into another cwd does.
+			const trustContext = { projectTrustContextFactory: (cwd: string) => this.createProjectTrustContext(cwd) };
+			if (sessionFile) {
+				await this.runtimeHost.switchSession(sessionFile, { cwdOverride: resolved, ...trustContext });
+				await persistSessionCwd(sessionFile, resolved);
+				return;
+			}
+			// A session started without a file (`--no-session`) has nothing to reopen: write what
+			// it holds into the new directory and continue there.
+			const movedFile = await writeSessionFile({
+				cwd: resolved,
+				agentDir: this.runtimeHost.services.agentDir,
+				header: this.sessionManager.getHeader(),
+				entries: this.sessionManager.getBranch(),
+			});
+			await this.runtimeHost.switchSession(movedFile, { cwdOverride: resolved, ...trustContext });
+		} catch (error) {
+			this.showError(`Failed to change workdir: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 
 	/** Open a new agent session in its own tab. */
@@ -5367,6 +5480,12 @@ export class InteractiveMode {
 			if (text === "/logout") {
 				this.showOAuthSelector("logout");
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/workdir" || text.startsWith("/workdir ")) {
+				const target = text.slice("/workdir".length).trim();
+				this.editor.setText("");
+				await this.handleWorkdirCommand(target);
 				return;
 			}
 			if (text === "/new-session" || text.startsWith("/new-session ")) {
