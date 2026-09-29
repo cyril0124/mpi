@@ -23,6 +23,8 @@ merge. Every place where this fork's behavior and upstream's documentation disag
 - **[Console History](console-history.md)**: console output is painted into a notice panel
   instead of the raw tty, and `/console-history` opens the last 1,000 captured lines in the
   external editor with their timestamps and emitting tab.
+- **[Inline Widgets](inline-widgets.md)**: extension widgets in the chat tail instead of the
+  editor dock — the setting, the per-tab toggle, the row budget, and `/widgets`.
 
 ## Fork Mechanics
 

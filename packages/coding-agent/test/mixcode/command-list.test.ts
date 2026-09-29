@@ -20,7 +20,11 @@ const TABS: TabArgumentOption[] = [
 
 const WORKSPACES = ["dev", "review"];
 
-function makeSource(tabs: TabArgumentOption[] = TABS, workspaces: string[] = WORKSPACES): CommandSource {
+function makeSource(
+	tabs: TabArgumentOption[] = TABS,
+	workspaces: string[] = WORKSPACES,
+	widgets: string[] = [],
+): CommandSource {
 	const session = {
 		promptTemplates: [],
 		extensionRunner: { getRegisteredCommands: () => [] },
@@ -37,6 +41,7 @@ function makeSource(tabs: TabArgumentOption[] = TABS, workspaces: string[] = WOR
 		loginProviders: () => [],
 		tabArguments: () => tabs,
 		workspaceNames: () => workspaces,
+		widgetKeys: () => widgets,
 	};
 }
 

@@ -26,6 +26,8 @@ export type CommandSource = {
 	tabArguments(): TabArgumentOption[];
 	/** Saved workspace names offered by the `/...-workspace` argument completions. */
 	workspaceNames(): string[];
+	/** Widget keys of the active tab, offered as `/widgets` argument completions. */
+	widgetKeys(): string[];
 };
 
 /** One open agent tab offered as a `/tab` argument completion. */
@@ -72,6 +74,29 @@ function attachValueCompletions(commands: SlashCommand[], names: readonly string
 				(value) => ({ value, label: value }),
 			);
 	}
+}
+
+/**
+ * `/widgets` arguments: an action, then an exact widget key. A key is offered for
+ * every action once one is typed; with no action typed, the actions come first.
+ */
+function widgetArgumentCompletions(widgetKeys: readonly string[], prefix: string): AutocompleteItem[] {
+	const normalized = prefix.trimStart();
+	const actionMatch = /^(expand|collapse|toggle)\s+(.*)$/u.exec(normalized);
+	if (actionMatch) {
+		const keyPrefix = actionMatch[2]?.toLowerCase() ?? "";
+		return widgetKeys
+			.filter((key) => key.toLowerCase().startsWith(keyPrefix))
+			.map((key) => ({ value: `${actionMatch[1]} ${key}`, label: key }));
+	}
+	if (/^(expand|collapse|toggle)\s*$/u.test(normalized)) {
+		return widgetKeys.map((key) => ({ value: `${normalized.trim()} ${key}`, label: key }));
+	}
+	return [
+		{ value: "expand", label: "expand", description: "Expand widgets" },
+		{ value: "collapse", label: "collapse", description: "Collapse widgets" },
+		{ value: "toggle", label: "toggle", description: "Toggle widgets" },
+	].filter((item) => item.value.startsWith(normalized.toLowerCase()));
 }
 
 function getLoginProviderCompletionOptions(
@@ -190,6 +215,14 @@ export function collectSlashCommands(source: CommandSource): SlashCommand[] {
 					...(tab.description && { description: tab.description }),
 				}),
 			);
+	}
+
+	const widgetsCommand = slashCommands.find((command) => command.name === "widgets");
+	if (widgetsCommand) {
+		widgetsCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+			const completions = widgetArgumentCompletions(source.widgetKeys(), prefix);
+			return completions.length > 0 ? completions : null;
+		};
 	}
 
 	// Convert prompt templates to SlashCommand format for autocomplete

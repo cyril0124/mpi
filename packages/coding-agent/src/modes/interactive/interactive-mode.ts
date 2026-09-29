@@ -117,6 +117,13 @@ import {
 	toggleHomeNonIdleOnly,
 } from "../../core/mixcode/home/home-state.ts";
 import {
+	DEFAULT_INLINE_WIDGETS,
+	loadMixCodeSettings,
+	type MixCodeSettings,
+	mixcodeSettingsFilePath,
+	writeInlineWidgetsSetting,
+} from "../../core/mixcode/mixcode-settings.ts";
+import {
 	deleteWorkspaceRecord,
 	type MixcodeWorkspace,
 	readOpenTabs,
@@ -215,6 +222,11 @@ import {
 	mapHomeMessages,
 } from "./components/mixcode/home/home-model.ts";
 import { type HomeAction, HomeView, type HomeViewModel } from "./components/mixcode/home/home-view.ts";
+import {
+	createInlineWidgetTabState,
+	InlineWidgetsComponent,
+	type InlineWidgetTabState,
+} from "./components/mixcode/inline-widgets/inline-widgets.ts";
 import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
 import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
 import { bindActiveTabShimmerRedraw } from "./components/mixcode/tab-shimmer.ts";
@@ -504,6 +516,9 @@ function runInActiveTab<T>(tab: AgentTab | undefined, fn: () => Promise<T>): Pro
 	return tab ? runWithConsoleTab(tab.title, fn) : fn();
 }
 
+/** Tab id the inline widget state uses when the session runs without a tab manager. */
+const SINGLE_SESSION_TAB_ID = "session";
+
 export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;
 	private tabManager: TabManager | undefined;
@@ -676,6 +691,13 @@ export class InteractiveMode {
 	private boundSessions?: WeakSet<AgentSession>;
 	/** Cached transcript components per tab, reused when the tab is unchanged. */
 	private readonly tabTranscript = new Map<string, { signature: string; chat: Component[]; loaded: Component[] }>();
+	/** Session-only inline widget mode and collapse state, per tab id. */
+	private readonly inlineWidgetTabStates = new Map<string, InlineWidgetTabState>();
+	private inlineWidgets!: InlineWidgetsComponent;
+	/** MixCode settings (`mixcode_settings.json`), with defaults applied. */
+	private mixcodeSettings: MixCodeSettings = { ui: { inlineWidgets: DEFAULT_INLINE_WIDGETS } };
+	/** Set when the settings file could not be read; reported once the UI is up. */
+	private mixcodeSettingsError: string | undefined;
 
 	// Header container that holds the built-in or custom header
 	private headerContainer: Container;
@@ -742,6 +764,11 @@ export class InteractiveMode {
 		}
 		this.activeTabIdForUi = this.tabManager?.getActive().id;
 		this.version = VERSION;
+		try {
+			this.mixcodeSettings = loadMixCodeSettings(mixcodeSettingsFilePath());
+		} catch (error) {
+			this.mixcodeSettingsError = error instanceof Error ? error.message : String(error);
+		}
 		this.renderer = createInteractiveTui({
 			tuiMode,
 			showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
@@ -760,6 +787,12 @@ export class InteractiveMode {
 		this.documentContainer.addChild(this.headerContainer);
 		this.documentContainer.addChild(this.loadedResourcesContainer);
 		this.documentContainer.addChild(this.chatContainer);
+		this.inlineWidgets = new InlineWidgetsComponent({
+			widgets: () => ({ above: this.extensionWidgetsAbove, below: this.extensionWidgetsBelow }),
+			state: () => this.inlineWidgetState(),
+			viewportRows: () => this.inlineViewportRows(),
+		});
+		this.documentContainer.addChild(this.inlineWidgets);
 		// The fullscreen transcript is the same document, but the scroll view's child
 		// is windowed: only visible message blocks render, the rest contribute an
 		// estimated height so the scroll range still spans the whole conversation.
@@ -865,6 +898,7 @@ export class InteractiveMode {
 			loginProviders: () => mode.getLoginProviderOptions(),
 			tabArguments: () => mode.getTabArgumentOptions(),
 			workspaceNames: () => mode.getWorkspaceNames(),
+			widgetKeys: () => mode.widgetKeys(),
 		};
 	}
 
@@ -1085,6 +1119,10 @@ export class InteractiveMode {
 				() => this.ui.requestRender(),
 				() => (this.homeSelection.active ? undefined : this.tabManager?.activeTab()?.activatedAt),
 			);
+		}
+		if (this.mixcodeSettingsError) {
+			this.showWarning(this.mixcodeSettingsError);
+			this.mixcodeSettingsError = undefined;
 		}
 
 		await this.themeController.applyFromSettings();
@@ -2315,6 +2353,9 @@ export class InteractiveMode {
 		this.documentContainer.addChild(this.headerContainer);
 		this.documentContainer.addChild(this.loadedResourcesContainer);
 		this.documentContainer.addChild(this.chatContainer);
+		// The inline block is the document's last child, so a surface that rebuilds the
+		// document puts it back too.
+		this.documentContainer.addChild(this.inlineWidgets);
 		// Back to the agent transcript: the windowed height table describes Home now.
 		this.windowedTranscript?.invalidate();
 	}
@@ -2649,6 +2690,9 @@ export class InteractiveMode {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
 		this.runtimeHost = tab.runtime;
+		// The outgoing tab's UI is detached above, so the mounted UI is this tab's from
+		// here on. `attachTabUi` decides the widget placement from it.
+		this.activeTabIdForUi = tab.id;
 		this.applyRuntimeSettings();
 		if (!this.restoreTranscript(tab.id)) this.renderCurrentSessionState();
 		// The transcript's blocks are a different set now; drop the windowed height table.
@@ -2664,7 +2708,6 @@ export class InteractiveMode {
 		this.updateAvailableProviderCount();
 		this.updateEditorBorderColor();
 		this.updateTerminalTitle();
-		this.activeTabIdForUi = tab.id;
 		// The incoming tab owns its own transient message, if it still has one.
 		this.syncToast();
 		this.ui.requestRender();
@@ -2795,6 +2838,7 @@ export class InteractiveMode {
 	/** Dispose and forget a closed tab's extension UI. */
 	private disposeTabUi(tabId: string): void {
 		this.tabTranscript.delete(tabId);
+		this.inlineWidgetTabStates.delete(tabId);
 		const ui = this.tabUi.get(tabId);
 		if (!ui) return;
 		this.tabUi.delete(tabId);
@@ -3791,19 +3835,126 @@ export class InteractiveMode {
 	/**
 	 * Render all extension widgets to the widget container.
 	 */
+	/**
+	 * Populate the dock's widget slots, or empty them while another surface owns the
+	 * dock. The row budget that decides what fits arrives with the slots themselves.
+	 */
 	private renderWidgets(): void {
 		if (!this.widgetContainerAbove || !this.widgetContainerBelow) return;
-		// Extension widgets are per-agent chrome and stay off the Home page. Their
-		// registration is untouched, so leaving Home paints them again.
-		if (this.homeSelection.active) {
+		// Extension widgets are per-agent chrome and stay off the Home page; their
+		// registration is untouched, so leaving Home paints them again. In inline mode
+		// they render in the chat tail instead, so the dock gives its rows back to the
+		// chat rather than repeating what the tail shows.
+		if (this.homeSelection.active || this.inlineWidgetState()?.enabled) {
 			this.widgetContainerAbove.clear();
 			this.widgetContainerBelow.clear();
-			this.ui.requestRender();
+		} else {
+			this.renderWidgetContainer(this.widgetContainerAbove, this.extensionWidgetsAbove, true, true);
+			this.renderWidgetContainer(this.widgetContainerBelow, this.extensionWidgetsBelow, false, false);
+		}
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Inline mode and collapse state of the active tab. Created on first use from
+	 * the global default, so a new tab inherits it and nothing is persisted.
+	 */
+	private inlineWidgetState(): InlineWidgetTabState | undefined {
+		const hasTabManager = this.tabManager !== undefined;
+		const tabId = this.activeTabIdForUi ?? (hasTabManager ? undefined : SINGLE_SESSION_TAB_ID);
+		if (!tabId) return undefined;
+		let state = this.inlineWidgetTabStates.get(tabId);
+		if (!state) {
+			state = createInlineWidgetTabState(this.mixcodeSettings.ui.inlineWidgets);
+			this.inlineWidgetTabStates.set(tabId, state);
+		}
+		return state;
+	}
+
+	/**
+	 * Rows the chat surface can show, for the inline row budget. Fullscreen uses
+	 * the transcript viewport; regular mode renders the whole document, so the
+	 * visible window there is the terminal itself.
+	 */
+	private inlineViewportRows(): number | undefined {
+		if (this.ui.mode !== "fullscreen") return this.renderer.terminal.rows;
+		const height = this.transcriptScrollView?.viewportHeight ?? 0;
+		return height > 0 ? height : undefined;
+	}
+
+	/** Re-render the chat tail and the dock after the active tab's mode changed. */
+	private refreshInlineWidgets(): void {
+		this.windowedTranscript?.invalidate();
+		this.renderWidgets();
+	}
+
+	/** `/toggle-inline-widgets`: switch the active tab between tail and docked widgets. */
+	private handleToggleInlineWidgets(): void {
+		const state = this.inlineWidgetState();
+		if (!state) return;
+		state.enabled = !state.enabled;
+		this.refreshInlineWidgets();
+	}
+
+	/** Widget keys registered in the active tab, above-editor widgets first. */
+	private widgetKeys(): string[] {
+		return [...this.extensionWidgetsAbove.keys(), ...this.extensionWidgetsBelow.keys()];
+	}
+
+	/**
+	 * `/widgets [expand|collapse|toggle] [key]`: set manual collapse state.
+	 *
+	 * A mixed group expands together and a fully expanded group collapses together.
+	 * Automatic collapses count as collapsed while the tail renders them, so
+	 * `/widgets` expands a tail the row budget folded instead of collapsing it
+	 * again. The bare toggle collapses by handing its widgets back to the budget,
+	 * so a second `/widgets` restores the automatic state instead of replacing the
+	 * pins with manual collapses the budget can never undo.
+	 */
+	private handleWidgetsCommand(args: string): void {
+		const state = this.inlineWidgetState();
+		if (!state) return;
+		const input = args.trim();
+		const match = /^(expand|collapse|toggle)(?:\s+(.*))?$/.exec(input);
+		const action = match?.[1] ?? "toggle";
+		// The remainder is an exact widget key, including spaces.
+		const key = match ? match[2]?.trim() : input;
+		const widgets = key ? this.widgetKeys().filter((widgetKey) => widgetKey === key) : this.widgetKeys();
+		if (widgets.length === 0) {
+			this.showError(key ? `Unknown widget: ${key}` : "No widgets in this tab");
 			return;
 		}
-		this.renderWidgetContainer(this.widgetContainerAbove, this.extensionWidgetsAbove, true, true);
-		this.renderWidgetContainer(this.widgetContainerBelow, this.extensionWidgetsBelow, false, false);
-		this.ui.requestRender();
+		const autoActive = state.enabled;
+		const isCollapsed = (widgetKey: string): boolean =>
+			state.collapsed.get(widgetKey) === true || (autoActive && state.autoCollapsed.has(widgetKey));
+		const allExpanded = widgets.every((widgetKey) => !isCollapsed(widgetKey));
+		const collapse = action === "collapse" || (action === "toggle" && allExpanded);
+		const handBack = collapse && !key && autoActive;
+		for (const widgetKey of widgets) {
+			if (handBack && state.collapsed.has(widgetKey)) state.collapsed.delete(widgetKey);
+			else state.collapsed.set(widgetKey, collapse);
+			// Manual intent outranks the row budget: drop the key from the automatic
+			// set so the next frame honours the explicit choice.
+			state.autoCollapsed.delete(widgetKey);
+		}
+		this.refreshInlineWidgets();
+	}
+
+	/**
+	 * Apply the global `ui.inlineWidgets` default: write it to MixCode's settings
+	 * file and switch every open tab over immediately.
+	 */
+	private setInlineWidgetsGlobal(enabled: boolean): void {
+		this.mixcodeSettings = { ui: { inlineWidgets: enabled } };
+		try {
+			writeInlineWidgetsSetting(mixcodeSettingsFilePath(), enabled);
+		} catch (error) {
+			this.showWarning(
+				`Failed to save mixcode_settings.json: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		for (const state of this.inlineWidgetTabStates.values()) state.enabled = enabled;
+		this.refreshInlineWidgets();
 	}
 
 	private renderWidgetContainer(
@@ -4903,6 +5054,17 @@ export class InteractiveMode {
 			if (text === "/vim") {
 				this.editor.setText("");
 				this.enterActiveTabVimMode();
+				return;
+			}
+			if (text === "/toggle-inline-widgets") {
+				this.editor.setText("");
+				this.handleToggleInlineWidgets();
+				return;
+			}
+			if (text === "/widgets" || text.startsWith("/widgets ")) {
+				const args = text.startsWith("/widgets ") ? text.slice("/widgets ".length) : "";
+				this.editor.setText("");
+				this.handleWidgetsCommand(args);
 				return;
 			}
 			if (text === "/save-workspace" || text.startsWith("/save-workspace ")) {
@@ -6778,6 +6940,7 @@ export class InteractiveMode {
 					fullscreenScrollbar: this.settingsManager.getFullscreenScrollbar(),
 					fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
 					warnings: this.settingsManager.getWarnings(),
+					inlineWidgets: this.mixcodeSettings.ui.inlineWidgets,
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -6962,6 +7125,9 @@ export class InteractiveMode {
 					},
 					onWarningsChange: (warnings) => {
 						this.settingsManager.setWarnings(warnings);
+					},
+					onInlineWidgetsChange: (enabled) => {
+						this.setInlineWidgetsGlobal(enabled);
 					},
 					onCancel: () => {
 						done();

@@ -99,6 +99,14 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   capture that metadata, alongside the existing Anthropic Messages and OpenAI Completions
   capture. Shown with the `showCacheMissNotices` setting; the message itself keeps its
   requested model and persisted content.
+- Inline widget mode: extension widgets render at the tail of the chat instead of the editor
+  dock, behind a viewport-derived row budget that collapses whole widgets to `▸ Inline · <key>`
+  headers. `ui.inlineWidgets` in `mixcode_settings.json` sets the global default (on), `/settings`
+  has an `Inline widgets` row in its own `Mixcode` section, `/toggle-inline-widgets` switches one
+  tab, and `/widgets expand|collapse|toggle [key]` steers the collapse state. See
+  [Inline Widgets](docs/inline-widgets.md).
+- `core/mixcode/mixcode-settings.ts` reads and writes `mixcode_settings.json` in the state
+  directory shared with mixcode-pi, so both agents see the same global settings.
 
 ### Changed
 
@@ -132,6 +140,10 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   rows can hide both slots.
 - `CustomEditor.onAction` handlers may return `false` to decline a key, which then reaches the
   editor. Existing handlers are unaffected; the Home bindings rely on it.
+- `CustomEditor.onAction` handlers may return `false` to decline a key, which then reaches the
+  editor. Existing handlers are unaffected; the Home bindings rely on it.
+- pi-tui's `SettingItem` gained an optional `section`; consecutive items sharing one render under
+  a heading row, which is how the `Mixcode` group stays apart from pi's own settings.
 
 ### Fixed
 

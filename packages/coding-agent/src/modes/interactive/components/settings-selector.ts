@@ -89,6 +89,7 @@ export interface SettingsConfig {
 	fullscreenScrollbar: ScrollViewScrollbar;
 	fullscreenCopyOnSelect: boolean;
 	warnings: WarningSettings;
+	inlineWidgets: boolean;
 }
 
 export interface SettingsCallbacks {
@@ -127,6 +128,7 @@ export interface SettingsCallbacks {
 	onFullscreenScrollbarChange: (mode: ScrollViewScrollbar) => void;
 	onFullscreenCopyOnSelectChange: (enabled: boolean) => void;
 	onWarningsChange: (warnings: WarningSettings) => void;
+	onInlineWidgetsChange: (enabled: boolean) => void;
 	onCancel: () => void;
 }
 
@@ -722,6 +724,16 @@ export class SettingsSelectorComponent extends Container {
 				submenu: (currentValue, done) =>
 					new ThemeSubmenu(currentValue, config.terminalTheme, config.availableThemes, callbacks, done),
 			},
+			// Mixcode's own settings file, kept in a section below pi's entries.
+			{
+				id: "inline-widgets",
+				label: "Inline widgets",
+				section: "Mixcode",
+				description:
+					"Render extension widgets in the scrollable chat transcript instead of the fixed dock above the editor",
+				currentValue: config.inlineWidgets ? "true" : "false",
+				values: ["true", "false"],
+			},
 		];
 
 		// Only show image toggle if terminal supports it
@@ -943,6 +955,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "theme":
 						callbacks.onThemeChange(newValue);
+						break;
+					case "inline-widgets":
+						callbacks.onInlineWidgetsChange(newValue === "true");
 						break;
 				}
 			},

@@ -1234,5 +1234,6 @@ export function getSettingsListTheme(): SettingsListTheme {
 		description: (text: string) => theme.fg("dim", text),
 		cursor: theme.fg("accent", "→ "),
 		hint: (text: string) => theme.fg("dim", text),
+		section: (text: string) => theme.bold(theme.fg("muted", text)),
 	};
 }

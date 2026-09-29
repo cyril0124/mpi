@@ -9,6 +9,11 @@ export interface SettingItem {
 	id: string;
 	/** Display label (left side) */
 	label: string;
+	/**
+	 * Optional group heading. Consecutive items sharing a section render under one
+	 * heading, separated from the group above by a blank row.
+	 */
+	section?: string;
 	/** Optional description shown when selected */
 	description?: string;
 	/** Current value to display (right side) */
@@ -29,6 +34,35 @@ export interface SettingsListTheme {
 	description: (text: string) => string;
 	cursor: string;
 	hint: (text: string) => string;
+	/** Section heading style; falls back to the label style when the theme omits it. */
+	section?: (text: string) => string;
+}
+
+/** A rendered list row: a section heading, a spacer, or a setting. */
+type SettingsListRow = { kind: "header"; title: string } | { kind: "gap" } | { kind: "item"; itemIndex: number };
+
+/**
+ * Rows for one visible window. A heading is emitted where a section starts, so a
+ * window that opens in the middle of a section does not repeat its heading.
+ */
+function settingsListRows(
+	items: readonly SettingItem[],
+	startIndex: number,
+	endIndex: number,
+	showSectionHeaders: boolean,
+): SettingsListRow[] {
+	const rows: SettingsListRow[] = [];
+	for (let index = startIndex; index < endIndex; index += 1) {
+		const item = items[index];
+		if (!item) continue;
+		const startsSection = index === 0 || items[index - 1]?.section !== item.section;
+		if (showSectionHeaders && startsSection && item.section) {
+			if (rows.length > 0) rows.push({ kind: "gap" });
+			rows.push({ kind: "header", title: item.section });
+		}
+		rows.push({ kind: "item", itemIndex: index });
+	}
+	return rows;
 }
 
 export interface SettingsListOptions {
@@ -131,12 +165,20 @@ export class SettingsList implements Component {
 		// Calculate max label width for alignment
 		const maxLabelWidth = Math.min(36, Math.max(...this.items.map((item) => visibleWidth(item.label))));
 
-		// Render visible items
-		for (let i = startIndex; i < endIndex; i++) {
-			const item = displayItems[i];
+		// Render visible rows
+		for (const row of settingsListRows(displayItems, startIndex, endIndex, this.sectionHeadersVisible())) {
+			if (row.kind === "gap") {
+				lines.push("");
+				continue;
+			}
+			if (row.kind === "header") {
+				lines.push(this.renderSectionHeader(row.title, width));
+				continue;
+			}
+			const item = displayItems[row.itemIndex];
 			if (!item) continue;
 
-			const isSelected = i === this.selectedIndex;
+			const isSelected = row.itemIndex === this.selectedIndex;
 			const prefix = isSelected ? this.theme.cursor : "  ";
 			const prefixWidth = visibleWidth(prefix);
 
@@ -203,8 +245,11 @@ export class SettingsList implements Component {
 
 		const rowOffset = this.searchEnabled ? 2 : 0;
 		const { startIndex, endIndex } = this.getVisibleRange(displayItems);
-		const itemIndex = startIndex + event.y - rowOffset;
-		if (itemIndex < startIndex || itemIndex >= endIndex) return undefined;
+		const row = settingsListRows(displayItems, startIndex, endIndex, this.sectionHeadersVisible())[
+			event.y - rowOffset
+		];
+		if (!row || row.kind !== "item") return undefined;
+		const itemIndex = row.itemIndex;
 		if (event.type === "press") {
 			this.mousePressedIndex = itemIndex;
 			this.selectedIndex = itemIndex;
@@ -251,6 +296,17 @@ export class SettingsList implements Component {
 
 	private getDisplayItems(): SettingItem[] {
 		return this.searchEnabled ? this.filteredItems : this.items;
+	}
+
+	/** Section headings group the full list; a filtered list would interleave them. */
+	private sectionHeadersVisible(): boolean {
+		if (!this.searchEnabled || !this.searchInput) return true;
+		return this.searchInput.getValue().trim().length === 0;
+	}
+
+	private renderSectionHeader(title: string, width: number): string {
+		const style = this.theme.section ?? ((text: string) => this.theme.label(text, false));
+		return truncateToWidth(style(`  ${title}`), width);
 	}
 
 	private getVisibleRange(displayItems: readonly SettingItem[]): { startIndex: number; endIndex: number } {
