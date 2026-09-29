@@ -18,6 +18,7 @@ commit that causes it.
 | Quit | `ctrl+d` exits, no confirmation | `ctrl+q` (`ctrl+shift+q` on Windows and WSL) asks first; `ctrl+d` unchanged | [Command Palette and Quit Confirmation](command-palette.md) |
 | Fullscreen transcript rendering | renders every message component each frame, then clips to the viewport | renders only the visible window (20 rows of overscan) and estimates unmeasured blocks at 4 rows | frame cost otherwise grows with the whole conversation |
 | Transcript scrolling keys | `tui.altScreen.*` only | plus a modal surface (`/vim`, `j`/`k`/`gg`/`G`, prompt jumps) in fullscreen mode | mouse-free reading of long conversations |
+| Default TUI mode | `regular` | `fullscreen`; an explicit `tuiMode: "regular"` in `settings.json` still selects the plain transcript | the fork's reading features (windowed transcript, vim, mouse selection) only exist on the alternate screen, and upstream's `packages/coding-agent/docs/settings.md` still lists `"regular"` as the default |
 | Editor frame while modal | thinking/bash border color | accent border, input and submit locked | vim mode owns input |
 | MixCode Home | no such surface; the transcript always shows the active session | a `home` pseudo-tab lists every open agent with a conversation preview | [MixCode Home](home.md) |
 | `left`/`right`/`up`/`down`/`enter`/`ctrl+f` | editor cursor, prompt history, submit | on Home they select, attach, send, and filter the roster; on agent tabs the editor keeps them | [MixCode Home](home.md) |
@@ -52,6 +53,9 @@ commit that causes it.
   coding-agent toast can report a copy in the same unit
 - `packages/tui/src/index.ts`: exports for the windowed node, mouse dispatch, the grapheme counter and
   the image-line predicate, and the selection options
+- `packages/coding-agent/src/cli/args.ts`: the `--tui-mode` help line names the fork's default
+- `packages/coding-agent/test/settings-manager.test.ts`: the TUI mode assertions expect the fork's
+  fullscreen default
 - `AGENTS.md`, `.gitignore`
 
 The fork also adds keys to upstream's `keybindings.ts`, while

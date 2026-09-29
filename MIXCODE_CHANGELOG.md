@@ -155,6 +155,10 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Changed
 
+- The default TUI mode is `fullscreen` instead of pi's `regular`, so an installation that never set
+  `tuiMode` opens on the alternate screen, where the fork's transcript features live. An explicit
+  `tuiMode: "regular"` in `settings.json` keeps the plain transcript; `/settings` switches between
+  the two.
 - The built-in footer is now the dock meta row. pi's footer rows (the working directory with the
   session name, then the token and cost totals with `percent (auto)` beside the right-aligned model
   and thinking level) are gone from the dock: the card's top edge carries the name and the exact

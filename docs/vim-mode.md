@@ -7,10 +7,10 @@ scrolling, page jumps, and jumping between user messages.
 
 ## Requirements
 
-Vim mode drives the in-app transcript viewport, which only exists in **fullscreen** mode
-(`/settings` → `tuiMode: fullscreen`, or `"tuiMode": "fullscreen"` in the settings file). In
-regular mode the transcript lives in terminal scrollback and there is no viewport to scroll, so
-`/vim` reports the requirement and stays off.
+Vim mode drives the in-app transcript viewport, which only exists in **fullscreen** mode, the
+default TUI mode. In regular mode the transcript lives in terminal scrollback and there is no
+viewport to scroll, so `/vim` reports the requirement and stays off. To leave fullscreen, pick
+regular in `/settings` → `tuiMode`, or set `"tuiMode": "regular"` in the settings file.
 
 ## Entering and leaving
 
