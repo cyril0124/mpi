@@ -1,6 +1,7 @@
 import type { Usage } from "@earendil-works/pi-ai";
 import { Container } from "@earendil-works/pi-tui";
 import { describe, expect, test, vi } from "vitest";
+import { createFollowUpQueueState } from "../src/core/mixcode/follow-up/runtime-follow-up-queue.ts";
 import type { SessionEntry } from "../src/core/session-manager.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
@@ -232,6 +233,7 @@ describe("InteractiveMode compaction events", () => {
 	test("routes interactive response aborts through AgentSession", () => {
 		const abort = vi.fn(async () => {});
 		const ui = {
+			followUpState: createFollowUpQueueState(),
 			clearAllQueues: () => ({ steering: [], followUp: [] }),
 			updatePendingMessagesDisplay: vi.fn(),
 			session: { abort },
@@ -248,6 +250,7 @@ describe("InteractiveMode compaction events", () => {
 
 	test("preserves steering behavior when flushing into an active agent run", async () => {
 		const fakeThis = {
+			followUpState: createFollowUpQueueState(),
 			compactionQueuedMessages: [{ text: "change direction", mode: "steer" as const }],
 			session: {
 				clearQueue: vi.fn(),

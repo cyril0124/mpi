@@ -176,8 +176,8 @@ export const KEYBINDINGS = {
 		description: "Queue follow-up message",
 	},
 	"app.message.dequeue": {
-		defaultKeys: windowsKeybindings ? "alt+q" : "alt+up",
-		description: "Restore queued messages",
+		defaultKeys: "ctrl+u",
+		description: "Edit queued steer/follow-up messages",
 	},
 	"app.clipboard.pasteImage": {
 		defaultKeys: windowsKeybindings ? "alt+v" : "ctrl+v",

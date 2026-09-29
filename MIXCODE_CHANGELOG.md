@@ -49,6 +49,20 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   lives in `core/mixcode/selection/chat-selection.ts` and the surface registry in
   `modes/interactive/mixcode/selection/`; pi-tui keeps owning the drag, the slicing and the edge
   auto-scroll. See [Mouse Selection](docs/mouse-selection.md).
+- Follow-up queues with `/follow-up`: user follow-ups no longer ride the SDK follow-up queue.
+  `alt+enter` and `/follow-up <message>` queue host-side rounds (an exclusive round each, or merged
+  into one round with `/follow-up --batch <message>`) that dispatch one prompt turn per round when
+  the agent goes idle. A failed run, compaction failure, or dispatch error pauses the queue (shown
+  as `Paused · /follow-up to resume`), `/follow-up` without a message resumes it, and a queued local
+  command (e.g. `/follow-up /model <id>`) runs host-side when its round arrives. Queued texts draw
+  as boxed previews above the editor: `Steer (n)` with `Esc->send now` and `ctrl+u->edit` hints,
+  `Follow-up (n)` with `Round k · next|command · <text>` numbering and `SDK ·` companions, showing
+  the latest five entries of each queue. Esc with queued steer texts aborts the run and sends them
+  as one immediate turn without promoting follow-up rounds, and `ctrl+u` pops a single queue entry back
+  into the editor (`ctrl+u` then `s`/`f` picks the queue when both are queued) (steer/follow-up choice toast when both are queued). Backed by a new
+  `AgentSession.removeQueuedMessages`/`restoreQueuedMessages` dequeue API and an
+  `Agent.removeQueuedMessages`/`restoreQueuedMessages` queue splice.
+
 - Toast notifications: a typed card in the top-right corner of the transcript, with a rounded frame,
   an icon and color per kind, a width that follows the terminal, and a three second lifetime. The
   copy command reports through it, a failing copy reports the error, and closing the last tab

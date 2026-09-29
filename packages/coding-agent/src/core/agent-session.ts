@@ -2055,6 +2055,40 @@ export class AgentSession {
 		return this._steeringMessages.length + this._followUpMessages.length;
 	}
 
+	/**
+	 * Remove specific queued messages, matched by exact text (last occurrence
+	 * first), from both the session text mirror and the agent pending queue.
+	 * Returns removed entries in queue order for restoreQueuedMessages().
+	 */
+	removeQueuedMessages(
+		kind: "steering" | "followUp",
+		texts: readonly string[],
+	): Array<{ message: AgentMessage; text: string }> {
+		if (texts.length === 0) return [];
+		const tracked = kind === "steering" ? this._steeringMessages : this._followUpMessages;
+		for (let requestedIndex = texts.length - 1; requestedIndex >= 0; requestedIndex -= 1) {
+			const trackedIndex = tracked.lastIndexOf(texts[requestedIndex]!);
+			if (trackedIndex !== -1) tracked.splice(trackedIndex, 1);
+		}
+		const removed = this.agent.removeQueuedMessages(kind, texts);
+		if (removed.length > 0) this._emitQueueUpdate();
+		return removed;
+	}
+
+	/** Re-append entries removed by removeQueuedMessages(). */
+	restoreQueuedMessages(
+		kind: "steering" | "followUp",
+		removed: ReadonlyArray<{ message: AgentMessage; text: string }>,
+	): void {
+		if (removed.length === 0) return;
+		const tracked = kind === "steering" ? this._steeringMessages : this._followUpMessages;
+		for (const item of removed) {
+			tracked.push(item.text);
+		}
+		this.agent.restoreQueuedMessages(kind, removed);
+		this._emitQueueUpdate();
+	}
+
 	/** Get pending steering messages (read-only) */
 	getSteeringMessages(): readonly string[] {
 		return this._steeringMessages;

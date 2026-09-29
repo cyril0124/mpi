@@ -65,6 +65,11 @@ export class CustomEditor extends Editor {
 	 * Returns true when the key was consumed by the arm or its confirmation.
 	 */
 	public onVimEnterArmKey?: (data: string) => boolean;
+	/**
+	 * Handler for the armed queue-edit choice (`s`/`f` after the dequeue key).
+	 * Returns true when the key was consumed by the arm or its resolution.
+	 */
+	public onQueueEditArmKey?: (data: string) => boolean;
 
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, options?: CustomEditorOptions) {
 		super(tui, theme, options);
@@ -158,6 +163,11 @@ export class CustomEditor extends Editor {
 
 		// The empty-composer panel toggle outranks extension shortcuts for its key.
 		if (this.keybindings.matches(data, "app.widgets.panel") && this.onWidgetPanelKey?.(data)) {
+			return;
+		}
+
+		// An armed queue-edit choice (s/f) takes the key before the editor types it.
+		if (this.onQueueEditArmKey?.(data)) {
 			return;
 		}
 

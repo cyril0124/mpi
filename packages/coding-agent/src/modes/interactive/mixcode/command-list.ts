@@ -9,6 +9,7 @@
  */
 import { type AutocompleteItem, fuzzyFilter, type SlashCommand } from "@earendil-works/pi-tui";
 import type { AgentSession } from "../../../core/agent-session.ts";
+import { FOLLOW_UP_BATCH_FLAG } from "../../../core/mixcode/follow-up/runtime-follow-up-queue.ts";
 import { TAB_COLOR_NAMES } from "../../../core/mixcode/multi-tab/types.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../../core/slash-commands.ts";
 import type { SourceInfo } from "../../../core/source-info.ts";
@@ -201,6 +202,28 @@ export function collectSlashCommands(source: CommandSource): SlashCommand[] {
 	attachValueCompletions(slashCommands, ["color"], () => [...TAB_COLOR_NAMES, "clear"]);
 	attachValueCompletions(slashCommands, ["close-session", "delete-session"], () => ["yes", "y"]);
 	attachValueCompletions(slashCommands, ["restore-workspace", "delete-workspace"], () => source.workspaceNames());
+
+	// `/follow-up`: offer the batch flag while the argument is still an
+	// incomplete flag token; any other text already names its message.
+	const followUpCommand = slashCommands.find((command) => command.name === "follow-up");
+	if (followUpCommand) {
+		followUpCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+			const text = prefix.trim();
+			const incompleteFlag =
+				text !== FOLLOW_UP_BATCH_FLAG &&
+				text.startsWith("-") &&
+				!/\s/.test(text) &&
+				FOLLOW_UP_BATCH_FLAG.startsWith(text);
+			if (text !== "" && !incompleteFlag) return null;
+			return [
+				{
+					value: FOLLOW_UP_BATCH_FLAG,
+					label: FOLLOW_UP_BATCH_FLAG,
+					description: "Merge with adjacent batch follow-ups into one round",
+				},
+			];
+		};
+	}
 
 	const tabCommand = slashCommands.find((command) => command.name === "tab");
 	if (tabCommand) {

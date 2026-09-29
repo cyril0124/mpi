@@ -45,7 +45,6 @@ import {
 	setKeybindings,
 	type Terminal,
 	Text,
-	TruncatedText,
 	type TUI,
 	TuiAltScreen,
 	TuiMainScreen,
@@ -106,6 +105,23 @@ import {
 } from "../../core/mixcode/console/console-tui-bridge.ts";
 import { resolveOutputEditor } from "../../core/mixcode/console/output-editor.ts";
 import { runWithConsoleTab } from "../../core/mixcode/console-scope.ts";
+import {
+	type FollowUpHost,
+	flushSteerQueue,
+	popQueuedMessage,
+	resumeFollowUps,
+	submitFollowUps,
+} from "../../core/mixcode/follow-up/runtime-follow-up.ts";
+import {
+	createFollowUpQueueState,
+	discardFollowUps,
+	FOLLOW_UP_BATCH_FLAG,
+	type FollowUpQueueState,
+	parseFollowUpArgs,
+	pauseFollowUps,
+	type QueueKind,
+	syncFollowUpPreview,
+} from "../../core/mixcode/follow-up/runtime-follow-up-queue.ts";
 import {
 	adjustHomeSelectionAfterClose,
 	clampHomeSelectedTabIndex,
@@ -223,6 +239,11 @@ import {
 } from "./components/mixcode/command-palette/command-palette.ts";
 import { ConsoleNotice, consoleNoticeOverlayOptions } from "./components/mixcode/console/console-notice.ts";
 import { DockWidgetBudget } from "./components/mixcode/dock-widgets/dock-widgets.ts";
+import {
+	QueuePreviewComponent,
+	type QueuePreviewData,
+	type QueuePreviewHints,
+} from "./components/mixcode/follow-up/queue-preview.ts";
 import {
 	clearHomeTabCache,
 	type HomeCard,
@@ -551,6 +572,12 @@ function runInActiveTab<T>(tab: AgentTab | undefined, fn: () => Promise<T>): Pro
 /** Tab id the inline widget state uses when the session runs without a tab manager. */
 const SINGLE_SESSION_TAB_ID = "session";
 
+/** How long the s/f queue-edit choice stays armed after the dequeue key. */
+const QUEUE_EDIT_ARM_WINDOW_MS = 1000;
+
+/** Prompt of the armed queue-edit choice; cleared when the window ends. */
+const QUEUE_EDIT_ARM_MESSAGE = "S: Steer · F: Follow-up · Esc: cancel";
+
 export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;
 	private tabManager: TabManager | undefined;
@@ -696,6 +723,14 @@ export class InteractiveMode {
 
 	// Messages queued while compaction is running
 	private compactionQueuedMessages: CompactionQueuedMessage[] = [];
+	/** Follow-up rounds and steer/follow-up queue bookkeeping (see core/mixcode/follow-up/). */
+	private readonly followUpStates = new Map<string, FollowUpQueueState>();
+	/** True from the moment a manual compact is requested until compaction_end. */
+	private compactionClaimed = false;
+	/** Deadline of the armed queue-edit choice (s/f) after the dequeue key; 0 = unarmed. */
+	private queueEditArmDeadline = 0;
+	/** Timer that drops the choice toast when the arm window ends. */
+	private queueEditArmTimer: NodeJS.Timeout | undefined;
 
 	// Shutdown state
 	private shutdownRequested = false;
@@ -801,6 +836,7 @@ export class InteractiveMode {
 					adjustHomeSelectionAfterClose(this.homeSelection, this.tabManager?.list() ?? [], removedIndex);
 					this.homeMessageCache.delete(tabId);
 					clearHomeTabCache(tabId);
+					this.followUpStates.delete(tabId);
 				},
 				// Ring the bell when a tab the user is not looking at finishes, so a
 				// background result is noticeable with the terminal unfocused.
@@ -5008,6 +5044,8 @@ export class InteractiveMode {
 		// they cannot reach the editor. Tab/tool/thinking actions pass through.
 		this.defaultEditor.onVimKey = (data) => this.handleVimKeyInput(data);
 		// Empty-editor `ctrl+u` arms vim entry; `u` or another `ctrl+u` confirms it.
+		// With queued messages ctrl+u edits a queue instead (the dequeue keybinding),
+		// so the vim arm declines and the key falls through to that action.
 		this.defaultEditor.onVimEnterArmKey = (data) => {
 			const state = this.vimTabState();
 			if (state.active) return false;
@@ -5015,15 +5053,21 @@ export class InteractiveMode {
 				this.editor.getText().length === 0 &&
 				!this.session.isStreaming &&
 				!this.session.isCompacting &&
-				this.compactionQueuedMessages.length === 0;
+				this.compactionQueuedMessages.length === 0 &&
+				!this.hasQueuedMessages();
 			const result = handleVimEnterArmKey(state, data, this.createVimHost(), canArm, Date.now());
 			if (result.entered) this.refreshVimChrome();
 			return result.consumed;
 		};
+		// An armed queue-edit choice (s/f after the dequeue key) takes the next key.
+		this.defaultEditor.onQueueEditArmKey = (data) => this.handleQueueEditArmKey(data);
 
 		// Set up handlers on defaultEditor - they use this.editor for text access
 		// so they work correctly regardless of which editor is active
 		this.defaultEditor.onEscape = () => {
+			// A queued steer message sends immediately: abort the run and flush the
+			// steer queue as one turn. Follow-up rounds are never promoted.
+			if (this.tryFlushSteerQueue()) return;
 			if (this.session.isStreaming) {
 				this.restoreQueuedMessagesToEditor({ abort: true });
 			} else if (this.session.isBashRunning) {
@@ -5158,6 +5202,11 @@ export class InteractiveMode {
 			if (text === "/settings") {
 				this.showSettingsSelector();
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/follow-up" || text.startsWith("/follow-up ")) {
+				this.editor.setText("");
+				await this.handleFollowUpCommand(text.slice("/follow-up".length));
 				return;
 			}
 			if (text === "/scoped-models") {
@@ -5499,6 +5548,7 @@ export class InteractiveMode {
 		switch (event.type) {
 			case "agent_start":
 				this.pendingTools.clear();
+				this.followUpState.followUpRunFailed = false;
 				// Restore main escape handler if retry handler is still active
 				// (retry success event fires later, but we need main handler now)
 				if (this.retryEscapeHandler) {
@@ -5522,6 +5572,7 @@ export class InteractiveMode {
 				break;
 
 			case "queue_update":
+				this.syncQueuedMessageMirrors(event.steering, event.followUp);
 				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
 				break;
@@ -5659,6 +5710,8 @@ export class InteractiveMode {
 					this.maybeShowResponseModelNotice(this.streamingMessage);
 
 					if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
+						// A failed run pauses queued follow-up rounds once the run settles.
+						this.followUpState.followUpRunFailed = true;
 						if (!errorMessage) {
 							errorMessage = this.streamingMessage.errorMessage || "Error";
 						}
@@ -5748,6 +5801,9 @@ export class InteractiveMode {
 				break;
 
 			case "agent_settled":
+				// A failed run pauses queued follow-up rounds, including runs the
+				// drain did not start itself.
+				if (this.followUpState.followUpRunFailed) pauseFollowUps(this.followUpState);
 				await this.checkShutdownRequested();
 				break;
 
@@ -5766,6 +5822,7 @@ export class InteractiveMode {
 			}
 
 			case "compaction_end": {
+				this.compactionClaimed = false;
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
@@ -5804,6 +5861,9 @@ export class InteractiveMode {
 					}
 					this.footer.invalidate();
 				} else if (event.errorMessage) {
+					// A failed compaction pauses queued follow-up rounds too.
+					this.followUpState.followUpRunFailed = true;
+					pauseFollowUps(this.followUpState);
 					if (event.reason === "manual") {
 						this.showError(event.errorMessage);
 					} else {
@@ -5838,6 +5898,7 @@ export class InteractiveMode {
 				this.clearStatusIndicator("retry");
 				// Show error only on final failure (success shows normal response)
 				if (!event.success) {
+					this.followUpState.followUpRunFailed = true;
 					this.showError(`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`);
 				}
 				this.ui.requestRender();
@@ -6560,6 +6621,14 @@ export class InteractiveMode {
 	}
 
 	private async handleFollowUp(): Promise<void> {
+		try {
+			await this.queueFollowUpFromEditor();
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	private async queueFollowUpFromEditor(): Promise<void> {
 		const text = (this.editor.getExpandedText?.() ?? this.editor.getText()).trim();
 		if (!text) return;
 
@@ -6570,21 +6639,26 @@ export class InteractiveMode {
 				this.editor.setText("");
 				await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(text));
 			} else {
-				this.queueCompactionMessage(text, "followUp");
+				// Follow-up rounds wait out the compaction like any other run; the
+				// drain dispatches them once compaction_end settles.
+				this.editor.addToHistory?.(text);
+				this.editor.setText("");
+				await submitFollowUps(this.followUpState, this.followUpHost, [text], "batch");
 			}
 			return;
 		}
 
-		// Alt+Enter queues a follow-up message (waits until agent finishes)
-		// This handles extension commands (execute immediately), prompt template expansion, and queueing
-		if (this.session.isStreaming) {
+		// Alt+Enter queues a follow-up round (waits until agent finishes). The
+		// round merges with adjacent batch rounds; /follow-up queues exclusive
+		// rounds instead. Extension commands execute when their round arrives.
+		// A paused queue keeps its order: new rounds append instead of jumping ahead.
+		if (
+			this.session.isStreaming ||
+			(this.followUpState.followUpsPaused && this.followUpState.followUpQueue.length > 0)
+		) {
 			this.editor.addToHistory?.(text);
 			this.editor.setText("");
-			await runInActiveTab(this.tabManager?.getActive(), () =>
-				this.session.prompt(text, { streamingBehavior: "followUp" }),
-			);
-			this.updatePendingMessagesDisplay();
-			this.ui.requestRender();
+			await submitFollowUps(this.followUpState, this.followUpHost, [text], "batch");
 		}
 		// If not streaming, Alt+Enter acts like regular Enter (trigger onSubmit)
 		else if (this.editor.onSubmit) {
@@ -6593,13 +6667,128 @@ export class InteractiveMode {
 		}
 	}
 
-	private handleDequeue(): void {
-		const restored = this.restoreQueuedMessagesToEditor();
-		if (restored === 0) {
-			this.showStatus("No queued messages to restore");
-		} else {
-			this.showStatus(`Restored ${restored} queued message${restored > 1 ? "s" : ""} to editor`);
+	/** Esc with queued steer texts: abort, then send the steer queue as one turn now. */
+	private tryFlushSteerQueue(): boolean {
+		// Compaction owns the queue until compaction_end; Esc falls through.
+		if (this.session.isCompacting || this.compactionClaimed) return false;
+		if (this.followUpState.pendingSteer.length === 0) return false;
+		if (this.session.isStreaming) {
+			pauseFollowUps(this.followUpState);
+			void this.session.abort();
 		}
+		void flushSteerQueue(this.followUpState, this.followUpHost)
+			.then(() => this.ui.requestRender())
+			.catch((error: unknown) => {
+				this.showError(`Failed to send queued messages: ${error instanceof Error ? error.message : String(error)}`);
+			});
+		return true;
+	}
+
+	/** `/follow-up [--batch] [message]`: queue a round, or resume paused rounds. */
+	private async handleFollowUpCommand(rawArgs: string): Promise<void> {
+		const { batch, message } = parseFollowUpArgs(rawArgs);
+		if (batch && !message) {
+			this.showError(`Usage: /follow-up [${FOLLOW_UP_BATCH_FLAG}] <message>`);
+			return;
+		}
+		if (!message) {
+			try {
+				await resumeFollowUps(this.followUpState, this.followUpHost);
+			} catch (error) {
+				this.showError(error instanceof Error ? error.message : String(error));
+			}
+			return;
+		}
+		// Command texts queue as host rounds (executed on arrival, no model turn).
+		try {
+			await submitFollowUps(this.followUpState, this.followUpHost, [message], batch ? "batch" : "next");
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	/** The editable list of one queue kind, matching popQueuedMessage's view. */
+	private pendingListFor(kind: QueueKind): string[] {
+		return kind === "steering" ? this.followUpState.pendingSteer : this.followUpState.pendingFollowUps;
+	}
+
+	/** True while any steer or follow-up entry waits for dispatch or editing. */
+	private hasQueuedMessages(): boolean {
+		return this.pendingListFor("steering").length > 0 || this.pendingListFor("followUp").length > 0;
+	}
+
+	private handleDequeue(): void {
+		const steerCount = this.followUpState.pendingSteer.length;
+		const followUpCount = this.followUpState.pendingFollowUps.length;
+		if (steerCount > 0 && followUpCount > 0) {
+			// Both queues wait on one choice; arm a short window for s/f.
+			this.queueEditArmDeadline = Date.now() + QUEUE_EDIT_ARM_WINDOW_MS;
+			this.notifyToast("info", QUEUE_EDIT_ARM_MESSAGE);
+			if (this.queueEditArmTimer) clearTimeout(this.queueEditArmTimer);
+			this.queueEditArmTimer = setTimeout(() => this.endQueueEditArm(), QUEUE_EDIT_ARM_WINDOW_MS);
+			return;
+		}
+		if (steerCount > 0) {
+			this.popQueuedIntoEditor("steering");
+			return;
+		}
+		if (followUpCount > 0) {
+			this.popQueuedIntoEditor("followUp");
+			return;
+		}
+		this.showStatus("No queued messages to restore");
+	}
+
+	/** Resolve an armed queue-edit choice; consumes only s/f/Esc inside the window. */
+	private handleQueueEditArmKey(data: string): boolean {
+		if (this.queueEditArmDeadline === 0 || Date.now() > this.queueEditArmDeadline) {
+			this.endQueueEditArm();
+			return false;
+		}
+		if (data === "\x1b") {
+			this.endQueueEditArm();
+			this.showStatus("Queue edit canceled");
+			return true;
+		}
+		if (data.toLowerCase() === "s") {
+			this.endQueueEditArm();
+			this.popQueuedIntoEditor("steering");
+			return true;
+		}
+		if (data.toLowerCase() === "f") {
+			this.endQueueEditArm();
+			this.popQueuedIntoEditor("followUp");
+			return true;
+		}
+		return false;
+	}
+
+	/** End the choice window, clear its timer, and drop the choice toast if it still shows. */
+	private endQueueEditArm(): void {
+		this.queueEditArmDeadline = 0;
+		if (this.queueEditArmTimer) {
+			clearTimeout(this.queueEditArmTimer);
+			this.queueEditArmTimer = undefined;
+		}
+		if (activeToast(this.toastHost())?.message !== QUEUE_EDIT_ARM_MESSAGE) return;
+		clearToast(this.toastHost());
+		this.hideToast();
+	}
+
+	/** Pop the last entry of one queue into the editor, preserving a non-empty draft. */
+	private popQueuedIntoEditor(kind: QueueKind): void {
+		const text = popQueuedMessage(this.followUpState, this.followUpHost, kind);
+		if (text === undefined) {
+			this.showWarning(`${kind === "steering" ? "Steer" : "Follow-up"} queue is empty`);
+			return;
+		}
+		const draft = this.editor.getText();
+		if (draft.trim()) {
+			this.pendingListFor(kind).unshift(draft);
+		}
+		this.editor.setText(text);
+		this.updatePendingMessagesDisplay();
+		this.ui.requestRender();
 	}
 
 	private updateEditorBorderColor(): void {
@@ -6889,23 +7078,6 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Get all queued messages (read-only).
-	 * Combines session queue and compaction queue.
-	 */
-	private getAllQueuedMessages(): { steering: string[]; followUp: string[] } {
-		return {
-			steering: [
-				...this.session.getSteeringMessages(),
-				...this.compactionQueuedMessages.filter((msg) => msg.mode === "steer").map((msg) => msg.text),
-			],
-			followUp: [
-				...this.session.getFollowUpMessages(),
-				...this.compactionQueuedMessages.filter((msg) => msg.mode === "followUp").map((msg) => msg.text),
-			],
-		};
-	}
-
-	/**
 	 * Clear all queued messages and return their contents.
 	 * Clears both session queue and compaction queue.
 	 */
@@ -6924,26 +7096,91 @@ export class InteractiveMode {
 		};
 	}
 
+	/** Session-side integration for the follow-up queue (core/mixcode/follow-up/). */
+	private get followUpHost(): FollowUpHost {
+		// Bind to the tab that owns this queue: a drain of a background tab must
+		// dispatch into that tab's runtime, not whichever tab is focused.
+		const tabId = this.followUpStateKey();
+		const owningTab = () => this.tabManager?.get(tabId);
+		const owningSession = () => owningTab()?.runtime.session ?? this.session;
+		return {
+			get session() {
+				return owningSession();
+			},
+			promptTurn: (text, preflightResult) =>
+				runInActiveTab(owningTab(), () => owningSession().prompt(text, { preflightResult })),
+			runQueuedCommand: async (text) => {
+				await this.defaultEditor.onSubmit?.(text);
+			},
+			isQueuedCommandText: (text) => this.isQueuedFollowUpCommand(text),
+			isCompactionClaimed: () => this.compactionClaimed,
+			onQueueChanged: () => {
+				this.updatePendingMessagesDisplay();
+				this.ui.requestRender();
+			},
+			onQueueError: (error) => {
+				this.showError(error instanceof Error ? error.message : `Follow-up queue failed: ${String(error)}`);
+			},
+			isDiscarded: () => this.followUpStates.get(tabId) === undefined,
+		};
+	}
+
+	/** Queue state of the owning tab; rounds never cross conversations. */
+	private followUpStateKey(): string {
+		return this.tabManager?.activeTab()?.id ?? SINGLE_SESSION_TAB_ID;
+	}
+
+	private get followUpState(): FollowUpQueueState {
+		const key = this.followUpStateKey();
+		let state = this.followUpStates.get(key);
+		if (!state) {
+			state = createFollowUpQueueState();
+			this.followUpStates.set(key, state);
+		}
+		return state;
+	}
+
+	/** True when a slash/skill/template/builtin text must run host-side instead of as a model turn. */
+	private isQueuedFollowUpCommand(text: string): boolean {
+		if (!text.startsWith("/")) return false;
+		const commandName = /^\/(\S+)/.exec(text)?.[1];
+		if (commandName === undefined) return false;
+		if (commandName.startsWith("skill:")) return true;
+		if (BUILTIN_SLASH_COMMANDS.some((command) => command.name === commandName)) return true;
+		if (this.isExtensionCommand(text)) return true;
+		return this.session.promptTemplates.some((template) => template.name === commandName);
+	}
+
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
-		const { steering: steeringMessages, followUp: followUpMessages } = this.getAllQueuedMessages();
-		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
-			this.pendingMessagesContainer.addChild(new Spacer(1));
-			for (const message of steeringMessages) {
-				const text = theme.fg("dim", `Steering: ${message}`);
-				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
-			}
-			for (const message of followUpMessages) {
-				const text = theme.fg("dim", `Follow-up: ${message}`);
-				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
-			}
-			const dequeueHint = this.getAppKeyDisplay("app.message.dequeue");
-			const hintText = theme.fg("dim", `↳ ${dequeueHint} to edit all queued messages`);
-			this.pendingMessagesContainer.addChild(new TruncatedText(hintText, 1, 0));
+		const steerCount = this.followUpState.pendingSteer.length;
+		const followUpCount = this.followUpState.pendingFollowUps.length;
+		if (steerCount === 0 && followUpCount === 0 && this.compactionQueuedMessages.length === 0) {
+			return;
 		}
+		this.pendingMessagesContainer.addChild(new Spacer(1));
+		this.pendingMessagesContainer.addChild(
+			new QueuePreviewComponent(
+				(): QueuePreviewData => ({
+					// Parked (compaction) texts lead; SDK-mirrored steering texts trail.
+					steer: this.followUpState.pendingSteer,
+					followUpRounds: this.followUpState.followUpQueue,
+					sdkFollowUps: this.followUpState.pendingFollowUps.slice(this.followUpState.followUpQueue.length),
+					followUpsPaused: this.followUpState.followUpsPaused,
+					compacting: this.session.isCompacting,
+				}),
+				(): QueuePreviewHints => ({
+					dequeue: this.getAppKeyDisplay("app.message.dequeue"),
+					sendNow: this.getAppKeyDisplay("app.interrupt"),
+				}),
+			),
+		);
 	}
 
 	private restoreQueuedMessagesToEditor(options?: { abort?: boolean; currentText?: string }): number {
+		// Aborting stops the run on purpose; queued follow-up rounds wait for an
+		// explicit /follow-up instead of firing into the stopped session.
+		if (options?.abort) pauseFollowUps(this.followUpState);
 		const { steering, followUp } = this.clearAllQueues();
 		const allQueued = [...steering, ...followUp];
 		if (allQueued.length === 0) {
@@ -6964,8 +7201,18 @@ export class InteractiveMode {
 		return allQueued.length;
 	}
 
+	/** Refresh the SDK steering/follow-up mirrors; parked steer texts keep their prefix. */
+	private syncQueuedMessageMirrors(steering: readonly string[], followUp: readonly string[]): void {
+		const state = this.followUpState;
+		const parked = state.pendingSteer.slice(0, Math.max(0, state.pendingSteer.length - state.queuedSteerCount));
+		state.pendingSteer = [...parked, ...steering];
+		state.queuedSteerCount = steering.length;
+		syncFollowUpPreview(state, followUp);
+	}
+
 	private queueCompactionMessage(text: string, mode: "steer" | "followUp"): void {
 		this.compactionQueuedMessages.push({ text, mode });
+		if (mode === "steer") this.followUpState.pendingSteer.push(text);
 		this.editor.addToHistory?.(text);
 		this.editor.setText("");
 		this.updatePendingMessagesDisplay();
@@ -6989,11 +7236,21 @@ export class InteractiveMode {
 
 		const queuedMessages = [...this.compactionQueuedMessages];
 		this.compactionQueuedMessages = [];
+		// Steer texts parked during compaction leave the preview with the flush;
+		// restoreQueue puts them back if the flush fails.
+		const parkedSteer = queuedMessages.filter((message) => message.mode === "steer").map((message) => message.text);
+		const remainingSteer = [...this.followUpState.pendingSteer];
+		for (const text of parkedSteer) {
+			const index = remainingSteer.indexOf(text);
+			if (index !== -1) remainingSteer.splice(index, 1);
+		}
+		this.followUpState.pendingSteer = remainingSteer;
 		this.updatePendingMessagesDisplay();
 
 		const restoreQueue = (error: unknown) => {
 			this.session.clearQueue();
 			this.compactionQueuedMessages = queuedMessages;
+			this.followUpState.pendingSteer = [...parkedSteer, ...this.followUpState.pendingSteer];
 			this.updatePendingMessagesDisplay();
 			this.showError(
 				`Failed to send queued message${queuedMessages.length > 1 ? "s" : ""}: ${
@@ -9106,8 +9363,9 @@ export class InteractiveMode {
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${externalEditor}\` | Edit message in external editor |
 | \`${copyMessage}\` | Copy selection or last assistant message |
-| \`${followUp}\` | Queue follow-up message |
-| \`${dequeue}\` | Restore queued messages |
+| \`${followUp}\` | Queue follow-up message (rounds merge while the agent runs) |
+| \`${dequeue}\` | Edit queued messages: steer / follow-up pick when both are queued (\`${dequeue},S\` / \`${dequeue},F\`) |
+| \`Esc\` | Abort / send queued steer messages now |
 | \`${pasteImage}\` | Paste image or text from clipboard |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
@@ -9146,6 +9404,9 @@ export class InteractiveMode {
 			if (result.cancelled) {
 				return;
 			}
+			// The new conversation owns nothing from the old queue.
+			discardFollowUps(this.followUpState);
+			this.followUpState.pendingSteer = [];
 			this.chatContainer.addChild(new Spacer(1));
 			this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
 			this.ui.requestRender();
@@ -9307,10 +9568,14 @@ export class InteractiveMode {
 	private async handleCompactCommand(customInstructions?: string): Promise<void> {
 		this.clearStatusIndicator();
 
+		// The SDK sets isCompacting only after an await; claiming synchronously
+		// keeps queued follow-up rounds and the Esc flush out of the gap.
+		this.compactionClaimed = true;
 		try {
 			await runInActiveTab(this.tabManager?.getActive(), () => this.session.compact(customInstructions));
 		} catch {
-			// Ignore, will be emitted as an event
+			// A throw before compaction starts never reaches compaction_end.
+			this.compactionClaimed = false;
 		}
 	}
 

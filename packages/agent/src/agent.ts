@@ -151,6 +151,17 @@ class PendingMessageQueue {
 		this.messages.push(message);
 	}
 
+	/** Remove the last message whose joined text blocks equal `text`; returns it with its pre-splice index for restore. */
+	spliceLastMatch(text: string): { index: number; message: AgentMessage } | undefined {
+		for (let index = this.messages.length - 1; index >= 0; index -= 1) {
+			const message = this.messages[index]!;
+			if (queuedUserText(message) === text) {
+				return { index, message: this.messages.splice(index, 1)[0]! };
+			}
+		}
+		return undefined;
+	}
+
 	hasItems(): boolean {
 		return this.messages.length > 0;
 	}
@@ -170,6 +181,17 @@ class PendingMessageQueue {
 	clear(): void {
 		this.messages = [];
 	}
+}
+
+/** Joined text blocks of a queued user message; null when the entry carries no text content. */
+function queuedUserText(message: AgentMessage): string | null {
+	if (!("content" in message)) return null;
+	const content = (message as Message & { content: string | TextContent[] }).content;
+	if (typeof content === "string") return content;
+	return content
+		.filter((block): block is TextContent => block.type === "text")
+		.map((block) => block.text)
+		.join("\n");
 }
 
 type ActiveRun = {
@@ -316,6 +338,38 @@ export class Agent {
 	clearAllQueues(): void {
 		this.clearSteeringQueue();
 		this.clearFollowUpQueue();
+	}
+
+	/**
+	 * Remove specific queued messages, matched by exact text (last occurrence
+	 * first), from one queue. Returns removed entries in queue order so they can
+	 * be restored with restoreQueuedMessages().
+	 */
+	removeQueuedMessages(
+		kind: "steering" | "followUp",
+		texts: readonly string[],
+	): Array<{ message: AgentMessage; text: string }> {
+		const queue = kind === "steering" ? this.steeringQueue : this.followUpQueue;
+		const removed: Array<{ index: number; message: AgentMessage; text: string }> = [];
+		for (let requestedIndex = texts.length - 1; requestedIndex >= 0; requestedIndex -= 1) {
+			const text = texts[requestedIndex]!;
+			const match = queue.spliceLastMatch(text);
+			if (!match) continue;
+			removed.push({ index: match.index, message: match.message, text });
+		}
+		return removed.sort((left, right) => left.index - right.index).map(({ message, text }) => ({ message, text }));
+	}
+
+	/** Re-append entries removed by removeQueuedMessages(), preserving queue order. */
+	restoreQueuedMessages(
+		kind: "steering" | "followUp",
+		removed: ReadonlyArray<{ message: AgentMessage; text: string }>,
+	): void {
+		if (removed.length === 0) return;
+		const queue = kind === "steering" ? this.steeringQueue : this.followUpQueue;
+		for (const item of removed) {
+			queue.enqueue(item.message);
+		}
 	}
 
 	/** Returns true when either queue still contains pending messages. */
