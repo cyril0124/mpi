@@ -120,10 +120,12 @@ import {
 	visibleRosterIndices,
 } from "../../core/mixcode/home/home-state.ts";
 import {
+	DEFAULT_BOXED_HIDDEN_THINKING,
 	DEFAULT_INLINE_WIDGETS,
 	loadMixCodeSettings,
 	type MixCodeSettings,
 	mixcodeSettingsFilePath,
+	writeBoxedHiddenThinkingSetting,
 	writeInlineWidgetsSetting,
 } from "../../core/mixcode/mixcode-settings.ts";
 import {
@@ -633,8 +635,8 @@ export class InteractiveMode {
 	private workingVisible = true;
 	private workingIndicatorOptions: WorkingIndicatorOptions | undefined = undefined;
 	private readonly defaultWorkingMessage = "Working";
-	private readonly defaultHiddenThinkingLabel = "Thinking...";
-	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
+	/** Extension label replacing every hidden thinking block; absent by default. */
+	private hiddenThinkingLabel: string | undefined = undefined;
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
@@ -739,7 +741,9 @@ export class InteractiveMode {
 	private readonly widgetPanelTabStates = new Map<string, WidgetPanelTabState>();
 	private inlineWidgets!: InlineWidgetsComponent;
 	/** MixCode settings (`mixcode_settings.json`), with defaults applied. */
-	private mixcodeSettings: MixCodeSettings = { ui: { inlineWidgets: DEFAULT_INLINE_WIDGETS } };
+	private mixcodeSettings: MixCodeSettings = {
+		ui: { inlineWidgets: DEFAULT_INLINE_WIDGETS, boxedHiddenThinking: DEFAULT_BOXED_HIDDEN_THINKING },
+	};
 	/** Set when the settings file could not be read; reported once the UI is up. */
 	private mixcodeSettingsError: string | undefined;
 
@@ -3898,7 +3902,7 @@ export class InteractiveMode {
 	}
 
 	private setHiddenThinkingLabel(label?: string): void {
-		this.hiddenThinkingLabel = label ?? this.defaultHiddenThinkingLabel;
+		this.hiddenThinkingLabel = label;
 		for (const child of this.chatContainer.children) {
 			if (child instanceof AssistantMessageComponent) {
 				child.setHiddenThinkingLabel(this.hiddenThinkingLabel);
@@ -4216,7 +4220,7 @@ export class InteractiveMode {
 	 * file and switch every open tab over immediately.
 	 */
 	private setInlineWidgetsGlobal(enabled: boolean): void {
-		this.mixcodeSettings = { ui: { inlineWidgets: enabled } };
+		this.mixcodeSettings = { ...this.mixcodeSettings, ui: { ...this.mixcodeSettings.ui, inlineWidgets: enabled } };
 		try {
 			writeInlineWidgetsSetting(mixcodeSettingsFilePath(), enabled);
 		} catch (error) {
@@ -4226,6 +4230,29 @@ export class InteractiveMode {
 		}
 		for (const state of this.inlineWidgetTabStates.values()) state.enabled = enabled;
 		this.refreshInlineWidgets();
+	}
+
+	/**
+	 * Apply the global `ui.boxedHiddenThinking` default: write it to MixCode's
+	 * settings file and re-render every open assistant message immediately.
+	 */
+	private setBoxedHiddenThinkingGlobal(enabled: boolean): void {
+		this.mixcodeSettings = {
+			...this.mixcodeSettings,
+			ui: { ...this.mixcodeSettings.ui, boxedHiddenThinking: enabled },
+		};
+		try {
+			writeBoxedHiddenThinkingSetting(mixcodeSettingsFilePath(), enabled);
+		} catch (error) {
+			this.showWarning(
+				`Failed to save mixcode_settings.json: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		for (const child of this.chatContainer.children) {
+			if (child instanceof AssistantMessageComponent) child.setBoxedHiddenThinking(enabled);
+		}
+		this.windowedTranscript?.invalidate();
+		this.ui.requestRender();
 	}
 
 	/**
@@ -5571,6 +5598,7 @@ export class InteractiveMode {
 						this.hiddenThinkingLabel,
 						this.outputPad,
 						this.getMarkdownTransformers(),
+						this.mixcodeSettings.ui.boxedHiddenThinking,
 					);
 					this.streamingMessage = event.message;
 					this.chatContainer.addChild(this.streamingComponent);
@@ -6011,6 +6039,7 @@ export class InteractiveMode {
 					this.hiddenThinkingLabel,
 					this.outputPad,
 					this.getMarkdownTransformers(),
+					this.mixcodeSettings.ui.boxedHiddenThinking,
 				);
 				this.chatContainer.addChild(assistantComponent);
 				break;
@@ -7204,6 +7233,7 @@ export class InteractiveMode {
 					fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
 					warnings: this.settingsManager.getWarnings(),
 					inlineWidgets: this.mixcodeSettings.ui.inlineWidgets,
+					boxedHiddenThinking: this.mixcodeSettings.ui.boxedHiddenThinking,
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -7394,6 +7424,9 @@ export class InteractiveMode {
 					},
 					onInlineWidgetsChange: (enabled) => {
 						this.setInlineWidgetsGlobal(enabled);
+					},
+					onBoxedHiddenThinkingChange: (enabled) => {
+						this.setBoxedHiddenThinkingGlobal(enabled);
 					},
 					onCancel: () => {
 						done();

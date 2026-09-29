@@ -1,9 +1,15 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
+import { type Component, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 import { HoverRegion } from "./mixcode/hover/hover-region.ts";
+import {
+	HIDDEN_THINKING_PLACEHOLDER,
+	stripThinkingPresentation,
+	ThinkingTailComponent,
+	type ThinkingTailTimer,
+} from "./mixcode/thinking-tail/thinking-tail.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
@@ -16,21 +22,25 @@ export class AssistantMessageComponent extends Container {
 	private contentContainer: Container;
 	private hideThinkingBlock: boolean;
 	private markdownTheme: MarkdownTheme;
-	private hiddenThinkingLabel: string;
+	private hiddenThinkingLabel: string | undefined;
 	private outputPad: number;
 	private markdownTransformers: readonly MarkdownTransformer[];
 	private lastMessage?: AssistantMessage;
 	private hasToolCalls = false;
 	private isStreaming = false;
 	private thinkingVisibilityOverrides = new Map<number, boolean>();
+	/** Per thinking run: the stamps the live/frozen duration is read from. */
+	private thinkingTailTimers = new Map<number, ThinkingTailTimer>();
+	private boxedHiddenThinking: boolean;
 
 	constructor(
 		message?: AssistantMessage,
 		hideThinkingBlock = false,
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
-		hiddenThinkingLabel = "Thinking...",
+		hiddenThinkingLabel?: string,
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
+		boxedHiddenThinking = false,
 	) {
 		super();
 
@@ -39,6 +49,7 @@ export class AssistantMessageComponent extends Container {
 		this.hiddenThinkingLabel = hiddenThinkingLabel;
 		this.outputPad = outputPad;
 		this.markdownTransformers = markdownTransformers;
+		this.boxedHiddenThinking = boxedHiddenThinking;
 
 		// Container for text/thinking content
 		this.contentContainer = new Container();
@@ -64,8 +75,15 @@ export class AssistantMessageComponent extends Container {
 		}
 	}
 
-	setHiddenThinkingLabel(label: string): void {
+	setHiddenThinkingLabel(label?: string): void {
 		this.hiddenThinkingLabel = label;
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
+	}
+
+	setBoxedHiddenThinking(boxed: boolean): void {
+		this.boxedHiddenThinking = boxed;
 		if (this.lastMessage) {
 			this.updateContent(this.lastMessage);
 		}
@@ -142,8 +160,22 @@ export class AssistantMessageComponent extends Container {
 
 				const runIndex = thinkingRunIndex++;
 				const hidden = this.thinkingVisibilityOverrides.get(runIndex) ?? this.hideThinkingBlock;
+				// A run stays live until a later block (answer text or tool call) arrives or
+				// the message ends; only a streamed run gets a start stamp, so history and
+				// replay show the tail without a timer.
+				const timer = this.thinkingTailTimers.get(runIndex) ?? {};
+				if (this.isStreaming && timer.startedAt === undefined) timer.startedAt = Date.now();
+				const runClosed =
+					!this.isStreaming ||
+					message.content.slice(i + 1).some((c) => c.type === "toolCall" || (c.type === "text" && c.text.trim()));
+				if (runClosed && timer.endedAt === undefined) timer.endedAt = Date.now();
+				this.thinkingTailTimers.set(runIndex, timer);
 				const thinkingComponent = hidden
-					? new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0)
+					? hiddenThinkingComponent(thinkingBlocks.join("\n\n"), timer, {
+							boxed: this.boxedHiddenThinking,
+							label: this.hiddenThinkingLabel,
+							outputPad: this.outputPad,
+						})
 					: new Markdown(
 							thinkingBlocks.join("\n\n"),
 							this.outputPad,
@@ -200,4 +232,25 @@ export class AssistantMessageComponent extends Container {
 			}
 		}
 	}
+}
+
+interface HiddenThinkingOptions {
+	boxed: boolean;
+	/** Extension-provided label; absent means the tail owns the block. */
+	label: string | undefined;
+	outputPad: number;
+}
+
+/**
+ * A hidden thinking run: an extension's label replaces the whole block, else the
+ * streaming tail when the setting is on and the text survives stripping, else the
+ * italic placeholder. A whitespace-only label counts as absent.
+ */
+function hiddenThinkingComponent(text: string, timer: ThinkingTailTimer, options: HiddenThinkingOptions): Component {
+	const label = options.label?.trim();
+	if (options.boxed && !label) {
+		const stripped = stripThinkingPresentation(text);
+		if (stripped) return new ThinkingTailComponent(stripped, timer);
+	}
+	return new Text(theme.italic(theme.fg("thinkingText", label || HIDDEN_THINKING_PLACEHOLDER)), options.outputPad, 0);
 }

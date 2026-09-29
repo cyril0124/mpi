@@ -18,10 +18,14 @@ export const MIXCODE_SETTINGS_FILENAME = "mixcode_settings.json";
 /** Global default for new tabs: extension widgets render in the chat tail. */
 export const DEFAULT_INLINE_WIDGETS = true;
 
+/** Hidden thinking blocks render as a 3-row tail instead of the placeholder. */
+export const DEFAULT_BOXED_HIDDEN_THINKING = true;
+
 /** Settings with every default applied. */
 export interface MixCodeSettings {
 	ui: {
 		inlineWidgets: boolean;
+		boxedHiddenThinking: boolean;
 	};
 }
 
@@ -36,9 +40,18 @@ export function mixcodeSettingsFilePath(): string {
  * own settings there.
  */
 export function writeInlineWidgetsSetting(settingsFile: string, enabled: boolean): void {
+	writeUiBooleanSetting(settingsFile, "inlineWidgets", enabled);
+}
+
+/** Write the hidden-thinking tail default; other keys survive, as above. */
+export function writeBoxedHiddenThinkingSetting(settingsFile: string, enabled: boolean): void {
+	writeUiBooleanSetting(settingsFile, "boxedHiddenThinking", enabled);
+}
+
+function writeUiBooleanSetting(settingsFile: string, key: string, enabled: boolean): void {
 	const next: Record<string, unknown> = { ...readSettingsSource(settingsFile) };
 	const ui = objectRecord(next.ui);
-	next.ui = { ...ui, inlineWidgets: enabled };
+	next.ui = { ...ui, [key]: enabled };
 	writeSettingsFile(settingsFile, next);
 }
 
@@ -52,17 +65,30 @@ export function loadMixCodeSettings(settingsFile: string): MixCodeSettings {
 	const source = readSettingsSource(settingsFile);
 	if (!source) return defaultMixCodeSettings();
 	const ui = objectRecord(source.ui);
-	return { ui: { inlineWidgets: parseInlineWidgets(ui.inlineWidgets, settingsFile) } };
+	return {
+		ui: {
+			inlineWidgets: parseBoolean(ui.inlineWidgets, "inlineWidgets", DEFAULT_INLINE_WIDGETS, settingsFile),
+			boxedHiddenThinking: parseBoolean(
+				ui.boxedHiddenThinking,
+				"boxedHiddenThinking",
+				DEFAULT_BOXED_HIDDEN_THINKING,
+				settingsFile,
+			),
+		},
+	};
 }
 
 function defaultMixCodeSettings(): MixCodeSettings {
-	return { ui: { inlineWidgets: DEFAULT_INLINE_WIDGETS } };
+	return {
+		ui: { inlineWidgets: DEFAULT_INLINE_WIDGETS, boxedHiddenThinking: DEFAULT_BOXED_HIDDEN_THINKING },
+	};
 }
 
-function parseInlineWidgets(value: unknown, settingsFile: string): boolean {
-	if (value === undefined) return DEFAULT_INLINE_WIDGETS;
+/** A field present but not boolean is an error naming the file and the field. */
+function parseBoolean(value: unknown, key: string, fallback: boolean, settingsFile: string): boolean {
+	if (value === undefined) return fallback;
 	if (typeof value === "boolean") return value;
-	throw new Error(`${settingsFile}: ui.inlineWidgets must be a boolean`);
+	throw new Error(`${settingsFile}: ui.${key} must be a boolean`);
 }
 
 function readSettingsSource(settingsFile: string): Record<string, unknown> | undefined {

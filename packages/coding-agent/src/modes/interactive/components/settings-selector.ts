@@ -94,6 +94,7 @@ export interface SettingsConfig {
 	fullscreenCopyOnSelect: boolean;
 	warnings: WarningSettings;
 	inlineWidgets: boolean;
+	boxedHiddenThinking: boolean;
 }
 
 export interface SettingsCallbacks {
@@ -133,6 +134,7 @@ export interface SettingsCallbacks {
 	onFullscreenCopyOnSelectChange: (enabled: boolean) => void;
 	onWarningsChange: (warnings: WarningSettings) => void;
 	onInlineWidgetsChange: (enabled: boolean) => void;
+	onBoxedHiddenThinkingChange: (enabled: boolean) => void;
 	onCancel: () => void;
 }
 
@@ -738,6 +740,15 @@ export class SettingsSelectorComponent extends Container {
 				currentValue: config.inlineWidgets ? "true" : "false",
 				values: ["true", "false"],
 			},
+			{
+				id: "boxed-hidden-thinking",
+				label: "Thinking tail preview",
+				section: "MixCode",
+				description:
+					"With thinking hidden, render each block as a 3-row tail that follows the stream instead of the 'Thinking...' placeholder",
+				currentValue: config.boxedHiddenThinking ? "true" : "false",
+				values: ["true", "false"],
+			},
 		];
 
 		// Only show image toggle if terminal supports it
@@ -956,6 +967,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "inline-widgets":
 						callbacks.onInlineWidgetsChange(newValue === "true");
+						break;
+					case "boxed-hidden-thinking":
+						callbacks.onBoxedHiddenThinkingChange(newValue === "true");
 						break;
 				}
 			},

@@ -121,10 +121,8 @@ export function singleLinePreview(text: string | undefined): string {
 // Time formatting
 // ---------------------------------------------------------------------------
 
-/** Coarse run length: `7s`, `2m 05s`, `1h 02m 03s`; an invalid stamp counts as zero elapsed. */
-export function formatElapsed(startedAt: string | undefined, now: number): string {
-	const start = startedAt ? Date.parse(startedAt) : Number.NaN;
-	const totalSeconds = Number.isFinite(start) ? Math.max(0, Math.floor((now - start) / 1000)) : 0;
+/** Coarse run length in whole seconds: `7s`, `2m 05s`, `1h 02m 03s`. */
+export function formatSecondCount(totalSeconds: number): string {
 	const hours = Math.floor(totalSeconds / 3600);
 	const minutes = Math.floor((totalSeconds % 3600) / 60);
 	const seconds = totalSeconds % 60;
@@ -132,6 +130,13 @@ export function formatElapsed(startedAt: string | undefined, now: number): strin
 	if (hours > 0) return `${hours}h ${pad(minutes)}m ${pad(seconds)}s`;
 	if (minutes === 0) return `${seconds}s`;
 	return `${minutes}m ${pad(seconds)}s`;
+}
+
+/** Coarse run length: `7s`, `2m 05s`, `1h 02m 03s`; an invalid stamp counts as zero elapsed. */
+export function formatElapsed(startedAt: string | undefined, now: number): string {
+	const start = startedAt ? Date.parse(startedAt) : Number.NaN;
+	const totalSeconds = Number.isFinite(start) ? Math.max(0, Math.floor((now - start) / 1000)) : 0;
+	return formatSecondCount(totalSeconds);
 }
 
 /** Relative age of a past stamp: `12s ago`, `3m ago`, `2h ago`, `4d ago`. */

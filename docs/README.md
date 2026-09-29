@@ -27,6 +27,8 @@ merge. Every place where this fork's behavior and upstream's documentation disag
   external editor with their timestamps and emitting tab.
 - **[Inline Widgets](inline-widgets.md)**: extension widgets in the chat tail instead of the
   editor dock — the setting, the per-tab toggle, the row budget, and `/widgets`.
+- **[Thinking Tail Preview](thinking-tail-preview.md)**: hidden thinking as a three-row tail with
+  a live-then-frozen duration, the `ui.boxedHiddenThinking` setting, and the label override.
 - **[Extension Widget Row Budget](widget-layout.md)**: how the dock caps a widget stack, and how
   that cap differs from the per-widget line cap.
 - **[Input Dock](input-dock.md)**: the rounded card around the composer, the tab name and exact

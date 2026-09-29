@@ -161,6 +161,12 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   pointer when the pointer leaves it, drops the cue when an overlay is open, and drops it when
   the terminal is resized. Hover needs all-motion mouse reporting, which the fullscreen
   renderer only asks for outside tmux, zellij and screen.
+- Hidden thinking as a tail: with hiding on, each thinking block renders as a three-row tail that
+  follows the stream — a `Thinking` header whose duration ticks live and freezes when the block
+  stops growing, then the last three visual rows of the reasoning behind a left rail, with `…` on
+  the first row when earlier content was dropped. A `setHiddenThinkingLabel` override still
+  replaces the whole block. The `Thinking tail preview` row in `/settings` (`ui.boxedHiddenThinking`
+  in `mixcode_settings.json`) turns it off, and it defaults to on.
 
 ### Changed
 
