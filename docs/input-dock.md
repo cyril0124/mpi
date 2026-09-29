@@ -8,9 +8,9 @@ replaces pi's status footer.
 ## The card
 
 ```
-╭─ ↑ 4 ──────────────────────────────── Agent-01 · 12.3k/200k ─╮
-│ Describe your next change...  @ files  / commands            │
-╰─ ↓ 2 more ───────────────────────────────────────────────────╯
+╭─ ↑ 4 ────────────────────────────────────────── Agent-01 · 12.3k/200k ─╮
+│  Describe your next change...  @ files  / commands  ← Home · → widgets │
+╰─ ↓ 2 more ─────────────────────────────────────────────────────────────╯
 ```
 
 - The top edge carries the working status while a turn runs, the mode badges (`[VIM]`, `[SHELL]`,
@@ -20,8 +20,8 @@ replaces pi's status footer.
 - The bottom edge carries `↓ N more` when the draft has rows below the visible window.
 - The frame takes the editor's own border colour, so vim mode, shell mode and the thinking level
   keep the colours they had.
-- The body keeps the card's side borders. The autocomplete menu stays outside them, indented by one
-  cell.
+- The body keeps the card's side borders and holds its text one column off the left border. The
+  autocomplete menu stays outside them, indented to the column that text starts in.
 - The context reading switches to the warning colour at 85% of the model's window.
 - An empty composer hints the two keys that act on it besides `@` and `/`: `← Home` leaves for
   Agent View and `→ widgets` toggles the side panel. Both labels follow the configured keybindings,

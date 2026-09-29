@@ -1,13 +1,14 @@
 /**
  * The default prompt editor, wrapped in the input card.
  *
- * The editor underneath draws two flat rules; this subclass renders it two columns
- * narrower, turns those rules into the card's rounded edges and frames every body
- * row with the side borders. The frame colour is the editor's own `borderColor`, so
- * vim mode, bash mode and the thinking level keep the colours they had.
+ * The editor underneath draws two flat rules; this subclass renders it three columns
+ * narrower, turns those rules into the card's rounded edges, frames every body row with
+ * the side borders and holds the body one column off the left border. The frame colour is
+ * the editor's own `borderColor`, so vim mode, bash mode and the thinking level keep the
+ * colours they had.
  *
- * Autocomplete rows stay outside the card, indented by one cell: they belong to the
- * editor's menu, not to its body.
+ * Autocomplete rows stay outside the card, indented to the column the body starts in: they
+ * belong to the editor's menu, not to its body.
  */
 import { type TuiMouseEvent, type TuiMouseEventResult, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
@@ -36,6 +37,11 @@ export interface EditorCardChrome {
 
 /** NUL-wrapped sentinel identifying the rendered bottom edge among the body rows. */
 const SENTINEL = "\u0000";
+
+/** Columns of space between a side border and the body's first cell. */
+const BODY_INSET = 1;
+/** One body inset as spaces, for the rows that carry no side border of their own. */
+const BODY_INSET_TEXT = " ".repeat(BODY_INSET);
 
 export class MixcodePromptEditor extends CustomEditor {
 	private chrome: () => EditorCardChrome = () => ({ title: "", contextText: "" });
@@ -74,7 +80,7 @@ export class MixcodePromptEditor extends CustomEditor {
 	override render(width: number): string[] {
 		if (width < MIN_CARD_WIDTH) return super.render(width).map(withoutSentinel);
 
-		const innerWidth = width - 2;
+		const innerWidth = width - 2 - BODY_INSET;
 		this.cardRendering = true;
 		let lines: string[];
 		try {
@@ -104,19 +110,21 @@ export class MixcodePromptEditor extends CustomEditor {
 		const side = frame("│");
 		return [
 			top,
-			...body.map((line) => `${side}${theme.fg("text", line)}${side}`),
+			...body.map((line) => `${side}${BODY_INSET_TEXT}${theme.fg("text", line)}${side}`),
 			bottom,
-			...completion.map((line) => ` ${line} `),
+			// The menu carries no side border, so it repeats the inset itself to start its
+			// first cell where the body's starts.
+			...completion.map((line) => `${BODY_INSET_TEXT} ${line} `),
 		];
 	}
 
 	/**
-	 * The card insets the editing surface by one column on the left and two in
-	 * total, so a click has to be translated before the base editor sees it.
+	 * The card insets the editing surface by two columns on the left and three in total,
+	 * so a click has to be translated before the base editor sees it.
 	 */
 	override handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.width < MIN_CARD_WIDTH) return super.handleMouse(event);
-		return super.handleMouse({ ...event, x: event.x - 1, width: event.width - 2 });
+		return super.handleMouse({ ...event, x: event.x - 1 - BODY_INSET, width: event.width - 2 - BODY_INSET });
 	}
 
 	/**

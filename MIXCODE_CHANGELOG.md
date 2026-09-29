@@ -190,6 +190,10 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Changed
 
+- The composer card holds its text one column further from the left border: the draft, the empty
+  composer's placeholder and the autocomplete menu all move right by one cell, the card's right edge
+  stays where it was, and a click is translated so it still lands on the character under it. A pointer
+  selection over the draft now copies its leading spaces intact as well, which the old inset ate.
 - The dock meta row's model and thinking level are click targets: the pointer lights the field up
   with the same hover cue the tab bar and the command palette use, and a left click opens that
   field's picker, so the model selector and the thinking selector are reachable with the pointer
