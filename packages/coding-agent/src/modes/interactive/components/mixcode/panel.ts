@@ -8,12 +8,12 @@ import { type ThemeBg, type ThemeColor, theme } from "../../theme/theme.ts";
 
 const PANEL_PADDING_X = 1;
 
-/** Columns the frame spends on chrome: both borders plus the body padding on each side. */
+/** Columns the frame spends on chrome when it keeps its default padding. */
 export const PANEL_CHROME_COLUMNS = 2 + PANEL_PADDING_X * 2;
 
 /** Content columns a panel `width` columns wide leaves for its body. */
-export function panelContentWidth(width: number): number {
-	return Math.max(1, width - PANEL_CHROME_COLUMNS);
+export function panelContentWidth(width: number, paddingX: number = PANEL_PADDING_X): number {
+	return Math.max(1, width - 2 - paddingX * 2);
 }
 
 export interface PanelOptions {
@@ -23,6 +23,13 @@ export interface PanelOptions {
 	borderColor?: ThemeColor;
 	/** Background behind every cell, so the panel reads as a surface instead of an outline. */
 	backgroundColor?: ThemeBg;
+	/**
+	 * Which cells `backgroundColor` covers: the whole framed line (the default), or
+	 * only the body cells, leaving the border on the terminal background.
+	 */
+	backgroundScope?: "frame" | "content";
+	/** Cells of padding between the border and the body; 1 unless the caller wants the body flush. */
+	paddingX?: number;
 }
 
 interface PanelCorners {
@@ -40,15 +47,23 @@ export function panel(title: string, body: string[], width: number, options: Pan
 	const corners = options.rounded === true ? ROUND_CORNERS : SQUARE_CORNERS;
 	const borderColor = options.borderColor ?? "border";
 	const border = (text: string) => theme.fg(borderColor, text);
+	const paddingX = options.paddingX ?? PANEL_PADDING_X;
 	const innerWidth = Math.max(1, width - 2);
-	const contentWidth = panelContentWidth(width);
+	const contentWidth = panelContentWidth(width, paddingX);
 	const label = truncateToWidth(title ? ` ${title} ` : "", innerWidth, "");
 	const fill = "─".repeat(Math.max(0, innerWidth - visibleWidth(label)));
 
+	const backgroundColor = options.backgroundColor;
+	const contentBackground = options.backgroundScope === "content" ? backgroundColor : undefined;
 	const lines = body.map((line) => {
 		const content = truncateToWidth(line, contentWidth, "");
-		const padding = " ".repeat(PANEL_PADDING_X + Math.max(0, contentWidth - visibleWidth(content)));
-		return border("│") + " ".repeat(PANEL_PADDING_X) + content + padding + border("│");
+		const padding = " ".repeat(paddingX + Math.max(0, contentWidth - visibleWidth(content)));
+		const cells = `${content}${padding}`;
+		const paintedCells =
+			contentBackground === undefined
+				? `${" ".repeat(paddingX)}${cells}`
+				: theme.bg(contentBackground, `${" ".repeat(paddingX)}${cells}`);
+		return border("│") + paintedCells + border("│");
 	});
 
 	const topBorder = label
@@ -57,7 +72,6 @@ export function panel(title: string, body: string[], width: number, options: Pan
 
 	const framed = [topBorder, ...lines, border(`${corners.bottomLeft}${"─".repeat(innerWidth)}${corners.bottomRight}`)];
 
-	if (options.backgroundColor === undefined) return framed;
-	const backgroundColor = options.backgroundColor;
+	if (backgroundColor === undefined || options.backgroundScope === "content") return framed;
 	return framed.map((line) => theme.bg(backgroundColor, line));
 }

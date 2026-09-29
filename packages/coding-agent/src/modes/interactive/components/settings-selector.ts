@@ -7,7 +7,6 @@ import {
 	type ScrollViewScrollbar,
 	type SelectItem,
 	type SettingItem,
-	SettingsList,
 	Spacer,
 	Text,
 } from "@earendil-works/pi-tui";
@@ -21,9 +20,14 @@ import {
 	type TuiMode,
 	type WarningSettings,
 } from "../../../core/settings-manager.ts";
-import { getSettingsListTheme, parseAutoThemeSetting, type TerminalTheme, theme } from "../theme/theme.ts";
-import { DynamicBorder } from "./dynamic-border.ts";
+import { parseAutoThemeSetting, type TerminalTheme, theme } from "../theme/theme.ts";
 import { keyDisplayText } from "./keybinding-hints.ts";
+import {
+	SettingsPanel,
+	SettingsPanelBody,
+	SUBMENU_HINT,
+	settingsBodyRowBudget,
+} from "./mixcode/settings/settings-panel.ts";
 import { SelectSubmenu, SteppedSubmenu, type SteppedSubmenuStep } from "./settings-submenu.ts";
 
 const MODEL_PICKER_LAYOUT = { minPrimaryColumnWidth: 12, maxPrimaryColumnWidth: 46 };
@@ -136,7 +140,7 @@ export interface SettingsCallbacks {
  * A submenu component for selecting from a list of options.
  */
 class WarningSettingsSubmenu extends Container {
-	private settingsList: SettingsList;
+	private settingsList: SettingsPanelBody;
 	private state: WarningSettings;
 
 	constructor(warnings: WarningSettings, onChange: (warnings: WarningSettings) => void, onCancel: () => void) {
@@ -154,10 +158,9 @@ class WarningSettingsSubmenu extends Container {
 			},
 		];
 
-		this.settingsList = new SettingsList(
+		this.settingsList = new SettingsPanelBody(
 			items,
-			Math.min(items.length, 10),
-			getSettingsListTheme(),
+			settingsBodyRowBudget(items.length),
 			(id, newValue) => {
 				switch (id) {
 					case "anthropic-extra-usage":
@@ -167,6 +170,7 @@ class WarningSettingsSubmenu extends Container {
 				}
 			},
 			onCancel,
+			{ hint: SUBMENU_HINT, filter: false },
 		);
 
 		this.addChild(this.settingsList);
@@ -377,10 +381,9 @@ class ThemeSubmenu extends Container {
 			},
 		];
 
-		const settingsList = new SettingsList(
+		const settingsList = new SettingsPanelBody(
 			items,
-			Math.min(items.length, 10),
-			getSettingsListTheme(),
+			settingsBodyRowBudget(items.length),
 			(id) => {
 				switch (id) {
 					case "single-mode":
@@ -395,6 +398,7 @@ class ThemeSubmenu extends Container {
 				}
 			},
 			() => this.cancel(),
+			{ hint: SUBMENU_HINT, filter: false },
 		);
 		content.addChild(settingsList);
 		this.setContent(content, settingsList);
@@ -447,7 +451,7 @@ class ThemeSubmenu extends Container {
  * Main settings selector component.
  */
 export class SettingsSelectorComponent extends Container {
-	private settingsList: SettingsList;
+	private settingsList: SettingsPanel;
 
 	constructor(config: SettingsConfig, callbacks: SettingsCallbacks) {
 		super();
@@ -844,14 +848,8 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
-		// Add borders
-		this.addChild(new DynamicBorder());
-
-		this.settingsList = new SettingsList(
-			items,
-			10,
-			getSettingsListTheme(),
-			(id, newValue) => {
+		this.settingsList = new SettingsPanel(items, {
+			onChange: (id, newValue) => {
 				switch (id) {
 					case "autocompact":
 						callbacks.onAutoCompactChange(newValue === "true");
@@ -961,15 +959,13 @@ export class SettingsSelectorComponent extends Container {
 						break;
 				}
 			},
-			callbacks.onCancel,
-			{ enableSearch: true },
-		);
+			onCancel: callbacks.onCancel,
+		});
 
 		this.addChild(this.settingsList);
-		this.addChild(new DynamicBorder());
 	}
 
-	getSettingsList(): SettingsList {
+	getSettingsList(): SettingsPanel {
 		return this.settingsList;
 	}
 }

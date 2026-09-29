@@ -239,6 +239,10 @@ import { exactContextUsageText, type InputMetaData } from "./components/mixcode/
 import { type EditorCardChrome, MixcodePromptEditor } from "./components/mixcode/input-dock/prompt-editor.ts";
 import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
 import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
+import {
+	SETTINGS_PANEL_HEIGHT_PERCENT,
+	SETTINGS_PANEL_WIDTH_PERCENT,
+} from "./components/mixcode/settings/settings-panel.ts";
 import { bindActiveTabShimmerRedraw } from "./components/mixcode/tab-shimmer.ts";
 import {
 	TOAST_MARGIN,
@@ -7152,7 +7156,7 @@ export class InteractiveMode {
 	}
 
 	private showSettingsSelector(): void {
-		this.showSelector((done) => {
+		this.showSettingsPanelOverlay((done) => {
 			let selector: SettingsSelectorComponent | undefined;
 			const defaultProvider = this.settingsManager.getDefaultProvider();
 			const defaultModelId = this.settingsManager.getDefaultModel();
@@ -7362,6 +7366,9 @@ export class InteractiveMode {
 						this.settingsManager.setShowTerminalProgress(enabled);
 					},
 					onTuiModeChange: (mode) => {
+						// The panel is an overlay, and a mode switch refuses while one is open:
+						// take the panel down first, then switch.
+						done();
 						if (!this.switchTuiMode(mode)) {
 							selector?.getSettingsList().updateValue("tui-mode", this.ui.mode);
 							this.showStatus("Close active overlays before changing TUI mode");
@@ -7394,7 +7401,27 @@ export class InteractiveMode {
 					},
 				},
 			);
-			return { component: selector, focus: selector.getSettingsList() };
+			return selector.getSettingsList();
+		});
+	}
+
+	/**
+	 * Show the `/settings` panel as the centred floating overlay the MixCode panels
+	 * use, so the transcript and the draft stay visible behind it. `create` receives
+	 * the function that takes the overlay down.
+	 */
+	private showSettingsPanelOverlay(create: (done: () => void) => Component): void {
+		let handle: OverlayHandle | undefined;
+		const done = () => {
+			handle?.hide();
+			this.ui.requestRender();
+		};
+		const component = create(done);
+		handle = this.ui.showOverlay(component, {
+			anchor: "center",
+			width: `${SETTINGS_PANEL_WIDTH_PERCENT}%`,
+			maxHeight: `${SETTINGS_PANEL_HEIGHT_PERCENT}%`,
+			margin: 1,
 		});
 	}
 

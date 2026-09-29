@@ -164,6 +164,15 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Changed
 
+- `/settings` is a centred floating panel in the MixCode style instead of a selector that replaces the
+  editor area: a framed surface titled `Settings`, a dim `filter: type to filter  N/N` line in place of
+  the search input, a `Pi` / `MixCode` heading above each settings file's path, `›` rows with the label
+  and the value in their own columns, booleans shown as `On`/`Off`, the selected item's description,
+  and one key-hint footer row. The draft and the transcript stay visible behind the panel, so opening
+  settings no longer costs the composer its place. Choosing `TUI mode` takes the panel down before
+  switching, because a mode switch refuses while an overlay is open. The items, the submenus and the
+  fuzzy filter are pi's own and are unchanged. See [Upstream Drift](docs/upstream-drift.md).
+
 - The default TUI mode is `fullscreen` instead of pi's `regular`, so an installation that never set
   `tuiMode` opens on the alternate screen, where the fork's transcript features live. An explicit
   `tuiMode: "regular"` in `settings.json` keeps the plain transcript; `/settings` switches between
