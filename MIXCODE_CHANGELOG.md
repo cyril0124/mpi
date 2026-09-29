@@ -11,6 +11,13 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Added
 
+- Interactive console output: `console.log`, `console.info`, `console.debug`, `console.warn` and
+  `console.error` no longer write raw text onto the tty from interactive mode, where it corrupted
+  the frame and duplicated the tab bar. Their output is prefixed with `[console.<method>]:` and
+  painted into a bottom-centered `Notice` panel that does not take focus, wraps long lines, and
+  stops growing at about 60% of the terminal. `c`/`y` copies it (`app.notice.copy`), `Esc`/`q`
+  closes it (`app.notice.dismiss`), and `/console-history` opens the last 1,000 lines in the
+  external editor, with their timestamps and the tab that emitted each one. See [Console History](docs/console-history.md).
 - `mixcode-manual-e2e` skill: creates user-runnable TUI demos through this checkout's
   source launcher, with local faux models, isolated runtime state, and per-state evidence.
 - Command palette: `ctrl+p` (`app.palette`) opens a fuzzy-searchable list of every command the UI

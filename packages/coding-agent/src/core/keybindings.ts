@@ -28,6 +28,8 @@ export interface AppKeybindings {
 	"app.session.toggleNamedFilter": true;
 	"app.editor.external": true;
 	"app.message.copy": true;
+	"app.notice.copy": true;
+	"app.notice.dismiss": true;
 	"app.message.followUp": true;
 	"app.message.dequeue": true;
 	"app.clipboard.pasteImage": true;
@@ -159,6 +161,14 @@ export const KEYBINDINGS = {
 	"app.message.copy": {
 		defaultKeys: "ctrl+x",
 		description: "Copy selection or last assistant message",
+	},
+	"app.notice.copy": {
+		defaultKeys: ["c", "y"],
+		description: "Copy the console notice text (while the composer is empty)",
+	},
+	"app.notice.dismiss": {
+		defaultKeys: ["escape", "q"],
+		description: "Close the console notice",
 	},
 	"app.message.followUp": {
 		defaultKeys: windowsKeybindings ? "ctrl+q" : "alt+enter",

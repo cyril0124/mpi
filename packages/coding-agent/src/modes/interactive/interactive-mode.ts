@@ -7,6 +7,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { format } from "node:util";
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import {
@@ -94,6 +95,13 @@ import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.ts";
+import {
+	getConsoleHistory,
+	unwireConsoleSink,
+	wireConsoleSink,
+} from "../../core/mixcode/console/console-tui-bridge.ts";
+import { resolveHistoryEditor } from "../../core/mixcode/console/history-editor.ts";
+import { runWithConsoleTab } from "../../core/mixcode/console-scope.ts";
 import {
 	adjustHomeSelectionAfterClose,
 	clampHomeSelectedTabIndex,
@@ -186,6 +194,7 @@ import {
 	CommandPaletteComponent,
 	type CommandPaletteEntry,
 } from "./components/mixcode/command-palette/command-palette.ts";
+import { ConsoleNotice, consoleNoticeOverlayOptions } from "./components/mixcode/console/console-notice.ts";
 import {
 	clearHomeTabCache,
 	displayWorkdir,
@@ -468,6 +477,16 @@ const COMMAND_PALETTE_HEIGHT_PERCENT = 80;
 // The command list the editor's autocomplete and the command palette share lives in
 // `./mixcode/command-list.ts`, next to the palette that also reads it.
 
+/**
+ * Run agent work inside the console scope of the tab that owns it, so the lines the
+ * work emits carry that tab's title in `/console-history`. A single-session instance
+ * without a tab manager, and a harness driving one method on a hand-built `this`,
+ * pass no tab and the work runs unwrapped.
+ */
+function runInActiveTab<T>(tab: AgentTab | undefined, fn: () => Promise<T>): Promise<T> {
+	return tab ? runWithConsoleTab(tab.title, fn) : fn();
+}
+
 export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;
 	private tabManager: TabManager | undefined;
@@ -542,6 +561,10 @@ export class InteractiveMode {
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
 	private changelogMarkdown: string | undefined = undefined;
+	/** Console notice panel: the box bridged console lines are painted into. */
+	private consoleNotice:
+		| { component: ConsoleNotice; handle: OverlayHandle; unsubscribe: () => void; width: number }
+		| undefined;
 	private startupNoticesShown = false;
 	private anthropicSubscriptionWarningShown = false;
 
@@ -1024,6 +1047,10 @@ export class InteractiveMode {
 
 		// Start the UI before initializing extensions so session_start handlers can use interactive dialogs
 		this.ui.start();
+		// The TUI can paint console lines from here on: anything an extension logged while
+		// it loaded flushes into the notice panel, and later lines go there instead of onto
+		// the raw tty.
+		wireConsoleSink((line) => this.showConsoleNotice(line));
 		this.isInitialized = true;
 		// The tab bar only exists alongside a tab manager; without one there is no
 		// chip to shimmer, so no repaint loop is started. Home carries no wave, and
@@ -1258,7 +1285,9 @@ export class InteractiveMode {
 		// Process initial messages
 		if (initialMessage) {
 			try {
-				await this.session.prompt(initialMessage, { images: initialImages });
+				await runInActiveTab(this.tabManager?.getActive(), () =>
+					this.session.prompt(initialMessage, { images: initialImages }),
+				);
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);
@@ -1268,7 +1297,7 @@ export class InteractiveMode {
 		if (initialMessages) {
 			for (const message of initialMessages) {
 				try {
-					await this.session.prompt(message);
+					await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(message));
 				} catch (error: unknown) {
 					const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 					this.showError(errorMessage);
@@ -1280,7 +1309,7 @@ export class InteractiveMode {
 		while (true) {
 			const userInput = await this.getUserInput();
 			try {
-				await this.session.prompt(userInput);
+				await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(userInput));
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);
@@ -2544,7 +2573,7 @@ export class InteractiveMode {
 		// A streaming agent takes the message as steering. A compacting one errors instead:
 		// the composer's queue belongs to the bound session, not to an arbitrary roster tab.
 		const options = session.isStreaming ? { streamingBehavior: "steer" as const } : undefined;
-		session.prompt(text, options).then(
+		runInActiveTab(selected, () => session.prompt(text, options)).then(
 			() => this.ui.requestRender(),
 			(error: unknown) => {
 				// Put the message back so the user can retry after fixing the cause.
@@ -3507,7 +3536,9 @@ export class InteractiveMode {
 			compact: (options) => {
 				void (async () => {
 					try {
-						const result = await this.session.compact(options?.customInstructions);
+						const result = await runInActiveTab(this.tabManager?.getActive(), () =>
+							this.session.compact(options?.customInstructions),
+						);
 						options?.onComplete?.(result);
 					} catch (error) {
 						const err = error instanceof Error ? error : new Error(String(error));
@@ -4642,6 +4673,15 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/console-history") {
+				this.editor.setText("");
+				await this.handleConsoleHistoryCommand();
+				return;
+			}
+			if (text.startsWith("/console-history ")) {
+				this.showError("Usage: /console-history");
+				return;
+			}
 			if (text === "/palette") {
 				this.editor.setText("");
 				this.showCommandPalette();
@@ -4837,7 +4877,7 @@ export class InteractiveMode {
 						return;
 					}
 					this.editor.addToHistory?.(text);
-					await this.handleBashCommand(command, isExcluded);
+					await runInActiveTab(this.tabManager?.getActive(), () => this.handleBashCommand(command, isExcluded));
 					this.isBashMode = false;
 					this.updateEditorBorderColor();
 					return;
@@ -4849,7 +4889,7 @@ export class InteractiveMode {
 				if (this.isExtensionCommand(text)) {
 					this.editor.addToHistory?.(text);
 					this.editor.setText("");
-					await this.session.prompt(text);
+					await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(text));
 				} else {
 					this.queueCompactionMessage(text, "steer");
 				}
@@ -4861,7 +4901,9 @@ export class InteractiveMode {
 			if (this.session.isStreaming) {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
-				await this.session.prompt(text, { streamingBehavior: "steer" });
+				await runInActiveTab(this.tabManager?.getActive(), () =>
+					this.session.prompt(text, { streamingBehavior: "steer" }),
+				);
 				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
 				return;
@@ -5841,12 +5883,14 @@ export class InteractiveMode {
 		try {
 			this.ui.stop();
 		} catch {}
-		console.error(`${APP_NAME} exiting due to uncaughtException:`);
-		console.error(error);
+		// Straight to the real stderr: the console bridge would route this into a TUI
+		// that stop() has just torn down, so the report would never be rendered.
+		process.stderr.write(`${APP_NAME} exiting due to uncaughtException:\n`);
+		process.stderr.write(`${format(error)}\n`);
 		const extensionHint = this.getCrashExtensionHint(error);
-		if (extensionHint) console.error(`\n${extensionHint}`);
+		if (extensionHint) process.stderr.write(`\n${extensionHint}\n`);
 		if (this.recordCrash("uncaught_exception", error)) {
-			console.error(`\n${this.crashReportInstructions()}`);
+			process.stderr.write(`\n${this.crashReportInstructions()}\n`);
 		}
 		process.exit(1);
 	}
@@ -5952,7 +5996,7 @@ export class InteractiveMode {
 			if (this.isExtensionCommand(text)) {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
-				await this.session.prompt(text);
+				await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(text));
 			} else {
 				this.queueCompactionMessage(text, "followUp");
 			}
@@ -5964,7 +6008,9 @@ export class InteractiveMode {
 		if (this.session.isStreaming) {
 			this.editor.addToHistory?.(text);
 			this.editor.setText("");
-			await this.session.prompt(text, { streamingBehavior: "followUp" });
+			await runInActiveTab(this.tabManager?.getActive(), () =>
+				this.session.prompt(text, { streamingBehavior: "followUp" }),
+			);
 			this.updatePendingMessagesDisplay();
 			this.ui.requestRender();
 		}
@@ -6112,6 +6158,122 @@ export class InteractiveMode {
 	showWarning(warningMessage: string): void {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Append a bridged console line to the transcript. Consecutive lines share one
+	 * block, so a burst from one extension reads as a single entry; any other
+	 * transcript output in between starts a new block.
+	 */
+	/**
+	 * Paint a bridged console line in the notice panel above the composer. Consecutive
+	 * lines grow the open panel; a dismissed one is gone, so the next line opens a new
+	 * panel on top of whatever is on screen.
+	 */
+	private showConsoleNotice(line: string): void {
+		const open = this.consoleNotice;
+		if (open) {
+			open.component.append(line);
+			const options = consoleNoticeOverlayOptions(open.component.getText());
+			// Re-show the panel only when it has to grow: the text update above is enough
+			// otherwise, and hiding and showing it on every line would flicker.
+			if (options.width !== open.width) {
+				open.handle.hide();
+				this.consoleNotice = { ...open, handle: this.ui.showOverlay(open.component, options) };
+			}
+		} else {
+			const component = new ConsoleNotice(line);
+			const options = consoleNoticeOverlayOptions(line);
+			const unsubscribe = this.ui.addInputListener((data) => this.handleConsoleNoticeKey(data));
+			this.consoleNotice = {
+				component,
+				handle: this.ui.showOverlay(component, options),
+				unsubscribe,
+				width: Number(options.width),
+			};
+		}
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Keys the open console notice answers without stealing the keyboard. Escape closes
+	 * the panel, unless a run or a bash command is live and Escape is its interrupt key;
+	 * the letter keys apply only while the composer is empty, so a draft always wins.
+	 */
+	private handleConsoleNoticeKey(data: string): { consume: boolean } | undefined {
+		const open = this.consoleNotice;
+		if (!open) return undefined;
+		const interrupt = this.session.isStreaming || this.session.isBashRunning;
+		if (interrupt && this.keybindings.matches(data, "app.interrupt")) return undefined;
+		if (this.keybindings.matches(data, "app.notice.dismiss")) {
+			this.hideConsoleNotice();
+			return { consume: true };
+		}
+		if (this.editor.getText().length > 0) return undefined;
+		if (this.keybindings.matches(data, "app.notice.copy")) {
+			void copyToClipboard(open.component.getText()).catch((error: unknown) => {
+				this.showError(`Copying the notice failed: ${error instanceof Error ? error.message : String(error)}`);
+			});
+			return { consume: true };
+		}
+		return undefined;
+	}
+
+	private hideConsoleNotice(): void {
+		const open = this.consoleNotice;
+		if (!open) return;
+		this.consoleNotice = undefined;
+		open.unsubscribe();
+		open.handle.hide();
+		this.ui.requestRender();
+	}
+
+	/**
+	 * `/console-history`: hand the captured lines to an external editor when one is
+	 * configured or installed, and fall back to a transcript block when none is.
+	 */
+	private async handleConsoleHistoryCommand(): Promise<void> {
+		const history = getConsoleHistory();
+		const text = history.length > 0 ? history.join("\n") : "No console history in this process.";
+		const editor = resolveHistoryEditor(this.configuredHistoryEditor());
+		if (editor) {
+			await this.openInExternalEditor(editor, text);
+			return;
+		}
+		this.renderConsoleHistoryBlock(text);
+	}
+
+	/** `externalEditor` from the project scope first, then the global scope. */
+	private configuredHistoryEditor(): string | undefined {
+		const project = this.settingsManager.getProjectSettings().externalEditor;
+		return typeof project === "string" ? project : this.settingsManager.getGlobalSettings().externalEditor;
+	}
+
+	/**
+	 * Show `text` in `editor`, with the TUI down so the editor owns the terminal.
+	 * `ui.stop()`/`start()` is this checkout's path for that; the editor's result is
+	 * ignored because the text is handed over to be read, not edited.
+	 */
+	private async openInExternalEditor(editor: string, text: string): Promise<void> {
+		let failed = false;
+		this.ui.stop();
+		try {
+			failed = (await editInExternalEditor({ command: editor, content: text })).status === "failed";
+		} finally {
+			this.ui.start();
+		}
+		if (failed) this.showError(`External editor "${editor}" exited with an error.`);
+		this.ui.requestRender(true);
+	}
+
+	private renderConsoleHistoryBlock(text: string): void {
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Console History")), 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(text, this.outputPad, 0));
+		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}
 
@@ -6281,11 +6443,11 @@ export class InteractiveMode {
 				// When retry is pending, queue messages for the retry turn
 				for (const message of queuedMessages) {
 					if (this.isExtensionCommand(message.text)) {
-						await this.session.prompt(message.text);
+						await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(message.text));
 					} else if (message.mode === "followUp") {
-						await this.session.followUp(message.text);
+						await runInActiveTab(this.tabManager?.getActive(), () => this.session.followUp(message.text));
 					} else {
-						await this.session.steer(message.text);
+						await runInActiveTab(this.tabManager?.getActive(), () => this.session.steer(message.text));
 					}
 				}
 				this.updatePendingMessagesDisplay();
@@ -6297,7 +6459,7 @@ export class InteractiveMode {
 			if (firstPromptIndex === -1) {
 				// All extension commands - execute them all
 				for (const message of queuedMessages) {
-					await this.session.prompt(message.text);
+					await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(message.text));
 				}
 				return;
 			}
@@ -6308,24 +6470,24 @@ export class InteractiveMode {
 			const rest = queuedMessages.slice(firstPromptIndex + 1);
 
 			for (const message of preCommands) {
-				await this.session.prompt(message.text);
+				await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(message.text));
 			}
 
 			// Start a prompt when idle, or queue it into a run still finishing compaction.
-			const promptPromise = this.session
-				.prompt(firstPrompt.text, { streamingBehavior: firstPrompt.mode })
-				.catch((error) => {
-					restoreQueue(error);
-				});
+			const promptPromise = runInActiveTab(this.tabManager?.getActive(), () =>
+				this.session.prompt(firstPrompt.text, { streamingBehavior: firstPrompt.mode }),
+			).catch((error) => {
+				restoreQueue(error);
+			});
 
 			// Queue remaining messages
 			for (const message of rest) {
 				if (this.isExtensionCommand(message.text)) {
-					await this.session.prompt(message.text);
+					await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(message.text));
 				} else if (message.mode === "followUp") {
-					await this.session.followUp(message.text);
+					await runInActiveTab(this.tabManager?.getActive(), () => this.session.followUp(message.text));
 				} else {
-					await this.session.steer(message.text);
+					await runInActiveTab(this.tabManager?.getActive(), () => this.session.steer(message.text));
 				}
 			}
 			this.updatePendingMessagesDisplay();
@@ -8553,7 +8715,7 @@ export class InteractiveMode {
 		this.clearStatusIndicator();
 
 		try {
-			await this.session.compact(customInstructions);
+			await runInActiveTab(this.tabManager?.getActive(), () => this.session.compact(customInstructions));
 		} catch {
 			// Ignore, will be emitted as an event
 		}
@@ -8579,5 +8741,8 @@ export class InteractiveMode {
 			this.isInitialized = false;
 		}
 		this.unregisterSignalHandlers();
+		// The TUI is gone: give console output back to the terminal, so a report written
+		// after this point (startup timings, shutdown hooks) stays readable.
+		unwireConsoleSink();
 	}
 }

@@ -11,6 +11,7 @@
 - **[Vim 模式](vim-mode.zh.md)**：全屏对话区的模态导航（进入方式、按键、按标签页的行为、全屏前提）。
 - **[窗口化对话渲染](windowed-transcript.zh.md)**：全屏对话区如何只渲染可见块、保持滚动范围正确，以及鼠标交互行为。
 - **[MixCode Home](home.zh.md)**：列出所有已打开 agent 的起始页面，展示所选 agent 的对话预览，并可新建或恢复会话。
+- **[控制台历史](console-history.zh.md)**：控制台输出画进 Notice 弹窗而不是写到终端，`/console-history` 把最近 1000 行交给外部编辑器打开，带时间戳与产生它的标签页。
 
 ## Fork 机制
 

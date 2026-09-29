@@ -20,6 +20,9 @@ merge. Every place where this fork's behavior and upstream's documentation disag
   the visible blocks, keeps the scroll range correct, and behaves under mouse input.
 - **[MixCode Home](home.md)**: the landing surface that lists every open agent, previews the
   selected one's conversation, and starts or resumes sessions.
+- **[Console History](console-history.md)**: console output is painted into a notice panel
+  instead of the raw tty, and `/console-history` opens the last 1,000 captured lines in the
+  external editor with their timestamps and emitting tab.
 
 ## Fork Mechanics
 

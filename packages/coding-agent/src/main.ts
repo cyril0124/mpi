@@ -45,6 +45,7 @@ import { AuthStorage, ReadOnlyAuthStorage } from "./core/auth-storage.ts";
 import { exportFromFile } from "./core/export-html/index.ts";
 import type { InlineExtension } from "./core/extensions/types.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
+import { installConsoleTuiBridge } from "./core/mixcode/console/console-tui-bridge.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import { ModelRuntime } from "./core/model-runtime.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
@@ -636,9 +637,21 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	let appMode = resolveAppMode(parsed, process.stdin.isTTY, process.stdout.isTTY);
-	const shouldTakeOverStdout = appMode !== "interactive" && !isPlainRuntimeMetadataCommand(parsed);
+	const plainRuntimeMetadataCommand = isPlainRuntimeMetadataCommand(parsed);
+	const shouldTakeOverStdout = appMode !== "interactive" && !plainRuntimeMetadataCommand;
 	if (shouldTakeOverStdout) {
 		takeOverStdout();
+	}
+	// Interactive mode paints its own frames onto stdout, so console output has to
+	// be relocated onto that surface. Install here, before the runtime loads any
+	// extension, so an extension's first log line does not land on the raw tty.
+	//
+	// `--help` and `--list-models` print a payload and exit before any TUI exists,
+	// and on a TTY they run as "interactive", so they are excluded whatever --mode
+	// says: their output is the command's result, not something the TUI renders.
+	const printsRuntimeMetadata = !parsed.print && (parsed.help === true || parsed.listModels !== undefined);
+	if (appMode === "interactive" && !printsRuntimeMetadata) {
+		installConsoleTuiBridge();
 	}
 
 	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
