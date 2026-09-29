@@ -209,6 +209,13 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Fixed
 
+- Extensions loaded under `run.sh` (bun executing the built dist) resolved their
+  `@earendil-works/*` imports through ambient `node_modules` (e.g. symlinks under
+  `~/.pi/agent/node_modules` pointing into another checkout) instead of the running
+  host, so renderer extensions such as `mpi-tool-display` silently fell back to the
+  built-in tool rows and lost the bash `description` label. The bun-dist runtime now
+  routes extension imports through `virtualModules` like the compiled binary, giving
+  extensions the host's own module instances. Unbundled Node keeps the dist aliases.
 - Vim mode no longer survives a switch to MixCode Home. Tabbing from a tab in vim mode onto Home
   left the modal surface active over a page that is neither a tab nor a transcript: the composer
   swallowed every key, so no message could be typed for the roster's selected agent. Home now leaves

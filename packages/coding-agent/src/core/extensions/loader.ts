@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import type { Provider } from "@earendil-works/pi-ai";
 import type { KeyId } from "@earendil-works/pi-tui";
 import type { createJiti } from "jiti";
-import { CONFIG_DIR_NAME, getAgentDir, isBunBinary, isBundledNode } from "../../config.ts";
+import { CONFIG_DIR_NAME, getAgentDir, isBunBinary, isBundledNode, isBunRuntime } from "../../config.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import { createEventBus, type EventBus } from "../event-bus.ts";
 import type { ExecOptions } from "../exec.ts";
@@ -38,7 +38,12 @@ const isNodeSeaBinary =
 	("sea" in process.features && process.features.sea === true) ||
 	process.getBuiltinModule("node:sea")?.isSea() === true;
 const isTypeScriptSourceRuntime = !isBunBinary && path.extname(fileURLToPath(import.meta.url)) === ".ts";
-const usesEmbeddedModules = isBunBinary || isNodeSeaBinary || isBundledNode;
+// bun executing built dist (run.sh): bun natively imports TypeScript extensions,
+// so jiti's tryNative path bypasses aliases and extension imports resolve against
+// ambient node_modules, which may not belong to the running host. virtualModules
+// gives extensions the host's own module instances, matching the compiled binary.
+const isBunDistRuntime = isBunRuntime && !isBunBinary;
+const usesEmbeddedModules = isBunBinary || isNodeSeaBinary || isBundledNode || isBunDistRuntime;
 
 let createJitiPromise: Promise<typeof createJiti> | undefined;
 
@@ -485,9 +490,10 @@ async function loadExtensionModule(extensionPath: string, cacheToken?: Extension
 	}
 
 	const createJitiImpl = await getCreateJiti();
-	// Compiled binaries and the bundled Node distribution use embedded modules.
-	// Source TypeScript reuses host modules and root tsconfig paths. Unbundled
-	// Node builds use dist aliases and do not need the bundled virtual modules.
+	// Compiled binaries, the bundled Node distribution, and bun running built dist
+	// (run.sh) use embedded modules. Source TypeScript reuses host modules and root
+	// tsconfig paths. Unbundled Node builds use dist aliases and do not need the
+	// bundled virtual modules.
 	const resolutionOptions = usesEmbeddedModules
 		? { virtualModules: await getVirtualModules(), tryNative: false }
 		: isTypeScriptSourceRuntime
