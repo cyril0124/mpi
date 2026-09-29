@@ -22,6 +22,16 @@ export class CustomEditor extends Editor {
 	public onPasteImage?: () => void;
 	/** Handler for extension-registered shortcuts. Returns true if handled. */
 	public onExtensionShortcut?: (data: string) => boolean;
+	/**
+	 * Handler for the vim-mode modal surface. Runs before every other binding
+	 * while vim mode is active and returns true when the key was consumed.
+	 */
+	public onVimKey?: (data: string) => boolean;
+	/**
+	 * Handler for the empty-editor vim entry arm (`ctrl+u`, then `u`/`ctrl+u`).
+	 * Returns true when the key was consumed by the arm or its confirmation.
+	 */
+	public onVimEnterArmKey?: (data: string) => boolean;
 
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, options?: CustomEditorOptions) {
 		super(tui, theme, options);
@@ -86,6 +96,17 @@ export class CustomEditor extends Editor {
 	}
 
 	handleInput(data: string): void {
+		// Vim mode owns input first; it is a modal transcript surface.
+		if (this.onVimKey?.(data)) {
+			return;
+		}
+
+		// The empty-editor vim entry arm intercepts ctrl+u before the editor's
+		// delete-to-line-start binding; a non-empty editor falls through.
+		if (this.onVimEnterArmKey?.(data)) {
+			return;
+		}
+
 		// Check extension-registered shortcuts first
 		if (this.onExtensionShortcut?.(data)) {
 			return;

@@ -16,6 +16,7 @@ import {
 } from "../../agent-session-runtime.ts";
 import { SessionManager } from "../../session-manager.ts";
 import { deleteSessionFile } from "../session-delete.ts";
+import { createVimTabState, transferVimMode, type VimTabState } from "../vim/vim-mode.ts";
 import { setTabStatus } from "./tab-state.ts";
 import { nextAvailableAgentTitle, TAB_COLOR_NAMES, type TabColorName, type TabStatus, uniquifyTitle } from "./types.ts";
 
@@ -30,6 +31,8 @@ export interface AgentTab {
 	lastWorkedDurationSeconds?: number;
 	/** Editor text preserved for this tab while another tab is focused. */
 	draftInput: string;
+	/** Vim-mode modal state; at most one tab is active at a time. */
+	vim: VimTabState;
 	readonly runtime: AgentSessionRuntime;
 	unsubscribe: () => void;
 }
@@ -120,9 +123,12 @@ export class TabManager {
 	activate(id: string): AgentTab {
 		const tab = this.get(id);
 		if (!tab) throw new Error(`Unknown tab: ${id}`);
+		const previous = this.get(this.activeId);
 		this.activeId = id;
 		tab.unread = false;
 		if (tab.status === "done") tab.status = "idle";
+		// Vim mode is a per-tab modal surface and follows focus to the tab being shown.
+		if (previous && previous !== tab) transferVimMode(previous.vim, tab.vim);
 		this.noteRecent(id);
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
@@ -332,6 +338,7 @@ export class TabManager {
 			status: "idle",
 			unread: false,
 			draftInput: "",
+			vim: createVimTabState(),
 			runtime,
 			unsubscribe: () => {},
 		};

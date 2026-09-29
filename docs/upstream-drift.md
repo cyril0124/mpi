@@ -15,6 +15,9 @@ commit that causes it.
 | Session deletion | deletes the selected session file | refuses while the owning tab has a turn in progress | another tab may still be writing that file |
 | `app.model.cycleForward` default key | `ctrl+p` | no default key | `ctrl+p` opens the command palette |
 | Quit | `ctrl+d` exits, no confirmation | `ctrl+q` (`ctrl+shift+q` on Windows and WSL) asks first; `ctrl+d` unchanged | [Command Palette and Quit Confirmation](command-palette.md) |
+| Fullscreen transcript rendering | renders every message component each frame, then clips to the viewport | renders only the visible window (20 rows of overscan) and estimates unmeasured blocks at 4 rows | frame cost otherwise grows with the whole conversation |
+| Transcript scrolling keys | `tui.altScreen.*` only | plus a modal surface (`/vim`, `j`/`k`/`gg`/`G`, prompt jumps) in fullscreen mode | mouse-free reading of long conversations |
+| Editor frame while modal | thinking/bash border color | accent border, input and submit locked | vim mode owns input |
 
 ## Upstream pages and source text that are now stale
 
@@ -43,8 +46,13 @@ that calls into `mixcode/` code:
 - `packages/coding-agent/src/core/keybindings.ts`
 - `packages/coding-agent/src/core/slash-commands.ts`
 - `packages/coding-agent/src/core/extensions/runner.ts`
+- `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
 - `packages/coding-agent/test/extensions-runner.test.ts`
+- `packages/tui/src/layout-node.ts`: windowed layout node and scroll line provider
+- `packages/tui/src/layout.ts`: windowed scroll child, line provider on the scroll box
+- `packages/tui/src/tui-alt-screen.ts`: reads content lines through the provider; public `scrollToPrompt`
+- `packages/tui/src/index.ts`: exports for the windowed node and mouse dispatch
 - `AGENTS.md`, `.gitignore`
 
 ## Paths that exist only in this fork

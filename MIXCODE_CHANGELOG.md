@@ -39,6 +39,19 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   so the commands are the only way to open or close a tab.
 - Keybindings `app.tab.next` (`tab`, `ctrl+shift+right`) and `app.tab.previous`
   (`shift+tab`, `ctrl+shift+left`).
+- Vim mode for the fullscreen transcript: `/vim`, or `ctrl+u` then `u`/`ctrl+u` from an
+  empty editor, then `q` to leave. `j`/`k` scroll 3 rows, `ctrl+u`/`ctrl+d` page,
+  `gg`/`G` jump to the ends, and `right`/`shift+right` jump between user messages. Every
+  key is a configurable `app.vim.*` action. See [Vim Mode](docs/vim-mode.md).
+- Windowed transcript rendering: the fullscreen scroll view's child reports a virtual row
+  count and renders only the visible blocks, so frame cost stays bounded on long
+  conversations instead of growing with the whole transcript. Unmeasured blocks contribute
+  an estimated height, and the window is assembled from the nearest end so new output cannot move
+  the rows above it. See
+  [Windowed Transcript](docs/windowed-transcript.md).
+- pi-tui windowed layout node (`WindowedLayoutState` / `WINDOWED_NODE`), so any component
+  can serve a line window to a scroll view. Transcript search and prompt jumps read the
+  full line range through the same provider.
 
 ### Changed
 
@@ -56,3 +69,14 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 - Session file deletion moved from the session selector into
   `core/mixcode/session-delete.ts`, so the selector and the tab commands share one
   implementation.
+- The fullscreen transcript is the windowed container instead of the document container;
+  regular mode still mounts the document container unchanged.
+- `TuiAltScreen.scrollToPrompt(direction)` is public and returns whether a prompt was
+  found, for the alternate screen's own prompt keys. It clamps its search to the rows that exist,
+  because a windowed child keeps a virtual line count.
+- `LayoutBox.scrollContentLines` is replaced by a `ScrollLineProvider` on the scroll box, so
+  search, prompt jumps, selection and image cropping read a windowed transcript on demand. The
+  provider's `materialize()` renders the whole document exactly, which is what search and copy
+  use; the line count stays an estimate so the scroll range needs no full render.
+- `createChatViewport` accepts a `widgetsVisible` predicate, so a surface that wants the widget
+  rows can hide both slots.

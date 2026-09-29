@@ -49,6 +49,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "color", description: "Set the active tab color", argumentHint: "<name|clear>" },
 	{ name: "group-colored-tabs", description: "Sort agent tabs by color" },
 	{ name: "mark-done", description: "Flag the active tab as finished" },
+	{ name: "vim", description: "Enter Vim mode for transcript navigation (q to leave)" },
 	{ name: "save-workspace", description: "Save the open tab layout", argumentHint: "[name]" },
 	{ name: "restore-workspace", description: "Restore a saved tab layout", argumentHint: "[name]" },
 	{ name: "delete-workspace", description: "Delete a saved tab layout", argumentHint: "[name]" },

@@ -1,4 +1,11 @@
-import { type Component, ScrollView, type ScrollViewScrollbar, VStack } from "@earendil-works/pi-tui";
+import {
+	type Component,
+	ScrollView,
+	type ScrollViewScrollbar,
+	type StackEntry,
+	type StackEntryOptions,
+	VStack,
+} from "@earendil-works/pi-tui";
 
 export interface ChatViewportOptions {
 	readonly document: Component;
@@ -8,6 +15,8 @@ export interface ChatViewportOptions {
 	readonly footer: Component;
 	readonly widgetsAbove?: Component;
 	readonly widgetsBelow?: Component;
+	/** Hide both widget slots for a viewport, for a surface that wants their rows instead. */
+	readonly widgetsVisible?: NonNullable<StackEntryOptions["visible"]>;
 	readonly scrollbar?: ScrollViewScrollbar;
 	readonly scrollbarTrackStyle?: (text: string) => string;
 	readonly scrollbarThumbStyle?: (text: string) => string;
@@ -28,12 +37,15 @@ export function createChatViewport(options: ChatViewportOptions): ChatViewport {
 		...(options.scrollbarTrackStyle === undefined ? {} : { scrollbarTrackStyle: options.scrollbarTrackStyle }),
 		...(options.scrollbarThumbStyle === undefined ? {} : { scrollbarThumbStyle: options.scrollbarThumbStyle }),
 	});
+	// Both widget slots share one shape, and one predicate decides when they are hidden.
+	const widgetEntries = (component: Component | undefined): StackEntry[] =>
+		component === undefined ? [] : [{ component, shrink: 1, minSize: 0, visible: options.widgetsVisible }];
 	const dock = new VStack([
 		{ component: options.pendingMessages, shrink: 1, minSize: 0 },
 		{ component: options.status, shrink: 1, minSize: 0 },
-		...(options.widgetsAbove === undefined ? [] : [{ component: options.widgetsAbove, shrink: 1, minSize: 0 }]),
+		...widgetEntries(options.widgetsAbove),
 		{ component: options.editor, shrink: 1, minSize: 3 },
-		...(options.widgetsBelow === undefined ? [] : [{ component: options.widgetsBelow, shrink: 1, minSize: 0 }]),
+		...widgetEntries(options.widgetsBelow),
 		{ component: options.footer, shrink: 1, minSize: 0 },
 	]);
 	return {

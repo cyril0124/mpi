@@ -13,6 +13,9 @@
 | 会话删除 | 直接删除所选会话文件 | 所属标签页有对话进行中时拒绝 | 可能还有另一个标签页在写该文件 |
 | `app.model.cycleForward` 默认键 | `ctrl+p` | 无默认键 | `ctrl+p` 改作打开命令面板 |
 | 退出 | `ctrl+d` 直接退出，不询问 | `ctrl+q`（Windows 与 WSL 为 `ctrl+shift+q`）先询问；`ctrl+d` 不变 | [命令面板与退出确认](command-palette.zh.md) |
+| 全屏对话区渲染 | 每帧渲染全部消息组件再裁剪到视口 | 只渲染可见窗口（上下各 20 行余量），未测块按 4 行估算 | 否则帧开销随整段对话增长 |
+| 对话区滚动键 | 仅 `tui.altScreen.*` | 全屏模式下另有模态界面（`/vim`、`j`/`k`/`gg`/`G`、提问跳转） | 长对话免鼠标阅读 |
+| 模态下的输入框边框 | thinking/bash 边框色 | 强调色边框，输入与提交被锁定 | Vim 模式独占输入 |
 
 ## 已过期的上游页面与源码文案
 
@@ -39,8 +42,13 @@
 - `packages/coding-agent/src/core/keybindings.ts`
 - `packages/coding-agent/src/core/slash-commands.ts`
 - `packages/coding-agent/src/core/extensions/runner.ts`
+- `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
 - `packages/coding-agent/test/extensions-runner.test.ts`
+- `packages/tui/src/layout-node.ts`：窗口化布局节点与滚动行提供者
+- `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒上的行提供者
+- `packages/tui/src/tui-alt-screen.ts`：经提供者读取内容行；`scrollToPrompt` 改为公开
+- `packages/tui/src/index.ts`：导出窗口化节点与鼠标派发
 - `AGENTS.md`、`.gitignore`
 
 ## 只存在于本 fork 的路径

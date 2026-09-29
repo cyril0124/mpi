@@ -75,6 +75,15 @@ export {
 } from "./keys.ts";
 // LaTeX rendering
 export { type RenderLatexOptions, renderLatex } from "./latex.ts";
+// Windowed layout content (components that render only a line window)
+export {
+	getWindowedNode,
+	WINDOWED_NODE,
+	type WindowedLayoutComponent,
+	type WindowedLayoutNode,
+	type WindowedLayoutState,
+	type WindowedWindow,
+} from "./layout-node.ts";
 // Native platform integration
 export { getNativeClipboard, type NativeClipboard } from "./native-platform.ts";
 // Input buffering for batch splitting
@@ -122,6 +131,7 @@ export {
 	Container,
 	CURSOR_MARKER,
 	compositeTuiLine,
+	dispatchMouseEvent,
 	type Focusable,
 	isFocusable,
 	isViewportTUI,
@@ -137,6 +147,7 @@ export {
 	type TuiInputListenerResult,
 	type TuiMode,
 	type TuiMouseButton,
+	type TuiMouseDispatchResult,
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
 	type TuiMouseEventType,

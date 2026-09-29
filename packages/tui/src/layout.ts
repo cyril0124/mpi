@@ -1,6 +1,6 @@
 import type { ScrollView } from "./components/scroll-view.ts";
 import { allocateStackSizes, visibleStackEntries } from "./components/stack.ts";
-import { getLayoutNode } from "./layout-node.ts";
+import { getLayoutNode, getWindowedNode, type ScrollLineProvider } from "./layout-node.ts";
 import { cropKittyImageLine, getKittyImageMetadata, isImageLine } from "./terminal-image.ts";
 import { type Component, CURSOR_MARKER, compositeTuiLine } from "./tui.ts";
 import {
@@ -12,6 +12,13 @@ import {
 } from "./utils.ts";
 
 const OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
+
+/**
+ * Rows rendered above and below the viewport of a windowed scroll child.
+ * Keeps a one-row scroll from re-rendering the neighbouring block and lets the
+ * Kitty cropper read the row just above the viewport.
+ */
+export const WINDOW_OVERSCAN_LINES = 20;
 
 export interface LayoutRect {
 	x: number;
@@ -29,7 +36,8 @@ export interface LayoutBox {
 	lines?: readonly string[];
 	lineOffset?: number;
 	scrollView?: ScrollView;
-	scrollContentLines?: readonly string[];
+	/** Random access to a scroll view's content; present only for scroll boxes. */
+	lineProvider?: ScrollLineProvider;
 	layer: number;
 }
 
@@ -114,7 +122,8 @@ function layoutComponent(
 ): LayoutBox {
 	const safeWidth = Math.max(1, Math.floor(width));
 	const node = getLayoutNode(component);
-	if (!node) {
+	if (!node || node.type === "windowed") {
+		// A nested windowed component has no viewport to window against; render it whole.
 		const lines = renderCached(context, component, safeWidth);
 		const allocatedHeight = height === undefined ? lines.length : Math.max(0, Math.floor(height));
 		let lineOffset = 0;
@@ -136,6 +145,61 @@ function layoutComponent(
 	if (node.type === "scroll") {
 		const previousScrollTop = node.state.scrollTop;
 		const contentWidth = node.state.getContentWidth(safeWidth);
+		const windowed = getWindowedNode(node.component);
+		if (windowed) {
+			// The child renders on demand, so the layout never materializes it whole: it
+			// reports a virtual line count and paints only the window it is asked for.
+			const estimatedTotal = Math.max(0, Math.floor(windowed.state.lineCount(contentWidth)));
+			const viewportHeight = height === undefined ? estimatedTotal : Math.max(0, Math.floor(height));
+			// Clamp against the estimate first, to learn where the caller is.
+			node.state.updateLayout(estimatedTotal, viewportHeight, context.requestRender);
+			const requestedScrollTop = node.state.scrollTop;
+
+			// The child measures what it paints and reports the offset and total it
+			// settled on. Those win over the estimate, so the scroll range and the rows
+			// agree with each other from this frame on.
+			const window = windowed.state.renderWindow(
+				contentWidth,
+				requestedScrollTop,
+				viewportHeight,
+				WINDOW_OVERSCAN_LINES,
+			);
+			const scrollView = node.state as ScrollView;
+			if (node.state.primary || !context.primaryScrollView) context.primaryScrollView = scrollView;
+			if (window.scrollTop !== requestedScrollTop) scrollView.scrollTo(window.scrollTop);
+			node.state.updateLayout(window.total, viewportHeight, context.requestRender);
+
+			const rect = { x, y, width: safeWidth, height: viewportHeight };
+			const childClip = intersect(clip, rect);
+			// The child box spans the whole content the window measured while carrying only
+			// the rendered lines, so mouse rows stay in content coordinates and painting is
+			// clipped to the viewport like the full-render path.
+			const childBox: LayoutBox = {
+				component: node.component,
+				rect: { x, y: y - window.scrollTop, width: contentWidth, height: window.total },
+				clip: childClip,
+				children: [],
+				lines: window.lines,
+				lineOffset: -window.start,
+				layer: 0,
+			};
+			const box: LayoutBox = {
+				component,
+				rect,
+				clip: childClip,
+				children: [childBox],
+				scrollView,
+				lineProvider: {
+					lineCount: () => Math.max(0, Math.floor(windowed.state.lineCount(contentWidth))),
+					getLines: (start, count) => windowed.state.getLines(contentWidth, start, count),
+					materialize: () => windowed.state.materialize(contentWidth),
+				},
+				layer: 0,
+			};
+			childBox.parent = box;
+			updateClips(childBox, childClip);
+			return box;
+		}
 		const childBox = layoutComponent(
 			context,
 			node.component,
@@ -159,7 +223,11 @@ function layoutComponent(
 			clip: childClip,
 			children: [childBox],
 			scrollView,
-			scrollContentLines: renderCached(context, node.component, contentWidth),
+			lineProvider: {
+				lineCount: () => contentHeight,
+				getLines: (start, count) =>
+					renderCached(context, node.component, contentWidth).slice(start, start + Math.max(0, count)),
+			},
 			layer: 0,
 		};
 		childBox.parent = box;
@@ -280,7 +348,7 @@ function replaceScrollbarCell(
 export function getScrollbarGeometry(box: LayoutBox, includeHiddenAuto = false): ScrollbarGeometry | undefined {
 	if (!box.scrollView || box.rect.width <= 0 || box.rect.height <= 0) return undefined;
 
-	const contentHeight = box.children[0]?.rect.height ?? box.scrollContentLines?.length ?? 0;
+	const contentHeight = box.lineProvider?.lineCount() ?? box.children[0]?.rect.height ?? 0;
 	const trackHeight = box.rect.height;
 	const canRevealHiddenAuto = includeHiddenAuto && box.scrollView.scrollbar === "auto" && contentHeight > trackHeight;
 	if (!box.scrollView.isScrollbarVisible && !canRevealHiddenAuto) return undefined;
@@ -356,9 +424,9 @@ function paintBox(box: LayoutBox, screen: string[], totalWidth: number): void {
 	}
 	for (const child of box.children) paintBox(child, screen, totalWidth);
 
-	if (box.scrollView && box.scrollContentLines && box.scrollView.scrollTop > 0 && box.rect.height > 0) {
+	if (box.scrollView && box.lineProvider && box.scrollView.scrollTop > 0 && box.rect.height > 0) {
 		for (let imageRow = box.scrollView.scrollTop - 1; imageRow >= 0; imageRow--) {
-			const imageLine = box.scrollContentLines[imageRow] ?? "";
+			const imageLine = box.lineProvider.getLines(imageRow, 1)[0] ?? "";
 			const metadata = getKittyImageMetadata(imageLine);
 			if (metadata) {
 				const hiddenRows = box.scrollView.scrollTop - imageRow;
@@ -434,6 +502,25 @@ export function getScrollViewBox(frame: LayoutFrame, scrollView: ScrollView): La
 		return undefined;
 	};
 	return visit(frame.root);
+}
+
+/**
+ * Content lines of a scroll view, whether it rendered them in full or exposes
+ * them through a windowed child. Returns undefined when the view is not in the
+ * committed frame.
+ */
+export function getScrollLineProvider(frame: LayoutFrame, scrollView: ScrollView): ScrollLineProvider | undefined {
+	return getScrollViewBox(frame, scrollView)?.lineProvider;
+}
+
+/** Materialized content lines of a scroll view, or undefined when it has none. */
+export function materializeScrollLines(frame: LayoutFrame, scrollView: ScrollView): string[] | undefined {
+	const provider = getScrollLineProvider(frame, scrollView);
+	if (!provider) return undefined;
+	// A windowed source reports an estimated line count, which is short of the real
+	// document until every part has been rendered; materializing renders them all.
+	if (provider.materialize) return provider.materialize();
+	return provider.getLines(0, provider.lineCount());
 }
 
 export function getScrollViewsAt(frame: LayoutFrame, x: number, y: number): ScrollView[] {

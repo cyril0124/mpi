@@ -14,6 +14,10 @@ merge. Every place where this fork's behavior and upstream's documentation disag
   commands, tab bar status, colors, persistence, and startup restore.
 - **[Command Palette and Quit Confirmation](command-palette.md)**: `ctrl+p` lists every runnable
   command with fuzzy search, and `ctrl+q` asks before ending the session.
+- **[Vim Mode](vim-mode.md)**: modal transcript navigation for the fullscreen transcript (entry,
+  keys, per-tab behaviour, fullscreen requirement).
+- **[Windowed Transcript](windowed-transcript.md)**: how the fullscreen transcript renders only
+  the visible blocks, keeps the scroll range correct, and behaves under mouse input.
 
 ## Fork Mechanics
 

@@ -61,6 +61,18 @@ export interface AppKeybindings {
 	"app.tree.filter.all": true;
 	"app.tree.filter.cycleForward": true;
 	"app.tree.filter.cycleBackward": true;
+	"app.vim.enter": true;
+	"app.vim.enterConfirm": true;
+	"app.vim.exit": true;
+	"app.vim.lineUp": true;
+	"app.vim.lineDown": true;
+	"app.vim.pageUp": true;
+	"app.vim.pageDown": true;
+	"app.vim.top": true;
+	"app.vim.topPrefix": true;
+	"app.vim.bottom": true;
+	"app.vim.nextUserMessage": true;
+	"app.vim.previousUserMessage": true;
 }
 
 export type AppKeybinding = keyof AppKeybindings;
@@ -249,6 +261,33 @@ export const KEYBINDINGS = {
 	"app.tree.filter.cycleBackward": {
 		defaultKeys: "shift+ctrl+o",
 		description: "Tree filter: cycle backward",
+	},
+	"app.vim.enter": {
+		defaultKeys: "ctrl+u",
+		description: "Vim mode: arm entry from an empty editor",
+	},
+	"app.vim.enterConfirm": {
+		defaultKeys: "u",
+		description: "Vim mode: confirm entry while armed",
+	},
+	"app.vim.exit": { defaultKeys: "q", description: "Vim mode: leave the modal transcript" },
+	"app.vim.lineUp": { defaultKeys: ["k", "up"], description: "Vim mode: scroll towards older output" },
+	"app.vim.lineDown": { defaultKeys: ["j", "down"], description: "Vim mode: scroll towards newer output" },
+	"app.vim.pageUp": { defaultKeys: ["pageUp", "ctrl+u"], description: "Vim mode: page towards older output" },
+	"app.vim.pageDown": {
+		defaultKeys: ["pageDown", "ctrl+d"],
+		description: "Vim mode: page towards newer output",
+	},
+	"app.vim.top": { defaultKeys: "home", description: "Vim mode: jump to the oldest output" },
+	"app.vim.topPrefix": { defaultKeys: "g", description: "Vim mode: press twice to jump to the oldest output" },
+	"app.vim.bottom": { defaultKeys: ["end", "shift+g"], description: "Vim mode: jump to the newest output" },
+	"app.vim.nextUserMessage": {
+		defaultKeys: "right",
+		description: "Vim mode: jump to the next user message",
+	},
+	"app.vim.previousUserMessage": {
+		defaultKeys: "shift+right",
+		description: "Vim mode: jump to the previous user message",
 	},
 } as const satisfies KeybindingDefinitions;
 

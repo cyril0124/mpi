@@ -108,6 +108,15 @@ import { type AgentTab, TabManager, tabBusyPhrase, tabBusyReason } from "../../c
 import { isTabColorName, nextAvailableAgentTitle, TAB_COLOR_NAMES } from "../../core/mixcode/multi-tab/types.ts";
 import { deleteSessionFile } from "../../core/mixcode/session-delete.ts";
 import {
+	createVimTabState,
+	enterVimMode,
+	handleVimEnterArmKey,
+	handleVimKey,
+	resetVimTabState,
+	type VimKeyHost,
+	type VimTabState,
+} from "../../core/mixcode/vim/vim-mode.ts";
+import {
 	defaultModelPerProvider,
 	findExactModelReferenceMatch,
 	resolveModelScopeFromModels,
@@ -166,6 +175,7 @@ import {
 } from "./components/mixcode/command-palette/command-palette.ts";
 import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
 import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
+import { WindowedTranscript } from "./components/mixcode/windowed-chat/windowed-transcript.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
@@ -440,6 +450,8 @@ export class InteractiveMode {
 	private tabBarContainer: Container | undefined;
 	/** Workdir that scopes the persisted open-tab layout. */
 	private readonly tabsWorkdir: string;
+	/** Vim-mode state used when no tab manager exists (single-session fallback). */
+	private fallbackVimState: VimTabState | undefined;
 	/** Most tabs reopened at startup; the remainder is reported, not restored. */
 	private static readonly RESTORE_TAB_LIMIT = 12;
 
@@ -454,6 +466,8 @@ export class InteractiveMode {
 	private loadedResourcesContainer: Container;
 	private chatContainer: Container;
 	private documentContainer: Container;
+	/** Fullscreen transcript: renders only the visible blocks of the chat. */
+	private windowedTranscript: WindowedTranscript;
 	private transcriptScrollView: TuiLayouts.ScrollView | undefined;
 	private fullscreenLayoutRoot: Component | undefined;
 	private pendingMessagesContainer: Container;
@@ -652,6 +666,12 @@ export class InteractiveMode {
 		this.documentContainer.addChild(this.headerContainer);
 		this.documentContainer.addChild(this.loadedResourcesContainer);
 		this.documentContainer.addChild(this.chatContainer);
+		// The fullscreen transcript is the same document, but the scroll view's child
+		// is windowed: only visible message blocks render, the rest contribute an
+		// estimated height so the scroll range still spans the whole conversation.
+		this.windowedTranscript = new WindowedTranscript({
+			blocks: () => [this.headerContainer, this.loadedResourcesContainer, ...this.chatContainer.children],
+		});
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
 		this.widgetContainerAbove = new Container();
@@ -860,6 +880,8 @@ export class InteractiveMode {
 		this.mountInteractiveTui(nextUi, components);
 		nextUi.invalidate();
 		nextUi.setFocus(focus);
+		// Leaving fullscreen unmounts the transcript viewport the modal surface drives.
+		this.leaveVimModeIfUnavailable();
 		if (!startRenderer) return true;
 		nextUi.start();
 		this.themeController.rebindTui();
@@ -900,13 +922,15 @@ export class InteractiveMode {
 		// Keep one component tree and remount it when changing renderers.
 		this.renderWidgets(); // Initialize with default spacer
 		const viewport = createChatViewport({
-			document: this.documentContainer,
+			document: this.windowedTranscript,
 			pendingMessages: this.pendingMessagesContainer,
 			status: this.statusContainer,
 			widgetsAbove: this.widgetContainerAbove,
 			editor: this.editorContainer,
 			widgetsBelow: this.widgetContainerBelow,
 			footer: this.footerContainer,
+			// Vim mode is a reading surface: its rows go to the transcript instead.
+			widgetsVisible: () => !this.vimTabState().active,
 			scrollbar: this.settingsManager.getFullscreenScrollbar(),
 			scrollbarTrackStyle: (text) => theme.fg("scrollbarTrack", text),
 			scrollbarThumbStyle: (text) => theme.fg("scrollbarThumb", text),
@@ -2139,6 +2163,8 @@ export class InteractiveMode {
 		this.runtimeHost = tab.runtime;
 		this.applyRuntimeSettings();
 		if (!this.restoreTranscript(tab.id)) this.renderCurrentSessionState();
+		// The transcript's blocks are a different set now; drop the windowed height table.
+		this.windowedTranscript?.invalidate();
 		this.subscribeToAgent();
 		this.attachTabUi(tab.id);
 		// The shared status line belongs to the previously active session; sync it
@@ -3136,6 +3162,7 @@ export class InteractiveMode {
 		if (this.streamingComponent) {
 			this.streamingComponent.setHiddenThinkingLabel(this.hiddenThinkingLabel);
 		}
+		this.windowedTranscript?.invalidate();
 		this.ui.requestRender();
 	}
 
@@ -3662,6 +3689,12 @@ export class InteractiveMode {
 				if (!customEditor.onExtensionShortcut) {
 					customEditor.onExtensionShortcut = (data: string) => this.defaultEditor.onExtensionShortcut?.(data);
 				}
+				if (!customEditor.onVimKey) {
+					customEditor.onVimKey = (data: string) => this.defaultEditor.onVimKey?.(data) ?? false;
+				}
+				if (!customEditor.onVimEnterArmKey) {
+					customEditor.onVimEnterArmKey = (data: string) => this.defaultEditor.onVimEnterArmKey?.(data) ?? false;
+				}
 				// Copy action handlers (clear, suspend, model switching, etc.)
 				for (const [action, handler] of this.defaultEditor.actionHandlers) {
 					(customEditor.actionHandlers as Map<string, () => void>).set(action, handler);
@@ -3802,10 +3835,127 @@ export class InteractiveMode {
 	}
 
 	// =========================================================================
+	// Vim mode (modal transcript navigation)
+	// =========================================================================
+
+	/** Per-tab vim state; falls back to a local state without a tab manager. */
+	private vimTabState(): VimTabState {
+		const activeTab = this.tabManager?.getActive();
+		if (activeTab) return activeTab.vim;
+		this.fallbackVimState ??= createVimTabState();
+		return this.fallbackVimState;
+	}
+
+	/**
+	 * Transcript navigation for the modal surface. Every method is a no-op without a
+	 * viewport, where `available()` reports false and `/vim` refuses to enter.
+	 */
+	private createVimHost(): VimKeyHost {
+		return {
+			keybindings: this.keybindings,
+			controller: {
+				available: () => this.viewportTui() !== undefined,
+				// Scrolling goes through the alternate screen's own viewport API; only the
+				// direction is inverted, because the modal surface counts towards older
+				// output while a scroll view counts towards newer rows.
+				scrollLines: (lines) => this.viewportTui()?.scrollBy(-lines),
+				scrollPages: (pages) => {
+					const viewportHeight = this.transcriptScrollView?.viewportHeight ?? 0;
+					this.viewportTui()?.scrollBy(-pages * Math.max(1, viewportHeight - 1));
+				},
+				scrollToOldest: () => this.viewportTui()?.scrollToTop(),
+				scrollToNewest: () => this.viewportTui()?.scrollToBottom(),
+				jumpUserMessage: (direction) => {
+					const view = this.transcriptScrollView;
+					if (!view) return false;
+					// The alternate screen's prompt jump matches OSC 133 markers, which
+					// assistant replies carry too; the transcript's own block list is the
+					// only place that tells a user message apart.
+					const from = direction === 1 ? view.scrollTop + 1 : view.scrollTop;
+					const row = this.windowedTranscript.findBlockRow(
+						from,
+						direction,
+						(block) => block instanceof UserMessageComponent,
+					);
+					if (row === undefined) return false;
+					view.scrollTo(row);
+					return true;
+				},
+			},
+			notify: (message) => this.notifyVim(message),
+		};
+	}
+
+	/** The transcript viewport, when the current renderer has one. */
+	private viewportTui(): TuiAltScreen | undefined {
+		return this.renderer instanceof TuiAltScreen ? this.renderer : undefined;
+	}
+
+	/** Vim feedback is transient: a flash overlay in fullscreen, a status line otherwise. */
+	private notifyVim(message: string): void {
+		const viewport = this.viewportTui();
+		if (viewport) viewport.flash(message);
+		else this.showStatus(message);
+	}
+
+	/** Repaint the editor frame after the modal surface started or ended. */
+	private refreshVimChrome(): void {
+		this.updateEditorBorderColor();
+		this.ui.requestRender();
+	}
+
+	private enterActiveTabVimMode(): void {
+		const state = this.vimTabState();
+		if (enterVimMode(state, this.createVimHost())) this.refreshVimChrome();
+	}
+
+	/**
+	 * Vim key dispatch for the editor. A key that leaves the modal surface changes
+	 * what the editor should look like, so the frame is refreshed on a transition.
+	 */
+	private handleVimKeyInput(data: string): boolean {
+		const state = this.vimTabState();
+		if (!state.active) return false;
+		const handled = handleVimKey(state, data, this.createVimHost());
+		// The only transition this path can make is leaving the modal surface.
+		if (!state.active) this.refreshVimChrome();
+		return handled;
+	}
+
+	/**
+	 * The transcript viewport is unmounted outside fullscreen mode, so the modal
+	 * surface cannot survive a mode switch back to regular rendering.
+	 */
+	private leaveVimModeIfUnavailable(): void {
+		const state = this.vimTabState();
+		if (state.active && this.viewportTui() === undefined) {
+			resetVimTabState(state);
+			this.refreshVimChrome();
+		}
+	}
+
+	// =========================================================================
 	// Key Handlers
 	// =========================================================================
 
 	private setupKeyHandlers(): void {
+		// Vim mode owns every key while it is active; unbound keys are swallowed so
+		// they cannot reach the editor. Tab/tool/thinking actions pass through.
+		this.defaultEditor.onVimKey = (data) => this.handleVimKeyInput(data);
+		// Empty-editor `ctrl+u` arms vim entry; `u` or another `ctrl+u` confirms it.
+		this.defaultEditor.onVimEnterArmKey = (data) => {
+			const state = this.vimTabState();
+			if (state.active) return false;
+			const canArm =
+				this.editor.getText().length === 0 &&
+				!this.session.isStreaming &&
+				!this.session.isCompacting &&
+				this.compactionQueuedMessages.length === 0;
+			const result = handleVimEnterArmKey(state, data, this.createVimHost(), canArm, Date.now());
+			if (result.entered) this.refreshVimChrome();
+			return result.consumed;
+		};
+
 		// Set up handlers on defaultEditor - they use this.editor for text access
 		// so they work correctly regardless of which editor is active
 		this.defaultEditor.onEscape = () => {
@@ -4106,6 +4256,11 @@ export class InteractiveMode {
 			if (text === "/mark-done") {
 				this.editor.setText("");
 				this.markActiveTabDone();
+				return;
+			}
+			if (text === "/vim") {
+				this.editor.setText("");
+				this.enterActiveTabVimMode();
 				return;
 			}
 			if (text === "/save-workspace" || text.startsWith("/save-workspace ")) {
@@ -5320,7 +5475,10 @@ export class InteractiveMode {
 	}
 
 	private updateEditorBorderColor(): void {
-		if (this.isBashMode) {
+		if (this.vimTabState().active) {
+			// Vim mode is a modal transcript surface; frame the locked editor distinctly.
+			this.editor.borderColor = (str: string) => theme.fg("borderAccent", str);
+		} else if (this.isBashMode) {
 			this.editor.borderColor = theme.getBashModeBorderColor();
 		} else {
 			const level = this.session.thinkingLevel || "off";
@@ -5379,6 +5537,7 @@ export class InteractiveMode {
 				}
 			}
 		}
+		this.windowedTranscript?.invalidate();
 		this.showStatus(`Tool output: ${expanded ? "expanded" : "collapsed"}`);
 	}
 
@@ -5389,6 +5548,7 @@ export class InteractiveMode {
 				child.setHideThinkingBlock(this.hideThinkingBlock);
 			}
 		}
+		this.windowedTranscript?.invalidate();
 		this.ui.requestRender();
 	}
 
@@ -5842,6 +6002,7 @@ export class InteractiveMode {
 								child.setShowImages(enabled);
 							}
 						}
+						this.windowedTranscript?.invalidate();
 					},
 					onImageWidthCellsChange: (width) => {
 						this.settingsManager.setImageWidthCells(width);
@@ -5850,6 +6011,7 @@ export class InteractiveMode {
 								child.setImageWidthCells(width);
 							}
 						}
+						this.windowedTranscript?.invalidate();
 					},
 					onAutoResizeImagesChange: (enabled) => {
 						this.settingsManager.setImageAutoResize(enabled);
@@ -5914,6 +6076,7 @@ export class InteractiveMode {
 					onMermaidRenderingModeChange: (mode) => {
 						this.settingsManager.setMermaidRenderingMode(mode);
 						this.chatContainer.invalidate();
+						this.windowedTranscript?.invalidate();
 						this.ui.requestRender();
 					},
 					onShowCacheMissNoticesChange: (shown) => {

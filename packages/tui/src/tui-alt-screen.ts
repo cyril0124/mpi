@@ -11,9 +11,11 @@ import { isKeyRelease } from "./keys.ts";
 import {
 	getLayoutBoxesAt,
 	getScrollbarGeometry,
+	getScrollLineProvider,
 	getScrollViewBox,
 	getScrollViewsAt,
 	type LayoutFrame,
+	materializeScrollLines,
 	renderLayoutFrame,
 	type ScrollbarGeometry,
 } from "./layout.ts";
@@ -155,6 +157,10 @@ interface ActiveSearch {
 	selectedKey?: string;
 	anchorRow: number;
 	selectionMode: SearchSelectionMode;
+	/** Transcript lines the index was built from. */
+	lines?: string[];
+	/** Content height the cached lines were materialized from. */
+	linesKey?: number;
 }
 
 interface SearchHighlightRange {
@@ -481,18 +487,26 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.requestRender();
 	}
 
-	private scrollToPrompt(direction: -1 | 1): void {
-		if (!this.currentLayout) return;
+	/**
+	 * Jump to the next (`1`) or previous (`-1`) OSC 133 prompt start in the primary
+	 * transcript. Returns whether a prompt row was found and scrolled to.
+	 */
+	scrollToPrompt(direction: -1 | 1): boolean {
+		if (!this.currentLayout) return false;
 		const scrollView = this.getPrimaryScrollView();
-		const lines = getScrollViewBox(this.currentLayout, scrollView)?.scrollContentLines;
-		if (!lines) return;
+		const lines = materializeScrollLines(this.currentLayout, scrollView);
+		if (!lines || lines.length === 0) return false;
 
-		for (let row = scrollView.scrollTop + direction; row >= 0 && row < lines.length; row += direction) {
+		// The committed offset can sit past the rows that exist, because a windowed
+		// transcript reports a virtual line count until its parts are rendered.
+		const from = Math.min(Math.max(0, scrollView.scrollTop), lines.length - 1);
+		for (let row = from + direction; row >= 0 && row < lines.length; row += direction) {
 			if (!OSC133_PROMPT_START.test(lines[row] ?? "")) continue;
 			scrollView.scrollTo(row);
 			this.requestRender();
-			return;
+			return true;
 		}
+		return false;
 	}
 
 	private toggleSearch(): void {
@@ -575,8 +589,10 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		if (!search) return false;
 		const scrollView = layout.primaryScrollView ?? this.implicitScrollView;
 		const box = getScrollViewBox(layout, scrollView);
-		const lines = box?.scrollContentLines;
-		if (!lines || !search.query.trim()) {
+		const provider = getScrollLineProvider(layout, scrollView);
+		if (!provider || !search.query.trim()) {
+			search.lines = undefined;
+			search.linesKey = undefined;
 			search.matches = [];
 			search.selectedIndex = -1;
 			search.selectedKey = undefined;
@@ -584,6 +600,15 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			search.component.setResult(-1, 0);
 			return false;
 		}
+
+		// Materializing walks the whole document, and this runs on every frame while the
+		// search overlay is open, so the lines are kept until the content height moves.
+		const linesKey = provider.lineCount();
+		if (search.lines === undefined || search.linesKey !== linesKey) {
+			search.lines = materializeScrollLines(layout, scrollView) ?? [];
+			search.linesKey = linesKey;
+		}
+		const lines = search.lines;
 
 		const shouldRevealSelection = search.selectionMode !== "retain";
 		const result = search.index.search(lines, search.query);
@@ -1128,7 +1153,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		);
 		if (visibleBottom < visibleTop) return undefined;
 		const pointerRow = Math.max(visibleTop, Math.min(visibleBottom, y));
-		const maxContentRow = Math.max(0, (box.scrollContentLines?.length ?? 1) - 1);
+		const maxContentRow = Math.max(0, (getScrollLineProvider(this.currentLayout, scrollView)?.lineCount() ?? 1) - 1);
 		return {
 			row: Math.max(0, Math.min(maxContentRow, scrollView.scrollTop + pointerRow - box.rect.y)),
 			col: Math.max(0, Math.min(box.rect.width - 1, x - box.rect.x)),
@@ -1149,7 +1174,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 
 	private getSelectionSourceLine(point: SelectionPoint): string {
 		if (point.scrollView && this.currentLayout) {
-			const lines = getScrollViewBox(this.currentLayout, point.scrollView)?.scrollContentLines;
+			const lines = materializeScrollLines(this.currentLayout, point.scrollView);
 			if (lines) return lines[point.row] ?? "";
 		}
 		return this.previousScreen[point.row] ?? "";
@@ -1424,9 +1449,9 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		let sourceLines: readonly string[] = this.previousScreen;
 		if (selection.start.scrollView) {
 			if (!this.currentLayout) return undefined;
-			const box = getScrollViewBox(this.currentLayout, selection.start.scrollView);
-			if (!box?.scrollContentLines) return undefined;
-			sourceLines = box.scrollContentLines;
+			const scrollLines = materializeScrollLines(this.currentLayout, selection.start.scrollView);
+			if (!scrollLines) return undefined;
+			sourceLines = scrollLines;
 		}
 		const lines: string[] = [];
 		for (let row = selection.start.row; row <= selection.end.row; row++) {
