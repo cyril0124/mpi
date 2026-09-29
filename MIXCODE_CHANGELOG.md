@@ -52,6 +52,18 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 - pi-tui windowed layout node (`WindowedLayoutState` / `WINDOWED_NODE`), so any component
   can serve a line window to a scroll view. Transcript search and prompt jumps read the
   full line range through the same provider.
+- MixCode Home: a `home` pseudo-tab listing every open agent with a status chip, model,
+  context usage, recency, and the newest output, plus a conversation pane beside the roster
+  on wide terminals. It starts and resumes sessions from its heading, and `left` on an empty
+  composer returns to it. Sending from Home targets the highlighted agent without attaching;
+  `/commands` and `!shell` lines attach first, and a message to a busy agent steers its turn.
+  See [MixCode Home](docs/home.md).
+- Keybindings `app.home.selectPrevious`, `app.home.selectNext`, `app.home.attach`,
+  `app.home.send`, `app.home.returnHome`, `app.home.toggleNonIdle` (defaults `up`, `down`,
+  `right`, `enter`, `left`, `ctrl+f`). Each declines the key whenever Home is not the active
+  surface, so the composer keeps them on agent tabs.
+- `MIXCODE_DISPLAY_WORKDIR` and `MIXCODE_DISPLAY_MODEL` mask the workdir and model shown on
+  MixCode Home, so a recording can hide the real paths and provider.
 
 ### Changed
 
@@ -80,3 +92,5 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   use; the line count stays an estimate so the scroll range needs no full render.
 - `createChatViewport` accepts a `widgetsVisible` predicate, so a surface that wants the widget
   rows can hide both slots.
+- `CustomEditor.onAction` handlers may return `false` to decline a key, which then reaches the
+  editor. Existing handlers are unaffected; the Home bindings rely on it.

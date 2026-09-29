@@ -18,6 +18,8 @@ merge. Every place where this fork's behavior and upstream's documentation disag
   keys, per-tab behaviour, fullscreen requirement).
 - **[Windowed Transcript](windowed-transcript.md)**: how the fullscreen transcript renders only
   the visible blocks, keeps the scroll range correct, and behaves under mouse input.
+- **[MixCode Home](home.md)**: the landing surface that lists every open agent, previews the
+  selected one's conversation, and starts or resumes sessions.
 
 ## Fork Mechanics
 

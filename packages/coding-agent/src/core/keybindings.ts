@@ -36,6 +36,12 @@ export interface AppKeybindings {
 	"app.tab.previous": true;
 	"app.tab.new": true;
 	"app.tab.close": true;
+	"app.home.returnHome": true;
+	"app.home.selectPrevious": true;
+	"app.home.selectNext": true;
+	"app.home.attach": true;
+	"app.home.send": true;
+	"app.home.toggleNonIdle": true;
 	"app.session.tree": true;
 	"app.session.fork": true;
 	"app.session.resume": true;
@@ -171,6 +177,15 @@ export const KEYBINDINGS = {
 	"app.tab.previous": { defaultKeys: ["shift+tab", "ctrl+shift+left"], description: "Previous agent tab" },
 	"app.tab.new": { defaultKeys: [], description: "Open a new agent tab" },
 	"app.tab.close": { defaultKeys: [], description: "Close the current agent tab" },
+	"app.home.returnHome": {
+		defaultKeys: "left",
+		description: "Return to MixCode Home when the composer is empty",
+	},
+	"app.home.selectPrevious": { defaultKeys: "up", description: "Select the previous agent on MixCode Home" },
+	"app.home.selectNext": { defaultKeys: "down", description: "Select the next agent on MixCode Home" },
+	"app.home.attach": { defaultKeys: "right", description: "Attach to the selected agent on MixCode Home" },
+	"app.home.send": { defaultKeys: "enter", description: "Send the composer to the selected agent" },
+	"app.home.toggleNonIdle": { defaultKeys: "ctrl+f", description: "Toggle the MixCode Home non-idle filter" },
 	"app.session.tree": { defaultKeys: [], description: "Open session tree" },
 	"app.session.fork": { defaultKeys: [], description: "Fork current session" },
 	"app.session.resume": { defaultKeys: [], description: "Resume a session" },

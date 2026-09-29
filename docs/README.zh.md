@@ -10,6 +10,7 @@
 - **[命令面板与退出确认](command-palette.zh.md)**：`ctrl+p` 模糊搜索并列出所有可执行命令，`ctrl+q` 在结束会话前先询问。
 - **[Vim 模式](vim-mode.zh.md)**：全屏对话区的模态导航（进入方式、按键、按标签页的行为、全屏前提）。
 - **[窗口化对话渲染](windowed-transcript.zh.md)**：全屏对话区如何只渲染可见块、保持滚动范围正确，以及鼠标交互行为。
+- **[MixCode Home](home.zh.md)**：列出所有已打开 agent 的起始页面，展示所选 agent 的对话预览，并可新建或恢复会话。
 
 ## Fork 机制
 

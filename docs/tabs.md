@@ -39,8 +39,10 @@ moved the thinking cycle to `alt+t`. See [Upstream Drift](upstream-drift.md).
 
 ## Tab bar
 
-The bar above the editor shows one chip per tab: status glyph, title, color. Statuses and their
-glyphs:
+The bar above the editor leads with a pinned `MixCode Home` chip and then shows one chip per
+agent tab: status glyph, title, color. The Home chip carries no status glyph; `tab` and
+`shift+tab` include it in the cycle, and clicking it opens [MixCode Home](home.md). Statuses and
+their glyphs:
 
 | Status | Glyph | Meaning |
 | --- | --- | --- |

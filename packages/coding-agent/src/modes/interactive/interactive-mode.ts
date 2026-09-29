@@ -95,6 +95,19 @@ import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/htt
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.ts";
 import {
+	adjustHomeSelectionAfterClose,
+	clampHomeSelectedTabIndex,
+	createHomeSelection,
+	HOME_TAB_ID,
+	homeSelectedTab,
+	homeVisibleTabIndices,
+	moveHomeSelection,
+	nextTabId,
+	selectHomeTabById,
+	syncHomeSelectionToTab,
+	toggleHomeNonIdleOnly,
+} from "../../core/mixcode/home/home-state.ts";
+import {
 	deleteWorkspaceRecord,
 	type MixcodeWorkspace,
 	readOpenTabs,
@@ -173,6 +186,15 @@ import {
 	CommandPaletteComponent,
 	type CommandPaletteEntry,
 } from "./components/mixcode/command-palette/command-palette.ts";
+import {
+	clearHomeTabCache,
+	displayWorkdir,
+	type HomeCard,
+	type HomeSnapshot,
+	homePreviewOf,
+	mapHomeMessages,
+} from "./components/mixcode/home/home-model.ts";
+import { type HomeAction, HomeView, type HomeViewModel } from "./components/mixcode/home/home-view.ts";
 import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
 import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
 import { WindowedTranscript } from "./components/mixcode/windowed-chat/windowed-transcript.ts";
@@ -448,6 +470,13 @@ export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;
 	private tabManager: TabManager | undefined;
 	private tabBarContainer: Container | undefined;
+	/** MixCode Home selection and filter; `active` means Home is the rendered surface. */
+	private readonly homeSelection = createHomeSelection();
+	/** Set while Home activation sits in the tab-switch queue, so a repeat cannot double-run it. */
+	private homeActivationQueued = false;
+	private homeView: HomeView | undefined;
+	/** Per-tab mapped transcript lines for the Home previews, keyed by tab id. */
+	private readonly homeMessageCache = new Map<string, HomeSnapshot>();
 	/** Workdir that scopes the persisted open-tab layout. */
 	private readonly tabsWorkdir: string;
 	/** Vim-mode state used when no tab manager exists (single-session fallback). */
@@ -637,8 +666,16 @@ export class InteractiveMode {
 				initialTitle: this.session.sessionManager.getSessionName() ?? "Agent-01",
 				createRuntime: options.createRuntime,
 				agentDir: runtimeHost.services.agentDir,
-				onTabsChanged: () => this.ui.requestRender(),
+				onTabsChanged: () => {
+					clampHomeSelectedTabIndex(this.homeSelection, this.tabManager?.list() ?? []);
+					this.ui.requestRender();
+				},
 				onLayoutChanged: () => this.persistOpenTabs(),
+				onTabClosed: (tabId, removedIndex) => {
+					adjustHomeSelectionAfterClose(this.homeSelection, this.tabManager?.list() ?? [], removedIndex);
+					this.homeMessageCache.delete(tabId);
+					clearHomeTabCache(tabId);
+				},
 				// Ring the bell when a tab the user is not looking at finishes, so a
 				// background result is noticeable with the terminal unfocused.
 				onBackgroundCompletion: () => this.ui.terminal.write("\x07"),
@@ -669,8 +706,10 @@ export class InteractiveMode {
 		// The fullscreen transcript is the same document, but the scroll view's child
 		// is windowed: only visible message blocks render, the rest contribute an
 		// estimated height so the scroll range still spans the whole conversation.
+		// Its blocks are the document's own children, so a surface that swaps them
+		// (MixCode Home) shows up in both the windowed and the plain renderer.
 		this.windowedTranscript = new WindowedTranscript({
-			blocks: () => [this.headerContainer, this.loadedResourcesContainer, ...this.chatContainer.children],
+			blocks: () => this.documentContainer.children,
 		});
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
@@ -938,6 +977,13 @@ export class InteractiveMode {
 			scrollbarThumbStyle: (text) => theme.fg("scrollbarThumb", text),
 		});
 		this.transcriptScrollView = viewport.transcript;
+		this.homeView = new HomeView({
+			getModel: () => this.getHomeViewModel(),
+			// The scroll view's viewport is the row budget; before the first layout
+			// a conservative estimate keeps the page from ever overflowing it.
+			getHeight: () => this.transcriptScrollView?.viewportHeight || this.homeHeightFallback(),
+			onAction: (action) => void this.runHomeAction(action),
+		});
 		this.tabBarContainer = new Container();
 		this.tabBarContainer.addChild(
 			new TabBar(
@@ -1072,6 +1118,9 @@ export class InteractiveMode {
 
 		// Reopen the previous run's tabs when this is a fresh session at startup.
 		await this.restoreOpenTabsOnStartup();
+
+		// Startup keeps the fork's restored tab focus; Home is reached with `left`, the tab
+		// cycle, or the home chip.
 
 		// Flush the completed startup state before loading the remaining syntax grammars.
 		this.ui.renderNow();
@@ -2091,7 +2140,7 @@ export class InteractiveMode {
 	private getTabBarModel(): TabBarModel {
 		const manager = this.tabManager;
 		if (!manager) return { tabs: [], activeId: "" };
-		const activeId = manager.getActive().id;
+		const activeId = this.homeSelection.active ? HOME_TAB_ID : manager.getActive().id;
 		return {
 			tabs: manager.list().map((tab) => ({
 				id: tab.id,
@@ -2102,6 +2151,7 @@ export class InteractiveMode {
 				color: tab.color,
 			})),
 			activeId,
+			home: { id: HOME_TAB_ID, label: "MixCode Home" },
 			rulePainter: theme.getThinkingBorderColor(this.session.thinkingLevel || "off"),
 			// The bar may wrap, but it must not push the transcript out of the
 			// viewport; the surplus collapses into the overflow counts.
@@ -2109,25 +2159,88 @@ export class InteractiveMode {
 		};
 	}
 
-	/** Cycle to the next/previous agent tab. No-op without multi-tab runtimes. */
-	private cycleAgentTab(delta: number): void {
+	/** Cycle through the tab order `[Home, ...agents]`, wrapping in both directions. */
+	private cycleTab(delta: number): void {
 		const manager = this.tabManager;
-		if (!manager || manager.size <= 1) return;
-		// `next()` activates immediately, so save the outgoing draft before it.
-		manager.setDraft(manager.getActive().id, this.editor.getText());
-		const next = manager.next(delta);
-		this.enqueueTabSwitch(() => this.switchActiveTab(next));
+		if (!manager) return;
+		const currentId = this.homeSelection.active ? HOME_TAB_ID : manager.getActive().id;
+		const nextId = nextTabId(currentId, manager.list(), delta);
+		if (nextId === currentId) return;
+		if (nextId === HOME_TAB_ID) {
+			void this.activateHome();
+			return;
+		}
+		void this.activateTabById(nextId);
 	}
 
 	/** Focus an existing agent tab, restoring its draft and transcript. */
 	private async activateTab(tab: AgentTab): Promise<void> {
 		const manager = this.tabManager;
 		if (!manager) return;
+		const leavingHome = this.homeSelection.active;
+		this.leaveHome();
 		const current = manager.getActive();
 		if (tab.id === current.id) return;
-		manager.setDraft(current.id, this.editor.getText());
+		// Home's composer is ephemeral: never store its text as a tab draft.
+		if (!leavingHome) manager.setDraft(current.id, this.editor.getText());
 		const active = manager.activate(tab.id);
 		await this.enqueueTabSwitch(() => this.switchActiveTab(active));
+	}
+
+	/**
+	 * Show MixCode Home: the transcript makes way for the Agent View, the
+	 * composer is cleared, and the roster selects the agent that was focused.
+	 */
+	private async activateHome(): Promise<void> {
+		const manager = this.tabManager;
+		if (!manager || this.homeSelection.active || this.homeActivationQueued) return;
+		// Guard synchronously: the state flips inside the queued callback, so a second
+		// call arriving before it runs would otherwise save an already-cleared composer
+		// over the tab's draft.
+		this.homeActivationQueued = true;
+		// Queued like any other surface change, so a pending tab switch cannot land
+		// after Home and have its own `leaveHome` undo this activation.
+		await this.enqueueTabSwitch(async () => {
+			this.homeActivationQueued = false;
+			manager.setDraft(manager.getActive().id, this.editor.getText());
+			syncHomeSelectionToTab(this.homeSelection, manager.list(), manager.getActive().id);
+			// Entering Home from an agent the filter hides must still select a visible row.
+			clampHomeSelectedTabIndex(this.homeSelection, manager.list());
+			this.homeSelection.active = true;
+			this.setEditorText("");
+			this.documentContainer.clear();
+			if (this.homeView) this.documentContainer.addChild(this.homeView);
+			// The transcript's blocks are a different set now; drop the windowed height table.
+			this.windowedTranscript?.invalidate();
+			this.transcriptScrollView?.scrollToStart();
+			this.updateTerminalTitle();
+			this.ui.requestRender();
+		});
+	}
+
+	/** Put the bound tab's transcript back and drop Home's ephemeral composer text. */
+	private leaveHome(): void {
+		if (!this.homeSelection.active) return;
+		this.homeSelection.active = false;
+		this.homeView?.resetCapture();
+		this.setEditorText("");
+		this.documentContainer.clear();
+		this.documentContainer.addChild(this.headerContainer);
+		this.documentContainer.addChild(this.loadedResourcesContainer);
+		this.documentContainer.addChild(this.chatContainer);
+		// Back to the agent transcript: the windowed height table describes Home now.
+		this.windowedTranscript?.invalidate();
+	}
+
+	/** Editor text, whichever editor component the current tab installed. */
+	private editorText(): string {
+		return this.editor.getText();
+	}
+
+	/** Set the text on both the default editor and any tab-installed replacement. */
+	private setEditorText(text: string): void {
+		this.defaultEditor.setText(text);
+		if (this.editor !== this.defaultEditor) this.editor.setText(text);
 	}
 
 	/**
@@ -2143,8 +2256,231 @@ export class InteractiveMode {
 	}
 
 	private async activateTabById(id: string): Promise<void> {
+		if (id === HOME_TAB_ID) {
+			await this.activateHome();
+			return;
+		}
 		const tab = this.tabManager?.get(id);
 		if (tab) await this.activateTab(tab);
+	}
+
+	// -----------------------------------------------------------------------
+	// MixCode Home surface
+	// -----------------------------------------------------------------------
+
+	private getHomeViewModel(): HomeViewModel {
+		const tabs = this.tabManager?.list() ?? [];
+		return {
+			version: this.version,
+			workdir: displayWorkdir() ?? this.tabsWorkdir,
+			workingCount: tabs.filter((tab) => tab.status === "running" || tab.status === "thinking").length,
+			inputCount: 0,
+			agents: tabs.map((tab) => {
+				const snapshot = this.homeSnapshotFor(tab);
+				return { card: this.homeCardFor(tab, snapshot), messages: snapshot.messages };
+			}),
+			selectedIndex: this.homeSelection.selectedIndex,
+			nonIdleOnly: this.homeSelection.nonIdleOnly,
+			// A dialog that opens over the page must drop any captured button press.
+			overlayOpen: this.ui.hasOverlay(),
+		};
+	}
+
+	private homeCardFor(tab: AgentTab, snapshot: HomeSnapshot): HomeCard {
+		const session = tab.runtime.session;
+		const override = process.env.MIXCODE_DISPLAY_MODEL?.trim();
+		const modelId = session.model?.id;
+		return {
+			id: tab.id,
+			title: tab.title,
+			status: tab.status,
+			unread: tab.unread,
+			color: tab.color,
+			workingStartedAt: tab.workingStartedAt,
+			lastWorkedAt: tab.lastWorkedAt,
+			workdir: displayWorkdir() ?? tab.runtime.cwd,
+			model: override || (modelId ? (modelId.split("/").pop() ?? modelId) : undefined),
+			tokens: snapshot.tokens,
+			contextWindow: snapshot.contextWindow,
+		};
+	}
+
+	/**
+	 * Transcript tail plus context usage for a card, computed once per transcript
+	 * change. Both are per-frame reads otherwise: `getContextUsage()` rebuilds the
+	 * session projection and `mapHomeMessages` extracts text from every message,
+	 * and the Home page renders on every TUI frame.
+	 */
+	private homeSnapshotFor(tab: AgentTab): HomeSnapshot {
+		const session = tab.runtime.session;
+		const source = session.messages;
+		const newest = source[source.length - 1];
+		const newestText = newest ? (homePreviewOf(newest)?.text ?? "") : "";
+		const cached = this.homeMessageCache.get(tab.id);
+		if (
+			cached &&
+			cached.source === source &&
+			cached.length === source.length &&
+			cached.newest === newest &&
+			cached.newestText === newestText
+		) {
+			return cached;
+		}
+		const usage = session.getContextUsage();
+		const snapshot: HomeSnapshot = {
+			source,
+			length: source.length,
+			newest,
+			newestText,
+			messages: mapHomeMessages(source),
+			tokens: usage?.tokens ?? null,
+			contextWindow: usage?.contextWindow ?? session.model?.contextWindow ?? 0,
+		};
+		this.homeMessageCache.set(tab.id, snapshot);
+		return snapshot;
+	}
+
+	/**
+	 * Row budget used before the transcript viewport has been measured (the
+	 * regular main-screen renderer never measures it). The tab bar's own height
+	 * comes out of the budget, so a wrapping bar cannot push the page past the
+	 * viewport; an overflowing page would scroll the Home chip off the top.
+	 */
+	private homeHeightFallback(): number {
+		const width = this.ui.terminal.columns;
+		const barRows = this.tabBarContainer?.render(width).length ?? 0;
+		// Under-estimate on purpose: the editor (at least 3 rows), footer, status
+		// line, and widgets take the rest.
+		return Math.max(4, this.ui.terminal.rows - barRows - 6);
+	}
+
+	/** Run a heading button's command on the tab the roster has selected. */
+	private async runHomeAction(action: HomeAction): Promise<void> {
+		const manager = this.tabManager;
+		if (!manager || !this.homeSelection.active) return;
+		// Dim the buttons and ignore further presses until the command finishes.
+		this.homeView?.setActionPending(true);
+		this.ui.requestRender();
+		try {
+			// Slash commands run against the bound session, so the selected tab is
+			// attached first, the same routing the composer's commands use.
+			const selected = homeSelectedTab(this.homeSelection, manager.list());
+			if (selected && manager.getActive().id !== selected.id) await this.activateTab(selected);
+			await this.defaultEditor.onSubmit?.(`/${action}`);
+		} finally {
+			this.homeView?.setActionPending(false);
+			this.homeView?.resetCapture();
+			this.ui.requestRender();
+		}
+	}
+
+	/** `up`/`down` on Home. Declines the key anywhere else so the editor keeps it. */
+	private handleHomeSelect(delta: number): boolean {
+		const manager = this.tabManager;
+		if (!manager || !this.homeSelection.active || this.ui.hasOverlay()) return false;
+		if (this.editorAutocompleteOpen()) return false;
+		if (manager.list().length === 0) return false;
+		// A multi-line composer needs the arrows for its caret, as on an agent tab.
+		if (this.editorText().includes("\n")) return false;
+		moveHomeSelection(this.homeSelection, manager.list(), delta);
+		this.ui.requestRender();
+		return true;
+	}
+
+	private handleHomeToggleNonIdle(): boolean {
+		const manager = this.tabManager;
+		if (!manager || !this.homeSelection.active || this.ui.hasOverlay()) return false;
+		if (this.editorAutocompleteOpen()) return false;
+		if (manager.list().length === 0) return false;
+		toggleHomeNonIdleOnly(this.homeSelection, manager.list());
+		this.ui.requestRender();
+		return true;
+	}
+
+	/** `right` on Home: attach to the selected agent. An empty composer is required. */
+	private handleHomeAttach(): boolean {
+		const manager = this.tabManager;
+		if (!manager || !this.homeSelection.active || this.ui.hasOverlay()) return false;
+		if (this.editorAutocompleteOpen()) return false;
+		if (this.editorText().length > 0) return false;
+		if (this.homeSelectionIsHidden(manager.list())) return true;
+		const selected = homeSelectedTab(this.homeSelection, manager.list());
+		if (!selected) return false;
+		void this.activateTab(selected);
+		return true;
+	}
+
+	/** `!shell` runs through the shared bash handling, which acts on the active session. */
+	private static isHomeCommandInput(text: string): boolean {
+		return text.startsWith("/") || text.startsWith("!");
+	}
+
+	/**
+	 * `enter` on Home. Plain text goes to the selected tab's session while Home
+	 * keeps focus; a `/command` or `!shell` acts on the bound session, so it
+	 * attaches first and then submits through the normal dispatcher.
+	 *
+	 * `data` is the raw key: the `enter` binding also matches a bare newline
+	 * (`ctrl+j`), which must keep inserting a newline in the composer.
+	 */
+	private handleHomeSend(data: string): boolean {
+		const manager = this.tabManager;
+		if (!manager || !this.homeSelection.active || this.ui.hasOverlay()) return false;
+		if (this.editorAutocompleteOpen()) return false;
+		if (data === "\n") return false;
+		const tabs = manager.list();
+		if (tabs.length === 0) return false;
+		const text = (this.editor.getExpandedText?.() ?? this.editorText()).trim();
+		if (!text) return true;
+		if (this.homeSelectionIsHidden(tabs)) return true;
+		const selected = homeSelectedTab(this.homeSelection, tabs);
+		if (!selected) return false;
+		this.setEditorText("");
+		this.editor.addToHistory?.(text);
+		if (InteractiveMode.isHomeCommandInput(text)) {
+			void (async () => {
+				await this.activateTab(selected);
+				this.setEditorText(text);
+				await this.defaultEditor.onSubmit?.(text);
+			})();
+			return true;
+		}
+		const session = selected.runtime.session;
+		// A streaming agent takes the message as steering. A compacting one errors instead:
+		// the composer's queue belongs to the bound session, not to an arbitrary roster tab.
+		const options = session.isStreaming ? { streamingBehavior: "steer" as const } : undefined;
+		session.prompt(text, options).then(
+			() => this.ui.requestRender(),
+			(error: unknown) => {
+				// Put the message back so the user can retry after fixing the cause.
+				this.setEditorText(text);
+				this.showError(`Send failed: ${error instanceof Error ? error.message : String(error)}`);
+				this.ui.requestRender();
+			},
+		);
+		return true;
+	}
+
+	/** `left` from an agent tab with an empty composer returns to Home. */
+	private handleHomeReturn(): boolean {
+		const manager = this.tabManager;
+		if (!manager || this.homeSelection.active || this.ui.hasOverlay()) return false;
+		if (this.editorAutocompleteOpen()) return false;
+		if (this.editorText().length > 0) return false;
+		void this.activateHome();
+		return true;
+	}
+
+	/** True while the completion popup owns the arrow/enter keys. */
+	private editorAutocompleteOpen(): boolean {
+		const editor = this.editor as { isShowingAutocomplete?: () => boolean };
+		return editor.isShowingAutocomplete?.() ?? false;
+	}
+
+	/** True when the non-idle filter hides the selected row, so Home cannot act on it. */
+	private homeSelectionIsHidden(tabs: readonly AgentTab[]): boolean {
+		if (!this.homeSelection.nonIdleOnly) return false;
+		return !homeVisibleTabIndices(this.homeSelection, tabs).includes(this.homeSelection.selectedIndex);
 	}
 
 	/**
@@ -2156,6 +2492,7 @@ export class InteractiveMode {
 	 * `session_start`, so it runs only for a session that has not been bound yet.
 	 */
 	private async switchActiveTab(tab: AgentTab): Promise<void> {
+		this.leaveHome();
 		if (this.activeTabIdForUi && this.activeTabIdForUi !== tab.id) {
 			this.captureTranscript(this.activeTabIdForUi);
 			this.detachTabUi(this.activeTabIdForUi);
@@ -2801,6 +3138,17 @@ export class InteractiveMode {
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
+	}
+
+	/** `/group-colored-tabs`, keeping the Home selection on the same agent. */
+	private groupTabsByColor(): void {
+		const manager = this.tabManager;
+		if (!manager) return;
+		const selectedId = manager.list()[this.homeSelection.selectedIndex]?.id;
+		manager.groupByColor();
+		// The reorder re-clamps the selection against the new order, so follow the id
+		// captured before it rather than an index that may already have moved.
+		selectHomeTabById(this.homeSelection, manager.list(), selectedId);
 	}
 
 	/** `/save-workspace [name]` snapshots the open tab layout in the shared schema. */
@@ -3721,7 +4069,7 @@ export class InteractiveMode {
 				}
 				// Copy action handlers (clear, suspend, model switching, etc.)
 				for (const [action, handler] of this.defaultEditor.actionHandlers) {
-					(customEditor.actionHandlers as Map<string, () => void>).set(action, handler);
+					customEditor.actionHandlers.set(action, handler);
 				}
 			}
 
@@ -4033,8 +4381,15 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
 		this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
 		this.defaultEditor.onAction("app.session.new", () => this.handleClearCommand());
-		this.defaultEditor.onAction("app.tab.next", () => this.cycleAgentTab(1));
-		this.defaultEditor.onAction("app.tab.previous", () => this.cycleAgentTab(-1));
+		this.defaultEditor.onAction("app.tab.next", () => this.cycleTab(1));
+		this.defaultEditor.onAction("app.tab.previous", () => this.cycleTab(-1));
+		// Home keys decline (return false) off Home so the composer keeps them.
+		this.defaultEditor.onAction("app.home.selectPrevious", () => this.handleHomeSelect(-1));
+		this.defaultEditor.onAction("app.home.selectNext", () => this.handleHomeSelect(1));
+		this.defaultEditor.onAction("app.home.attach", () => this.handleHomeAttach());
+		this.defaultEditor.onAction("app.home.send", (data) => this.handleHomeSend(data));
+		this.defaultEditor.onAction("app.home.returnHome", () => this.handleHomeReturn());
+		this.defaultEditor.onAction("app.home.toggleNonIdle", () => this.handleHomeToggleNonIdle());
 		this.defaultEditor.onAction("app.tab.new", () => void this.handleNewTab());
 		this.defaultEditor.onAction("app.tab.close", () => void this.handleCloseTab());
 		this.defaultEditor.onAction("app.session.tree", () => this.showTreeSelector());
@@ -4274,7 +4629,7 @@ export class InteractiveMode {
 			}
 			if (text === "/group-colored-tabs") {
 				this.editor.setText("");
-				this.tabManager?.groupByColor();
+				this.groupTabsByColor();
 				return;
 			}
 			if (text === "/mark-done") {

@@ -8,13 +8,24 @@ export type CustomEditorOptions = EditorOptions & {
 };
 
 /**
+ * What an app action handler may return: `false` declines the key, everything else handles it.
+ * The raw key data is passed so a handler can distinguish keys the binding folds together.
+ */
+export type AppActionHandler = (data: string) => unknown;
+
+/**
  * Custom editor that handles app-level keybindings for coding-agent.
  */
 export class CustomEditor extends Editor {
 	private keybindings: KeybindingsManager;
 	private workingStatusIndicator: StatusIndicator | undefined;
 	public readonly embedWorkingStatus: boolean;
-	public actionHandlers: Map<AppKeybinding, () => void> = new Map();
+	/**
+	 * Handler for an app action. Returning `false` declines the key so the editor
+	 * keeps it: Home binds the arrow/enter keys, which the composer still needs
+	 * whenever Home is not the active surface.
+	 */
+	public actionHandlers: Map<AppKeybinding, AppActionHandler> = new Map();
 
 	// Special handlers that can be dynamically replaced
 	public onEscape?: () => void;
@@ -89,9 +100,10 @@ export class CustomEditor extends Editor {
 	}
 
 	/**
-	 * Register a handler for an app action.
+	 * Register a handler for an app action. The handler may return `false` to let
+	 * the key fall through to the editor.
 	 */
-	onAction(action: AppKeybinding, handler: () => void): void {
+	onAction(action: AppKeybinding, handler: AppActionHandler): void {
 		this.actionHandlers.set(action, handler);
 	}
 
@@ -126,7 +138,7 @@ export class CustomEditor extends Editor {
 				// Use dynamic onEscape if set, otherwise registered handler
 				const handler = this.onEscape ?? this.actionHandlers.get("app.interrupt");
 				if (handler) {
-					handler();
+					handler(data);
 					return;
 				}
 			}
@@ -139,7 +151,7 @@ export class CustomEditor extends Editor {
 		if (this.keybindings.matches(data, "app.exit")) {
 			if (this.getText().length === 0) {
 				const handler = this.onCtrlD ?? this.actionHandlers.get("app.exit");
-				if (handler) handler();
+				if (handler) handler(data);
 				return;
 			}
 			// Fall through to editor handling for delete-char-forward when not empty
@@ -164,10 +176,11 @@ export class CustomEditor extends Editor {
 			return;
 		}
 
-		// Check all other app actions
+		// Check all other app actions. A handler that returns false declines the
+		// key, so the editor below still sees it.
 		for (const [action, handler] of this.actionHandlers) {
 			if (action !== "app.interrupt" && action !== "app.exit" && this.keybindings.matches(data, action)) {
-				handler();
+				if (handler(data) === false) continue;
 				return;
 			}
 		}

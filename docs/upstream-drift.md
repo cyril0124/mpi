@@ -18,6 +18,10 @@ commit that causes it.
 | Fullscreen transcript rendering | renders every message component each frame, then clips to the viewport | renders only the visible window (20 rows of overscan) and estimates unmeasured blocks at 4 rows | frame cost otherwise grows with the whole conversation |
 | Transcript scrolling keys | `tui.altScreen.*` only | plus a modal surface (`/vim`, `j`/`k`/`gg`/`G`, prompt jumps) in fullscreen mode | mouse-free reading of long conversations |
 | Editor frame while modal | thinking/bash border color | accent border, input and submit locked | vim mode owns input |
+| MixCode Home | no such surface; the transcript always shows the active session | a `home` pseudo-tab lists every open agent with a conversation preview | [MixCode Home](home.md) |
+| `left`/`right`/`up`/`down`/`enter`/`ctrl+f` | editor cursor, prompt history, submit | on Home they select, attach, send, and filter the roster; on agent tabs the editor keeps them | [MixCode Home](home.md) |
+| App-action keybinding handlers | a handler that matches consumes the key | a handler may return `false` to decline it; the raw key data is passed in | the Home bindings must not take `up`/`down`/`left`/`right`/`enter` from the composer, and `enter` also matches a bare newline (`ctrl+j`) |
+| Footer on Home | n/a (no Home surface) | the footer stays visible and keeps showing the bound session's model and context | the footer here is per-runtime chrome, not per-surface, so hiding it would need its own design |
 
 ## Upstream pages and source text that are now stale
 
@@ -54,6 +58,9 @@ that calls into `mixcode/` code:
 - `packages/tui/src/tui-alt-screen.ts`: reads content lines through the provider; public `scrollToPrompt`
 - `packages/tui/src/index.ts`: exports for the windowed node and mouse dispatch
 - `AGENTS.md`, `.gitignore`
+
+The fork also adds keys to upstream's `keybindings.ts`, while
+`core/mixcode/multi-tab/tab-manager.ts` and `tab-state.ts` are fork-owned.
 
 ## Paths that exist only in this fork
 

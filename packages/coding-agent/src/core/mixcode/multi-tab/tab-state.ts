@@ -12,8 +12,12 @@ const WORKING_STATUSES: ReadonlySet<TabStatus> = new Set<TabStatus>(["running", 
 
 export interface TabTimerState {
 	status: TabStatus;
+	/** ISO stamp of the run in progress, cleared when it stops. */
 	workingStartedAt?: string;
+	/** Length of the run that just stopped, in seconds. */
 	lastWorkedDurationSeconds?: number;
+	/** ISO stamp of the last transition out of a working status; drives relative ages. */
+	lastWorkedAt?: string;
 }
 
 export interface SetTabStatusOptions {
@@ -41,6 +45,7 @@ export function setTabStatus(tab: TabTimerState, status: TabStatus, options: Set
 
 	tab.lastWorkedDurationSeconds = elapsedSeconds(tab.workingStartedAt, now);
 	tab.workingStartedAt = undefined;
+	tab.lastWorkedAt = now.toISOString();
 }
 
 /** Seconds between an ISO start stamp and now, floored; undefined if no/invalid stamp. */

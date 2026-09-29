@@ -26,6 +26,11 @@ export interface TabBarItem {
 export interface TabBarModel {
 	tabs: readonly TabBarItem[];
 	activeId: string;
+	/**
+	 * Leading surface chip (MixCode Home). Pinned to the first row and never
+	 * hidden by agent-tab overflow; `label` is the bare name, without padding.
+	 */
+	home?: { id: string; label: string };
 	/** Painter for the separator rule and the focus mark; defaults to a muted border. */
 	rulePainter?: (text: string) => string;
 	/** Row cap for the bar; the rest of the tabs collapse into overflow counts. */
@@ -45,6 +50,10 @@ const FOCUS_MARK = "\u258c";
 const FOCUS_MARK_INNER = "\u2590";
 const RULE_CHAR = "\u2500";
 const ELLIPSIS = "\u2026";
+/** A pinned Home chip is abbreviated once it would take more than this share of the row. */
+const HOME_PIN_FULL_MAX_RATIO = 0.15;
+/** Abbreviated pinned Home chip. */
+const HOME_COMPACT_LABEL = " H ";
 
 /** ANSI 16-color background/foreground pairs. */
 const TAB_COLOR_SGR: Record<TabColorName, { bg: number; fg: number }> = {
@@ -61,7 +70,7 @@ const TAB_COLOR_SGR: Record<TabColorName, { bg: number; fg: number }> = {
 const tabColorPaints = new Map<TabColorName, (text: string) => string>();
 
 /** Chip painter for a tab color; re-opens the background after inner SGR resets. */
-function tabColorPaint(color: TabColorName): (text: string) => string {
+export function tabColorPaint(color: TabColorName): (text: string) => string {
 	const cached = tabColorPaints.get(color);
 	if (cached) return cached;
 	const { bg, fg } = TAB_COLOR_SGR[color];
@@ -83,8 +92,13 @@ function paintOpenSeq(paint: (text: string) => string): string {
 }
 
 function glyphFor(item: TabBarItem): string {
-	if (item.unread && item.status !== "error") return GLYPHS.done;
-	return GLYPHS[item.status];
+	return tabStatusGlyph(item.status, item.unread);
+}
+
+/** Status glyph shared by the tab chips and the Home roster cards. */
+export function tabStatusGlyph(status: TabStatus, unread: boolean): string {
+	if (unread && status !== "error") return GLYPHS.done;
+	return GLYPHS[status];
 }
 
 function glyphPainter(item: TabBarItem): ((text: string) => string) | undefined {
@@ -186,6 +200,17 @@ function hintWidth(kind: "left" | "right", count: number): number {
 	return kind === "left" ? 1 + visibleWidth(`+${count} ${ELLIPSIS} `) : visibleWidth(` ${ELLIPSIS} +${count}`);
 }
 
+/** Wrapped rows line up under the first agent chip, after the Home chip and its gutter. */
+function agentIndent(prefix: number, chips: readonly Chip[], width: number): number {
+	if (chips.length === 0) return Math.max(0, Math.min(prefix, width - 1));
+	return Math.max(0, Math.min(prefix + visibleWidth(chips[0]!.text) + 1, width - 1));
+}
+
+/** Whether the full Home label would take more of the row than the pinned budget allows. */
+function packedHomeNeedsAbbreviation(label: string, width: number): boolean {
+	return visibleWidth(label) / Math.max(1, width) > HOME_PIN_FULL_MAX_RATIO;
+}
+
 export class TabBar implements Component {
 	private readonly getModel: () => TabBarModel;
 	private readonly onSelect: (id: string) => void;
@@ -204,25 +229,59 @@ export class TabBar implements Component {
 		this.hitRegions = [];
 		if (width <= 0) return [];
 		const model = this.getModel();
-		if (model.tabs.length === 0) return [];
+		if (model.tabs.length === 0 && !model.home) return [];
 		const markPainter = model.rulePainter ?? ((text: string) => theme.fg("borderMuted", text));
 
 		const chips: Chip[] = model.tabs.map((item) => ({
 			id: item.id,
 			text: renderChip(item, item.id === model.activeId, markPainter),
 		}));
-		const indent = Math.max(0, Math.min(visibleWidth(chips[0]!.text) + 1, width - 1));
 		const maxRows = Math.max(1, model.maxRows ?? Number.POSITIVE_INFINITY);
+		const home = model.home;
+		const homeActive = home !== undefined && model.activeId === home.id;
+		const fullHomeText = home ? ` ${home.label} ` : undefined;
+		if (chips.length === 0) {
+			// Nothing to clip: the Home chip stands alone with its full label.
+			if (fullHomeText === undefined || visibleWidth(fullHomeText) > width) {
+				return [markPainter(RULE_CHAR.repeat(width))];
+			}
+			const chip = this.renderHomeChip(fullHomeText!, homeActive, markPainter);
+			this.hitRegions.push({
+				id: home!.id,
+				row: 0,
+				start: 0,
+				end: Math.max(0, visibleWidth(fullHomeText!) - 1),
+			});
+			return [truncateToWidth(chip, width, ""), markPainter(RULE_CHAR.repeat(width))];
+		}
+
+		/** Pack the agent chips with the given leading Home chip; undefined when they do not fit. */
+		const packWithHome = (homeText: string | undefined): { rows: Chip[][]; prefix: number } | undefined => {
+			const prefix = homeText === undefined ? 0 : visibleWidth(homeText) + (chips.length > 0 ? 1 : 0);
+			const indent = agentIndent(prefix, chips, width);
+			const rows = packRows(chips, (rowIndex) => (rowIndex === 0 ? width - prefix : width - indent), maxRows);
+			return rows ? { rows, prefix } : undefined;
+		};
+
+		let homeText = fullHomeText;
+		let packed = packWithHome(homeText);
+		if (!packed && home && !homeActive && packedHomeNeedsAbbreviation(fullHomeText!, width)) {
+			homeText = HOME_COMPACT_LABEL;
+			packed = packWithHome(homeText);
+		}
+		const prefix =
+			packed?.prefix ?? (homeText === undefined ? 0 : visibleWidth(homeText) + (chips.length > 0 ? 1 : 0));
+		const indent = agentIndent(prefix, chips, width);
 
 		// Fast path: everything fits without hiding chips.
-		let rows = packRows(chips, (rowIndex) => (rowIndex === 0 ? width : width - indent), maxRows);
+		let rows = packed?.rows;
 		let hiddenLeft = 0;
 		let hiddenRight = 0;
 
 		if (!rows) {
 			const activeIndex = chips.findIndex((chip) => chip.id === model.activeId);
 			const preferred = activeIndex >= 0 ? activeIndex : 0;
-			const candidate = this.findWindow(chips, preferred, width, indent, maxRows);
+			const candidate = this.findWindow(chips, preferred, width, indent, maxRows, prefix);
 			rows = candidate?.rows;
 			hiddenLeft = candidate?.hiddenLeft ?? 0;
 			hiddenRight = candidate?.hiddenRight ?? 0;
@@ -232,8 +291,16 @@ export class TabBar implements Component {
 			// Nothing fits: keep the active chip alone, truncated if needed.
 			const activeIndex = chips.findIndex((chip) => chip.id === model.activeId);
 			const chip = chips[activeIndex >= 0 ? activeIndex : 0]!;
-			const text = visibleWidth(chip.text) > width ? truncateToWidth(chip.text, width, ELLIPSIS) : chip.text;
-			this.hitRegions.push({ id: chip.id, row: 0, start: 0, end: Math.max(0, visibleWidth(text) - 1) });
+			const text =
+				visibleWidth(chip.text) > Math.max(1, width - prefix)
+					? truncateToWidth(chip.text, Math.max(1, width - prefix), ELLIPSIS)
+					: chip.text;
+			this.hitRegions.push({
+				id: chip.id,
+				row: 0,
+				start: prefix,
+				end: prefix + Math.max(0, visibleWidth(text) - 1),
+			});
 			rows = [[{ id: chip.id, text }]];
 		}
 
@@ -244,10 +311,20 @@ export class TabBar implements Component {
 			const rowChips = rows[rowIndex]!;
 			let line = isFirst ? "" : " ".repeat(indent);
 			let x = visibleWidth(line);
+			if (isFirst && homeText !== undefined) {
+				const homeChip = this.renderHomeChip(homeText, homeActive, markPainter);
+				line += homeChip;
+				this.hitRegions.push({ id: home!.id, row: 0, start: 0, end: Math.max(0, visibleWidth(homeText) - 1) });
+				x += visibleWidth(homeText);
+			}
 			if (isFirst && hiddenLeft > 0) {
 				const hint = `+${hiddenLeft} ${ELLIPSIS} `;
 				line += ` ${theme.fg("dim", hint)}`;
 				x += hintWidth("left", hiddenLeft);
+			}
+			if (isFirst && homeText !== undefined && rowChips.length > 0) {
+				line += " ";
+				x += 1;
 			}
 			for (let index = 0; index < rowChips.length; index += 1) {
 				const chip = rowChips[index]!;
@@ -270,6 +347,19 @@ export class TabBar implements Component {
 	}
 
 	/**
+	 * Home chip painter. Active Home uses the same selected background and focus
+	 * mark as an active agent chip; a pinned inactive Home keeps its own accent
+	 * pair so it stays distinguishable from the agent chips beside it.
+	 */
+	private renderHomeChip(text: string, active: boolean, markPainter: (text: string) => string): string {
+		if (active) {
+			const marked = `${markPainter(FOCUS_MARK)}${text.slice(1)}`;
+			return theme.bg("selectedBg", theme.fg("text", theme.bold(marked)));
+		}
+		return theme.bg("toolPendingBg", theme.fg("accent", text));
+	}
+
+	/**
 	 * Smallest window of chips that contains `preferred` and fits the width,
 	 * preferring more visible chips, then a smaller left/right imbalance, then
 	 * fewer hidden on the left.
@@ -280,6 +370,7 @@ export class TabBar implements Component {
 		width: number,
 		indent: number,
 		maxRows: number,
+		prefix = 0,
 	): { rows: Chip[][]; hiddenLeft: number; hiddenRight: number } | undefined {
 		let best: { rows: Chip[][]; hiddenLeft: number; hiddenRight: number } | undefined;
 		for (let start = 0; start <= preferred; start += 1) {
@@ -292,9 +383,10 @@ export class TabBar implements Component {
 					chips.slice(start, end + 1),
 					(rowIndex) => {
 						// The left hint occupies the first row only; the right hint is
-						// reserved on every row so the last row always has room.
-						const reserveLeft = rowIndex === 0 ? left : 0;
-						const budget = Math.max(1, width - reserveLeft - right);
+						// reserved on every row so the last row always has room. The Home
+						// chip and its gutter cut into the first row's budget.
+						const firstRowLoss = prefix + (rowIndex === 0 ? left : 0);
+						const budget = Math.max(1, width - firstRowLoss - right);
 						return rowIndex === 0 ? budget : Math.min(budget, Math.max(1, width - indent - right));
 					},
 					maxRows,

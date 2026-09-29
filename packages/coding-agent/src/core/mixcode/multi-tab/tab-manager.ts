@@ -29,6 +29,8 @@ export interface AgentTab {
 	unread: boolean;
 	workingStartedAt?: string;
 	lastWorkedDurationSeconds?: number;
+	/** When the tab last left a working status; drives the Home card's relative age. */
+	lastWorkedAt?: string;
 	/** Editor text preserved for this tab while another tab is focused. */
 	draftInput: string;
 	/** Vim-mode modal state; at most one tab is active at a time. */
@@ -73,6 +75,8 @@ export interface TabManagerOptions {
 	configureRuntime: (runtime: AgentSessionRuntime) => void;
 	/** Called when a tab the user is not looking at finishes a turn. */
 	onBackgroundCompletion?: () => void;
+	/** Called after a tab was removed, with its id and the index it occupied. */
+	onTabClosed?: (tabId: string, removedIndex: number) => void;
 }
 
 export class TabManager {
@@ -82,6 +86,7 @@ export class TabManager {
 	private readonly onLayoutChanged: (() => void) | undefined;
 	private readonly configureRuntime: (runtime: AgentSessionRuntime) => void;
 	private readonly onBackgroundCompletion: (() => void) | undefined;
+	private readonly onTabClosed: ((tabId: string, removedIndex: number) => void) | undefined;
 	private readonly tabs: AgentTab[] = [];
 	private activeId: string;
 	/** Most-recently-activated tab ids (MRU-first, capped). */
@@ -94,6 +99,7 @@ export class TabManager {
 		this.onLayoutChanged = options.onLayoutChanged;
 		this.configureRuntime = options.configureRuntime;
 		this.onBackgroundCompletion = options.onBackgroundCompletion;
+		this.onTabClosed = options.onTabClosed;
 		const tab = this.attachTab(options.initialTitle, options.initialRuntime);
 		this.activeId = tab.id;
 	}
@@ -203,6 +209,7 @@ export class TabManager {
 		const [tab] = this.tabs.splice(index, 1);
 		tab!.unsubscribe();
 		this.forgetRecent(id);
+		this.onTabClosed?.(id, index);
 		const wasActive = this.activeId === id;
 		if (wasActive) this.activeId = this.tabs[Math.min(index, this.tabs.length - 1)]!.id;
 		this.notifyLayoutChanged();
