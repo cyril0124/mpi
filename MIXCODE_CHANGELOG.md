@@ -40,8 +40,10 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   without a separate header. The card needs ten columns; below that the plain editor is kept so the
   working status always has a row. See [Input Dock](docs/input-dock.md).
 - The empty composer now hints in every state instead of only on Home: `Describe your next
-  change...  @ files  / commands` on an agent tab, and the vim navigation keys while vim mode owns
-  the input.
+  change...  @ files  / commands  ← Home · → widgets` on an agent tab, and the vim navigation keys
+  while vim mode owns the input. The two key labels are read from the keybindings, so a rebound key
+  keeps the hint honest; the widgets half is dropped in TUI modes that do not split the chat, where
+  the key does nothing.
 - Mouse drag selection: a drag now selects only inside the transcript, the prompt card and the
   notice panel, and the copied text is cleaned per surface, so dragging over the prompt card or the
   notice no longer pastes that surface's frame and key-hint rows. Wide characters are kept whole,
@@ -187,6 +189,14 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   in `mixcode_settings.json`) turns it off, and it defaults to on.
 
 ### Changed
+
+- The dock meta row's model and thinking level are click targets: the pointer lights the field up
+  with the same hover cue the tab bar and the command palette use, and a left click opens that
+  field's picker, so the model selector and the thinking selector are reachable with the pointer
+  instead of only through `/model`, `/models` and `Alt+T`. The regions are computed from the row
+  that was rendered last, so a truncated or compacted row never answers for cells it no longer
+  paints, and a click on a gap, on the context meter or on the git branch stays inert. The workdir
+  is deliberately not clickable: the fork has no workdir picker.
 
 - `/settings` is a centred floating panel in the MixCode style instead of a selector that replaces the
   editor area: a framed surface titled `Settings`, a dim `filter: type to filter  N/N` line in place of

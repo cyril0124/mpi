@@ -6,6 +6,9 @@
  * extension status texts. The left block degrades in fixed steps and the right
  * block is dropped in fixed steps, so the row says as much as it can at the width
  * it was given and never leaves a partial block behind.
+ *
+ * The model and the thinking level are clickable: the render reports the cells each one
+ * painted, and the dock footer opens that field's picker when a click lands inside them.
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
@@ -29,6 +32,26 @@ const GLYPHS = {
 	barEmpty: "░",
 } as const;
 
+/** A meta-row field that opens a picker when clicked. */
+export type MetaAction = "models" | "thinking";
+
+/**
+ * Cells one clickable field painted in the row, 0-based and relative to the
+ * row's first column, so a pointer event can be tested against them directly.
+ */
+export interface MetaRegion {
+	action: MetaAction;
+	start: number;
+	width: number;
+}
+
+/** The meta row and the clickable fields it painted. */
+export interface InputMetaRender {
+	lines: string[];
+	/** Fields of the first line; empty when nothing is clickable. */
+	regions: MetaRegion[];
+}
+
 export interface InputMetaData {
 	/** Working directory; home-collapsed here. */
 	workdir: string;
@@ -49,8 +72,8 @@ export interface InputMetaData {
  *
  * Returns no rows when the terminal cannot show a single cell.
  */
-export function renderInputMeta(data: InputMetaData, width: number): string[] {
-	if (width <= 0) return [];
+export function renderInputMeta(data: InputMetaData, width: number): InputMetaRender {
+	if (width <= 0) return { lines: [], regions: [] };
 	const workdir = formatCwdForFooter(data.workdir, process.env.HOME || process.env.USERPROFILE);
 
 	// Absolute xxk/xxk lives on the card's top edge; this row keeps the meter only.
@@ -82,7 +105,7 @@ export function renderInputMeta(data: InputMetaData, width: number): string[] {
 	const lines = [padLine(row, width)];
 	const statuses = renderExtensionStatusLine(data.extensionStatuses, width, data.statusesHidden === true);
 	if (statuses) lines.push(statuses);
-	return lines;
+	return { lines, regions: left.regions };
 }
 
 /** Exact compact usage for the card's top edge, e.g. `12.3k/200k`. */
@@ -127,6 +150,7 @@ export function shortModelName(displayName: string): string {
 
 interface LeftBlock {
 	text: string;
+	regions: MetaRegion[];
 	fits: boolean;
 	workdirIntact: boolean;
 }
@@ -144,7 +168,7 @@ interface MetaMode {
  * with single-space gaps.
  */
 function renderInputMetaLeft(workdirPath: string, model: string, thinking: string, width: number): LeftBlock {
-	if (width <= 0) return { text: "", fits: false, workdirIntact: false };
+	if (width <= 0) return { text: "", regions: [], fits: false, workdirIntact: false };
 	const moduleName = shortModelName(model);
 	const modes: MetaMode[] = [
 		{ model: labeled(GLYPHS.model, model), thinking: labeled(GLYPHS.thinking, thinking), gap: "  " },
@@ -168,45 +192,57 @@ function labeled(glyph: string, text: string): string {
 }
 
 function layoutInputMetaLeft(mode: MetaMode, workdirPath: string, width: number, strict: boolean): LeftBlock {
-	const pieces: string[] = [];
+	const pieces: Array<{ action?: MetaAction; text: string }> = [];
 	let remaining = Math.max(0, width - 2);
 	let workdirIntact = false;
 	const thinkingWidth = visibleWidth(mode.thinking);
 	const modelFullWidth = visibleWidth(mode.model);
 	const gapWidth = visibleWidth(mode.gap);
 	if (strict && remaining - thinkingWidth - 2 * gapWidth < modelFullWidth) {
-		return { text: "", fits: false, workdirIntact: false };
+		return { text: "", regions: [], fits: false, workdirIntact: false };
 	}
 	const modelWidth = strict ? modelFullWidth : Math.max(5, Math.min(modelFullWidth, remaining - thinkingWidth));
 	const modelText = strict ? mode.model : truncateToWidth(mode.model, modelWidth, "...");
-	pieces.push(theme.fg("accent", theme.bold(modelText)));
+	pieces.push({ action: "models", text: theme.fg("accent", theme.bold(modelText)) });
 	remaining -= visibleWidth(modelText);
 
 	if (remaining >= thinkingWidth) {
-		pieces.push(mode.gap);
-		pieces.push(theme.fg("accent", theme.bold(mode.thinking)));
+		pieces.push({ text: mode.gap });
+		pieces.push({ action: "thinking", text: theme.fg("accent", theme.bold(mode.thinking)) });
 		remaining -= gapWidth + thinkingWidth;
 	} else if (strict) {
-		return { text: "", fits: false, workdirIntact: false };
+		return { text: "", regions: [], fits: false, workdirIntact: false };
 	}
 
 	const workdirBudget = Math.max(0, remaining - gapWidth);
 	// Strict modes keep the path whole; only the fallback compacts or ellipsizes.
 	if (strict) {
 		if (visibleWidth(workdirPath) > workdirBudget) {
-			return { text: "", fits: false, workdirIntact: false };
+			return { text: "", regions: [], fits: false, workdirIntact: false };
 		}
-		pieces.push(mode.gap);
-		pieces.push(theme.fg("accent", workdirPath));
+		pieces.push({ text: mode.gap });
+		pieces.push({ text: theme.fg("accent", workdirPath) });
 		workdirIntact = true;
 	} else if (workdirBudget >= 4) {
-		pieces.push(mode.gap);
+		pieces.push({ text: mode.gap });
 		const workdir = compactWorkdir(workdirPath, workdirBudget);
-		pieces.push(theme.fg("accent", workdir));
+		pieces.push({ text: theme.fg("accent", workdir) });
 		// Segment-compressed paths are fine; `...` truncation counts as obscured.
 		workdirIntact = !workdir.includes("...");
 	}
-	return { text: pieces.join(""), fits: true, workdirIntact };
+
+	// The painted piece includes its own padding spaces, so the region covers
+	// exactly the cells a hover cue would light up.
+	const regions: MetaRegion[] = [];
+	let cursor = 0;
+	for (const piece of pieces) {
+		const pieceWidth = visibleWidth(piece.text);
+		if (piece.action && pieceWidth > 0) {
+			regions.push({ action: piece.action, start: cursor, width: pieceWidth });
+		}
+		cursor += pieceWidth;
+	}
+	return { text: pieces.map((piece) => piece.text).join(""), regions, fits: true, workdirIntact };
 }
 
 /** Extension statuses as one row: values sorted by key, joined by a dim `│`. */

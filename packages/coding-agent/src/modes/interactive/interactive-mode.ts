@@ -258,8 +258,13 @@ import {
 	type InlineWidgetTabState,
 } from "./components/mixcode/inline-widgets/inline-widgets.ts";
 import { MixcodeDockFooter } from "./components/mixcode/input-dock/dock-footer.ts";
-import { exactContextUsageText, type InputMetaData } from "./components/mixcode/input-dock/input-meta.ts";
+import {
+	exactContextUsageText,
+	type InputMetaData,
+	type MetaAction,
+} from "./components/mixcode/input-dock/input-meta.ts";
 import { type EditorCardChrome, MixcodePromptEditor } from "./components/mixcode/input-dock/prompt-editor.ts";
+import { arrowKeyText } from "./components/mixcode/key-hints.ts";
 import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
 import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
 import {
@@ -921,7 +926,12 @@ export class InteractiveMode {
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
-		this.footer = new MixcodeDockFooter(this.session, this.footerDataProvider, () => this.dockMetaData());
+		this.footer = new MixcodeDockFooter(
+			this.session,
+			this.footerDataProvider,
+			() => this.dockMetaData(),
+			(action) => this.openMetaPicker(action),
+		);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footerContainer = new Container();
 		this.footerContainer.addChild(this.footer);
@@ -2556,7 +2566,37 @@ export class InteractiveMode {
 		if (this.vimTabState().active) {
 			return theme.fg("dim", "Vim: → newer · Shift+→ older · j/k scroll · q exit");
 		}
-		return theme.fg("dim", "Describe your next change...  @ files  / commands");
+		return theme.fg("dim", `Describe your next change...  @ files  / commands${this.composerKeyHints()}`);
+	}
+
+	/**
+	 * The two keys that act on an empty composer besides `@` and `/`: leaving for
+	 * Home and toggling the widget side panel. Read from the keybindings, so a
+	 * rebound key still names the key the user has, and an unbound one drops its
+	 * half. The panel half is left out where the key does nothing, which is every
+	 * TUI mode that does not split the chat.
+	 */
+	private composerKeyHints(): string {
+		const home = arrowKeyText("app.home.returnHome");
+		const widgets = this.ui.mode === "fullscreen" ? arrowKeyText("app.widgets.panel") : "";
+		const parts = [home && `${home} Home`, widgets && `${widgets} widgets`].filter(Boolean);
+		return parts.length > 0 ? `  ${parts.join(" · ")}` : "";
+	}
+
+	/**
+	 * Open the picker behind a click on the dock meta row. A capturing overlay
+	 * owns the screen, so the click is dropped there: the selector would open
+	 * behind it and take focus only once the overlay is gone. A non-capturing
+	 * notice owns nothing, so the chrome stays live under it. Home parks the
+	 * whole footer, so a click can only arrive from a live agent tab.
+	 */
+	private openMetaPicker(action: MetaAction): void {
+		if (this.ui.hasCapturingOverlay()) return;
+		if (action === "models") {
+			this.showModelSelector();
+			return;
+		}
+		this.showThinkingSelector();
 	}
 
 	/**
@@ -4307,6 +4347,9 @@ export class InteractiveMode {
 
 		this.footerContainer.clear();
 		if (factory) {
+			// The dock row is gone, so its pointer state goes with it: a cue kept
+			// across the swap would light up cells the extension footer now paints.
+			this.footer.invalidate();
 			// Create and add custom footer, passing the data provider
 			this.customFooter = factory(this.ui, theme, this.footerDataProvider);
 			this.footerContainer.addChild(this.customFooter);

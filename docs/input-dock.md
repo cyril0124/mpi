@@ -23,6 +23,9 @@ replaces pi's status footer.
 - The body keeps the card's side borders. The autocomplete menu stays outside them, indented by one
   cell.
 - The context reading switches to the warning colour at 85% of the model's window.
+- An empty composer hints the two keys that act on it besides `@` and `/`: `← Home` leaves for
+  Agent View and `→ widgets` toggles the side panel. Both labels follow the configured keybindings,
+  and the panel half is left out in TUI modes that do not split the chat.
 
 The card needs ten columns. Below that the plain editor is used, so a working status always has
 somewhere to go. The status degrades from its message to the spinner to a truncated spinner, the
@@ -46,6 +49,10 @@ truncates. The right block is dropped whole rather than squeezing the workdir ou
 
 The second row appears when extensions publish status texts, and is hidden while vim mode is
 active.
+
+The model and the thinking level are click targets: the pointer lights the field up, and a click
+opens its picker, so the model selector and the thinking selector are reachable with the pointer.
+The workdir is not clickable, because the fork has no workdir picker.
 
 ## What the dock no longer shows
 
