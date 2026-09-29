@@ -11,6 +11,13 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Added
 
+- `install.sh` at the repo root: builds the workspace and installs a standalone `mpi`
+  binary under a prefix (default `~/.local`). The compiled binary resolves themes,
+  export templates, docs, and native prebuilds from its own directory, so the binary
+  lives in `<prefix>/lib/mpi/` and `<prefix>/bin/mpi` is a wrapper that execs it.
+  `scripts/build-binaries.sh` stays the release-archive path; this covers single-machine
+  installs.
+
 - Multi-tab agent sessions: several agents run side by side in one terminal, each tab
   owning its own `AgentSessionRuntime`. Upstream keeps a single runtime host, so watching
   N agents otherwise means N terminals.
