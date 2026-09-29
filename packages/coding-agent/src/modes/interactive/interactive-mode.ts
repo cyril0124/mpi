@@ -213,6 +213,7 @@ import {
 	type CommandPaletteEntry,
 } from "./components/mixcode/command-palette/command-palette.ts";
 import { ConsoleNotice, consoleNoticeOverlayOptions } from "./components/mixcode/console/console-notice.ts";
+import { DockWidgetBudget } from "./components/mixcode/dock-widgets/dock-widgets.ts";
 import {
 	clearHomeTabCache,
 	displayWorkdir,
@@ -673,8 +674,7 @@ export class InteractiveMode {
 	// Extension widgets (components rendered above/below the editor)
 	private extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
 	private extensionWidgetsBelow = new Map<string, Component & { dispose?(): void }>();
-	private widgetContainerAbove!: Container;
-	private widgetContainerBelow!: Container;
+	private dockWidgets!: DockWidgetBudget;
 
 	// Custom footer from extension (undefined = use built-in footer)
 	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
@@ -803,8 +803,14 @@ export class InteractiveMode {
 		});
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
-		this.widgetContainerAbove = new Container();
-		this.widgetContainerBelow = new Container();
+		this.dockWidgets = new DockWidgetBudget({
+			widgets: () => ({ above: this.extensionWidgetsAbove, below: this.extensionWidgetsBelow }),
+			chromeRows: (width) => this.dockChromeRows(width),
+			viewportRows: () => this.renderer.terminal.rows,
+			// The dock shows no widget rows in inline mode (the chat tail has them) or on
+			// MixCode Home, whose chrome stays off the agent widgets.
+			widgetsHidden: () => this.inlineWidgetState()?.enabled === true || this.homeSelection.active,
+		});
 		this.keybindings = KeybindingsManager.create();
 		setKeybindings(this.keybindings);
 		const editorPaddingX = this.settingsManager.getEditorPaddingX();
@@ -1059,9 +1065,9 @@ export class InteractiveMode {
 			document: this.windowedTranscript,
 			pendingMessages: this.pendingMessagesContainer,
 			status: this.statusContainer,
-			widgetsAbove: this.widgetContainerAbove,
+			widgetsAbove: this.dockWidgets.above,
 			editor: this.editorContainer,
-			widgetsBelow: this.widgetContainerBelow,
+			widgetsBelow: this.dockWidgets.below,
 			footer: this.footerContainer,
 			// Vim mode is a reading surface: its rows go to the transcript instead.
 			widgetsVisible: () => !this.vimTabState().active,
@@ -1093,9 +1099,9 @@ export class InteractiveMode {
 			this.documentContainer,
 			this.pendingMessagesContainer,
 			this.statusContainer,
-			this.widgetContainerAbove,
+			this.dockWidgets.above,
 			this.editorContainer,
-			this.widgetContainerBelow,
+			this.dockWidgets.below,
 			this.footerContainer,
 		]);
 		// Accept text while startup completes, but only enable interrupt, exit, and submission feedback.
@@ -3833,26 +3839,28 @@ export class InteractiveMode {
 	private static readonly MAX_WIDGET_LINES = 10;
 
 	/**
-	 * Render all extension widgets to the widget container.
-	 */
-	/**
-	 * Populate the dock's widget slots, or empty them while another surface owns the
-	 * dock. The row budget that decides what fits arrives with the slots themselves.
+	 * Refresh the widget slots. What they render, and whether they render at all, is
+	 * the dock budget's decision per frame, so this only has to ask for the frame.
 	 */
 	private renderWidgets(): void {
-		if (!this.widgetContainerAbove || !this.widgetContainerBelow) return;
-		// Extension widgets are per-agent chrome and stay off the Home page; their
-		// registration is untouched, so leaving Home paints them again. In inline mode
-		// they render in the chat tail instead, so the dock gives its rows back to the
-		// chat rather than repeating what the tail shows.
-		if (this.homeSelection.active || this.inlineWidgetState()?.enabled) {
-			this.widgetContainerAbove.clear();
-			this.widgetContainerBelow.clear();
-		} else {
-			this.renderWidgetContainer(this.widgetContainerAbove, this.extensionWidgetsAbove, true, true);
-			this.renderWidgetContainer(this.widgetContainerBelow, this.extensionWidgetsBelow, false, false);
-		}
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Rows the dock's fixed entries occupy at this width, which the widget budget
+	 * has to leave alone.
+	 */
+	private dockChromeRows(width: number): number {
+		let rows = 0;
+		for (const container of [
+			this.tabBarContainer,
+			this.pendingMessagesContainer,
+			this.statusContainer,
+			this.footerContainer,
+		]) {
+			rows += container?.render(width).length ?? 0;
+		}
+		return rows;
 	}
 
 	/**
@@ -3955,29 +3963,6 @@ export class InteractiveMode {
 		}
 		for (const state of this.inlineWidgetTabStates.values()) state.enabled = enabled;
 		this.refreshInlineWidgets();
-	}
-
-	private renderWidgetContainer(
-		container: Container,
-		widgets: Map<string, Component & { dispose?(): void }>,
-		spacerWhenEmpty: boolean,
-		leadingSpacer: boolean,
-	): void {
-		container.clear();
-
-		if (widgets.size === 0) {
-			if (spacerWhenEmpty) {
-				container.addChild(new Spacer(1));
-			}
-			return;
-		}
-
-		if (leadingSpacer) {
-			container.addChild(new Spacer(1));
-		}
-		for (const component of widgets.values()) {
-			container.addChild(component);
-		}
 	}
 
 	/**

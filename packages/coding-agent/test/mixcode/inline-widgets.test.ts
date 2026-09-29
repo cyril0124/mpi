@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import type { MixCodeSettings } from "../../src/core/mixcode/mixcode-settings.ts";
 import { createChatViewport } from "../../src/modes/interactive/chat-viewport.ts";
+import { DockWidgetBudget } from "../../src/modes/interactive/components/mixcode/dock-widgets/dock-widgets.ts";
 import {
 	createInlineWidgetTabState,
 	InlineWidgetsComponent,
@@ -92,7 +93,6 @@ type InlineWiringContext = {
 	inlineViewportRows(this: InlineWiringContext): number | undefined;
 	leaveHome(this: InlineWiringContext): void;
 };
-
 const proto = InteractiveMode.prototype as unknown as InlineWiringContext;
 
 beforeEach(() => {
@@ -147,12 +147,15 @@ async function bootInline(options: {
 	});
 	const blocks = [...chatBlocks, inlineWidgets];
 	const document = new WindowedTranscript({ blocks: () => blocks });
-	const widgetContainerAbove = new Container();
-	const widgetContainerBelow = new Container();
+	// The dock side of the same widgets: the budget decides what the two slots show.
+	const dockWidgets = new DockWidgetBudget({
+		widgets: () => ({ above, below }),
+		chromeRows: () => 0,
+		viewportRows: () => rows,
+		widgetsHidden: () => context.inlineWidgetState()?.enabled === true,
+	});
 
 	Object.assign(context, {
-		widgetContainerAbove,
-		widgetContainerBelow,
 		extensionWidgetsAbove: above,
 		extensionWidgetsBelow: below,
 		tabManager: undefined,
@@ -167,8 +170,6 @@ async function bootInline(options: {
 		showWarning: (message: string) => errors.push(message),
 	} satisfies Partial<InlineWiringContext>);
 	context.inlineWidgetState = () => proto.inlineWidgetState.call(context);
-	context.renderWidgetContainer = (container, widgets, spacerWhenEmpty, leadingSpacer) =>
-		proto.renderWidgetContainer.call(context, container, widgets, spacerWhenEmpty, leadingSpacer);
 	context.renderWidgets = () => proto.renderWidgets.call(context);
 	context.refreshInlineWidgets = () => proto.refreshInlineWidgets.call(context);
 	context.handleToggleInlineWidgets = () => proto.handleToggleInlineWidgets.call(context);
@@ -180,8 +181,8 @@ async function bootInline(options: {
 		document,
 		pendingMessages: new Text("queue", 0, 0),
 		status: new Text("status", 0, 0),
-		widgetsAbove: widgetContainerAbove,
-		widgetsBelow: widgetContainerBelow,
+		widgetsAbove: dockWidgets.above,
+		widgetsBelow: dockWidgets.below,
 		editor: new Text("editor", 0, 0),
 		footer: new Text("footer", 0, 0),
 	});
@@ -202,8 +203,7 @@ async function bootInline(options: {
 		bodies,
 		errors,
 		transcript: viewport.transcript,
-		widgetContainerAbove,
-		widgetContainerBelow,
+		dockWidgets,
 		handleToggleInlineWidgets: () => context.handleToggleInlineWidgets(),
 		handleWidgetsCommand: (args: string) => context.handleWidgetsCommand(args),
 		painted,
@@ -227,8 +227,9 @@ describe("inline widgets in the chat tail", () => {
 		expect(body).toBe(header + 1);
 		expect(queue).toBeGreaterThan(body);
 		expect(lines.indexOf("message-2")).toBeLessThan(header);
-		expect(frame.widgetContainerAbove.children).toHaveLength(0);
-		expect(frame.widgetContainerBelow.children).toHaveLength(0);
+		// The dock slots give their rows back to the chat in inline mode.
+		expect(frame.dockWidgets.above.render(60)).toEqual([]);
+		expect(frame.dockWidgets.below.render(60)).toEqual([]);
 	});
 
 	it("restores the docked widgets when the tab leaves inline mode", async () => {
@@ -238,8 +239,8 @@ describe("inline widgets in the chat tail", () => {
 		expect(lines.some((line) => line.includes("▸ Inline"))).toBe(false);
 		expect(lines.some((line) => line.includes("goal-body-1"))).toBe(true);
 		// Above-editor widgets keep their leading spacer; below-editor ones do not.
-		expect(frame.widgetContainerAbove.children.length).toBeGreaterThan(0);
-		expect(frame.widgetContainerBelow.children).toHaveLength(0);
+		expect(frame.dockWidgets.above.render(60).map(stripAnsi)).toEqual(["", "goal-body-0", "goal-body-1"]);
+		expect(frame.dockWidgets.below.render(60)).toEqual([]);
 	});
 
 	it("switches a tab between the tail and the dock with /toggle-inline-widgets", async () => {
@@ -248,12 +249,12 @@ describe("inline widgets in the chat tail", () => {
 
 		frame.handleToggleInlineWidgets();
 		expect(frame.state.enabled).toBe(false);
-		expect(frame.widgetContainerAbove.children.length).toBeGreaterThan(0);
+		expect(frame.dockWidgets.above.render(60)).toHaveLength(2);
 
 		frame.handleToggleInlineWidgets();
 		expect(frame.state.enabled).toBe(true);
 		expect((await frame.painted()).some((line) => line.includes("▸ Inline · goal"))).toBe(true);
-		expect(frame.widgetContainerAbove.children).toHaveLength(0);
+		expect(frame.dockWidgets.above.render(60)).toEqual([]);
 	});
 
 	it("orders above-editor widgets before below-editor ones", async () => {
@@ -607,6 +608,10 @@ describe("inline widget tab state", () => {
 			homeSelection: { active: true },
 			homeView: { resetCapture: () => {} },
 			setEditorText: () => {},
+			updateEditorBorderColor: () => {},
+			restoreFooterAfterHome: () => {},
+			restoreStatusAfterHome: () => {},
+			renderWidgets: () => {},
 			documentContainer,
 			headerContainer: header,
 			loadedResourcesContainer: loaded,
@@ -638,13 +643,9 @@ describe("inline widget tab state", () => {
 
 	it("places widgets by the tab it is attached to, not the previous one", () => {
 		const above = new Map<string, Component>([["goal", new WidgetBody("goal", 1)]]);
-		const containerAbove = new Container();
-		const containerBelow = new Container();
 		const inlineTab = createInlineWidgetTabState(true);
 		const dockedTab = createInlineWidgetTabState(false);
 		const context = {
-			widgetContainerAbove: containerAbove,
-			widgetContainerBelow: containerBelow,
 			extensionWidgetsAbove: above,
 			extensionWidgetsBelow: new Map<string, Component>(),
 			tabManager: {},
@@ -653,19 +654,19 @@ describe("inline widget tab state", () => {
 				["inline", inlineTab],
 				["docked", dockedTab],
 			]),
-			ui: { mode: "fullscreen", requestRender: () => {} },
 		} as unknown as InlineWiringContext;
 		context.inlineWidgetState = () => proto.inlineWidgetState.call(context);
-		context.renderWidgetContainer = (container, widgets, spacerWhenEmpty, leadingSpacer) =>
-			proto.renderWidgetContainer.call(context, container, widgets, spacerWhenEmpty, leadingSpacer);
-		context.renderWidgets = () => proto.renderWidgets.call(context);
+		const budget = new DockWidgetBudget({
+			widgets: () => ({ above, below: new Map<string, Component>() }),
+			chromeRows: () => 0,
+			viewportRows: () => 40,
+			widgetsHidden: () => context.inlineWidgetState()?.enabled === true,
+		});
 
-		context.renderWidgets();
-		expect(containerAbove.children).toHaveLength(0);
+		expect(budget.above.render(60)).toEqual([]);
 
 		// The tab being attached owns the placement, so a docked tab gets its rows back.
 		context.activeTabIdForUi = "docked";
-		context.renderWidgets();
-		expect(containerAbove.children.length).toBeGreaterThan(0);
+		expect(budget.above.render(60)).toHaveLength(2);
 	});
 });

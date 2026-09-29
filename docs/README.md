@@ -25,6 +25,8 @@ merge. Every place where this fork's behavior and upstream's documentation disag
   external editor with their timestamps and emitting tab.
 - **[Inline Widgets](inline-widgets.md)**: extension widgets in the chat tail instead of the
   editor dock — the setting, the per-tab toggle, the row budget, and `/widgets`.
+- **[Extension Widget Row Budget](widget-layout.md)**: how the dock caps a widget stack, and how
+  that cap differs from the per-widget line cap.
 
 ## Fork Mechanics
 

@@ -28,6 +28,7 @@ commit that causes it.
 | Extension widgets | fixed dock above/below the editor | at the chat tail by default, with a row budget and `/widgets`, since [`ui.inlineWidgets`](inline-widgets.md) defaults to on | a tall widget otherwise steals rows from the whole editor dock |
 | Per-tab settings | none | `Inline widgets` also reads and writes `mixcode_settings.json`, shown in its own `Mixcode` section of `/settings` | MixCode settings stay out of pi's `settings.json` and out of its section |
 | Settings list rows | one flat list of settings | `SettingItem` gained an optional `section` that renders a heading row | same as above |
+| Docked widget stack | no cap; the layout shrinks the slots when space runs out | the above and below slots share a row budget, cut whole rows are marked `… (widgets truncated)` | a tall widget stack otherwise squeezes the chat and the dock chrome |
 
 ## Upstream pages and source text that are now stale
 

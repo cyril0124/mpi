@@ -20,6 +20,7 @@
 | 扩展组件 | 固定在编辑器上/下方的坞区 | 默认放在对话流末尾，带行预算与 `/widgets`，因为 [`ui.inlineWidgets`](inline-widgets.zh.md) 默认开启 | 过高的组件否则会占用整个编辑器坞区的行 |
 | 按标签页的设置项 | 无 | `Inline widgets` 读写 `mixcode_settings.json`，在 `/settings` 的 `Mixcode` 分组中单独展示 | MixCode 的设置不写进 pi 的 `settings.json`，也不混进它的分组 |
 | 设置列表行 | 单一平铺列表 | `SettingItem` 新增可选 `section`，渲染为分组标题行 | 同上 |
+| 坞区组件堆叠 | 无上限；空间不够时由布局压缩槽位 | 上方与下方两个槽位共用一个行预算，被裁掉的行用 `… (widgets truncated)` 标出 | 否则很高的组件堆叠会挤掉对话区与坞区其他部分 |
 | MixCode Home | 没有此页面；transcript 始终显示当前会话 | `home` 伪标签页列出所有已打开 agent 并给出对话预览 | [MixCode Home](home.zh.md) |
 | `left`/`right`/`up`/`down`/`enter`/`ctrl+f` | 编辑器光标、历史、提交 | 在 Home 上用于选择/附着/发送/过滤列表；在 agent 标签页仍归编辑器 | [MixCode Home](home.zh.md) |
 | 应用动作键处理器 | 命中的处理器直接消费该按键 | 处理器可返回 `false` 主动放弃该键，并会收到原始按键数据 | Home 的绑定不能抢走输入框的 `up`/`down`/`left`/`right`/`enter`，而 `enter` 同时匹配裸换行（`ctrl+j`） |

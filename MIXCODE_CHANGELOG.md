@@ -105,6 +105,11 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   has an `Inline widgets` row in its own `Mixcode` section, `/toggle-inline-widgets` switches one
   tab, and `/widgets expand|collapse|toggle [key]` steers the collapse state. See
   [Inline Widgets](docs/inline-widgets.md).
+- A dock row budget for extension widgets: the slots above and below the editor share one budget
+  derived from the terminal height, so a tall widget stack cannot squeeze the chat and the dock
+  chrome. Overflow rows are marked with a dim `… (widgets truncated)`, a partly shown widget keeps
+  the rows it shows, and the budget is re-decided every frame. See
+  [Extension Widget Row Budget](docs/widget-layout.md).
 - `core/mixcode/mixcode-settings.ts` reads and writes `mixcode_settings.json` in the state
   directory shared with mixcode-pi, so both agents see the same global settings.
 
@@ -144,6 +149,8 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   editor. Existing handlers are unaffected; the Home bindings rely on it.
 - pi-tui's `SettingItem` gained an optional `section`; consecutive items sharing one render under
   a heading row, which is how the `Mixcode` group stays apart from pi's own settings.
+- The dock's widget slots are `DockWidgetBudget` components instead of plain containers, so the
+  slots decide per frame what fits and forward mouse rows to the widget they came from.
 
 ### Fixed
 
