@@ -15,6 +15,8 @@ export interface AppKeybindings {
 	"app.interrupt": true;
 	"app.clear": true;
 	"app.exit": true;
+	"app.quit": true;
+	"app.palette": true;
 	"app.suspend": true;
 	"app.thinking.cycle": true;
 	"app.thinking.save": true;
@@ -97,6 +99,10 @@ export const KEYBINDINGS = {
 	"app.interrupt": { defaultKeys: "escape", description: "Cancel or abort" },
 	"app.clear": { defaultKeys: "ctrl+c", description: "Clear editor" },
 	"app.exit": { defaultKeys: "ctrl+d", description: "Exit when editor is empty" },
+	// Ctrl+Q asks before leaving. Windows/WSL keeps Ctrl+Q for app.message.followUp,
+	// the only follow-up chord those terminals deliver.
+	"app.quit": { defaultKeys: windowsKeybindings ? "ctrl+shift+q" : "ctrl+q", description: "Quit" },
+	"app.palette": { defaultKeys: "ctrl+p", description: "Open command palette" },
 	"app.suspend": {
 		defaultKeys: process.platform === "win32" ? [] : "ctrl+z",
 		description: "Suspend to background",
@@ -110,7 +116,8 @@ export const KEYBINDINGS = {
 		description: "Save thinking level",
 	},
 	"app.model.cycleForward": {
-		defaultKeys: "ctrl+p",
+		// Ctrl+P opens the command palette; model cycling keeps no default key.
+		defaultKeys: [],
 		description: "Cycle to next model",
 	},
 	"app.model.cycleBackward": {

@@ -13,8 +13,10 @@ commit that causes it.
 | `app.thinking.cycle` default key | `shift+tab` | `alt+t` | `shift+tab` became `app.tab.previous` |
 | Agent tabs | one session per terminal | several concurrent tabs, each with its own `AgentSessionRuntime` | [Agent Tabs](tabs.md) |
 | Session deletion | deletes the selected session file | refuses while the owning tab has a turn in progress | another tab may still be writing that file |
+| `app.model.cycleForward` default key | `ctrl+p` | no default key | `ctrl+p` opens the command palette |
+| Quit | `ctrl+d` exits, no confirmation | `ctrl+q` (`ctrl+shift+q` on Windows and WSL) asks first; `ctrl+d` unchanged | [Command Palette and Quit Confirmation](command-palette.md) |
 
-## Upstream pages that are now stale
+## Upstream pages and source text that are now stale
 
 Deliberately left unpatched:
 
@@ -23,9 +25,12 @@ Deliberately left unpatched:
 | `packages/coding-agent/docs/usage.md:49` | "Press `Shift+Tab` to cycle through supported levels" | the cycle key is `alt+t` |
 | `packages/coding-agent/docs/keybindings.md:155` | `app.thinking.cycle` default `shift+tab` | default is `alt+t` |
 | `packages/coding-agent/src/experimental/micro/README.md:30` | "Shift+Tab: cycle the current model's supported thinking levels" | micro's own status line reads the live binding, so only this hardcoded line is wrong |
+| `packages/coding-agent/docs/keybindings.md:152` | `app.model.cycleForward` default `ctrl+p` | no default key; `ctrl+p` is `app.palette` |
+| `packages/coding-agent/docs/models.md:33` | "`Ctrl+P` cycles through available models" | `ctrl+p` opens the command palette; only `shift+ctrl+p` still cycles, and backwards only |
+| `packages/coding-agent/src/cli/args.ts:303` (source text) | `--models` help calls them "patterns for Ctrl+P cycling" | `ctrl+p` opens the command palette; the cycle keys are `shift+ctrl+p`, `alt+p` on Windows and WSL |
 
-Neither page lists the tab keybindings or the tab slash commands either; [Agent Tabs](tabs.md) is
-the reference for both.
+The pages above list neither the tab keybindings nor the tab slash commands; [Agent Tabs](tabs.md)
+is the reference for both.
 
 ## Upstream files this fork edits
 
@@ -37,7 +42,9 @@ that calls into `mixcode/` code:
 - `packages/coding-agent/src/modes/interactive/components/custom-editor.ts`
 - `packages/coding-agent/src/core/keybindings.ts`
 - `packages/coding-agent/src/core/slash-commands.ts`
+- `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/main.ts`
+- `packages/coding-agent/test/extensions-runner.test.ts`
 - `AGENTS.md`, `.gitignore`
 
 ## Paths that exist only in this fork

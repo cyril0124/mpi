@@ -204,7 +204,7 @@ describe("ExtensionRunner", () => {
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			const keybindings = { ...defaultKeybindings, "app.model.cycleForward": "ctrl+n" as KeyId };
+			const keybindings = { ...defaultKeybindings, "app.palette": "ctrl+n" as KeyId };
 			const shortcuts = runner.getShortcuts(keybindings);
 
 			expect(shortcuts.has("ctrl+p")).toBe(true);

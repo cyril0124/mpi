@@ -18,7 +18,6 @@ import {
 	type Usage,
 } from "@earendil-works/pi-ai/compat";
 import type {
-	AutocompleteItem,
 	AutocompleteProvider,
 	EditorComponent,
 	Keybinding,
@@ -26,7 +25,6 @@ import type {
 	MarkdownTheme,
 	OverlayHandle,
 	OverlayOptions,
-	SlashCommand,
 	TuiMainScreenRenderState,
 } from "@earendil-works/pi-tui";
 import * as TuiLayouts from "@earendil-works/pi-tui";
@@ -34,7 +32,6 @@ import {
 	CombinedAutocompleteProvider,
 	type Component,
 	Container,
-	fuzzyFilter,
 	getCapabilities,
 	hyperlink,
 	Markdown,
@@ -163,13 +160,14 @@ import { FooterComponent, formatTokens } from "./components/footer.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { createMermaidMarkdownTransformer } from "./components/mermaid.ts";
-import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
-import { ModelSelectorComponent } from "./components/model-selector.ts";
 import {
-	type AuthSelectorProvider,
-	formatAuthSelectorProviderType,
-	OAuthSelectorComponent,
-} from "./components/oauth-selector.ts";
+	CommandPaletteComponent,
+	type CommandPaletteEntry,
+} from "./components/mixcode/command-palette/command-palette.ts";
+import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
+import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
+import { ModelSelectorComponent } from "./components/model-selector.ts";
+import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
@@ -189,8 +187,8 @@ import { TrustSelectorComponent } from "./components/trust-selector.ts";
 import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import { editInExternalEditor } from "./external-editor.ts";
+import { type CommandSource, collectSlashCommands } from "./mixcode/command-list.ts";
 import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
-import { getModelSearchText } from "./model-search.ts";
 import { shareSession } from "./session-share.ts";
 import {
 	getAvailableThemes,
@@ -226,6 +224,19 @@ function isWorkingStatusEditor(editor: EditorComponent): editor is WorkingStatus
 		editor.embedWorkingStatus === true &&
 		"setWorkingStatusIndicator" in editor &&
 		typeof editor.setWorkingStatusIndicator === "function"
+	);
+}
+
+interface AutocompleteEditor extends EditorComponent {
+	isShowingAutocomplete(): boolean;
+}
+
+/** True while the editor's own command popup owns the keyboard. */
+function isShowingAutocomplete(editor: EditorComponent): boolean {
+	return (
+		"isShowingAutocomplete" in editor &&
+		typeof editor.isShowingAutocomplete === "function" &&
+		(editor as AutocompleteEditor).isShowingAutocomplete()
 	);
 }
 
@@ -349,59 +360,6 @@ function llamaCppPostLoginGuidance(actionLabel: string, loadedModelCount: number
 		: `${actionLabel}. Use /model to select a loaded llama.cpp model, or /llama to manage models.`;
 }
 
-type LoginProviderCompletionOption = {
-	id: string;
-	name: string;
-	authTypes: AuthSelectorProvider["authType"][];
-};
-
-const AUTH_TYPE_ORDER = { oauth: 0, api_key: 1 } satisfies Record<AuthSelectorProvider["authType"], number>;
-
-function createFuzzyAutocompleteItems<T>(
-	items: T[],
-	prefix: string,
-	getSearchText: (item: T) => string,
-	toAutocompleteItem: (item: T) => AutocompleteItem,
-): AutocompleteItem[] | null {
-	const filtered = fuzzyFilter(items, prefix, getSearchText);
-	if (filtered.length === 0) return null;
-	return filtered.map(toAutocompleteItem);
-}
-
-function getLoginProviderCompletionOptions(
-	providerOptions: readonly AuthSelectorProvider[],
-): LoginProviderCompletionOption[] {
-	const byId = new Map<string, LoginProviderCompletionOption>();
-	for (const provider of providerOptions) {
-		const existing = byId.get(provider.id);
-		if (existing) {
-			if (!existing.authTypes.includes(provider.authType)) {
-				existing.authTypes.push(provider.authType);
-				existing.authTypes.sort((a, b) => AUTH_TYPE_ORDER[a] - AUTH_TYPE_ORDER[b]);
-			}
-			continue;
-		}
-		byId.set(provider.id, {
-			id: provider.id,
-			name: provider.name,
-			authTypes: [provider.authType],
-		});
-	}
-	return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function getLoginProviderSearchText(provider: LoginProviderCompletionOption): string {
-	const authTypes = provider.authTypes
-		.map((authType) => `${authType} ${formatAuthSelectorProviderType(authType)}`)
-		.join(" ");
-	return `${provider.id} ${provider.name} ${authTypes}`;
-}
-
-function formatLoginProviderCompletionDescription(provider: LoginProviderCompletionOption): string {
-	const authTypes = provider.authTypes.map(formatAuthSelectorProviderType).join("/");
-	return provider.name === provider.id ? authTypes : `${provider.name} · ${authTypes}`;
-}
-
 /**
  * Parse `/new-session [--focus|--no-focus] [title]`.
  * Defaults to focusing the new tab.
@@ -469,6 +427,12 @@ export interface InteractiveModeOptions {
 	 */
 	createRuntime?: CreateAgentSessionRuntimeFactory;
 }
+
+/** Share of the terminal height the command-palette overlay may take. */
+const COMMAND_PALETTE_HEIGHT_PERCENT = 80;
+
+// The command list the editor's autocomplete and the command palette share lives in
+// `./mixcode/command-list.ts`, next to the palette that also reads it.
 
 export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;
@@ -772,101 +736,22 @@ export class InteractiveMode {
 			}));
 	}
 
+	/**
+	 * The command-list dependencies of this instance.
+	 */
+	private static commandSource(mode: InteractiveMode): CommandSource {
+		return {
+			session: mode.session,
+			settingsManager: mode.settingsManager,
+			skillCommands: mode.skillCommands,
+			describe: (description, sourceInfo) => mode.prefixAutocompleteDescription(description, sourceInfo),
+			loginProviders: () => mode.getLoginProviderOptions(),
+		};
+	}
+
 	private createBaseAutocompleteProvider(): AutocompleteProvider {
-		// Define commands for autocomplete
-		const slashCommands: SlashCommand[] = BUILTIN_SLASH_COMMANDS.map((command) => ({
-			name: command.name,
-			description: command.description,
-			...(command.argumentHint && { argumentHint: command.argumentHint }),
-		}));
-
-		const modelCommand = slashCommands.find((command) => command.name === "model");
-		if (modelCommand) {
-			modelCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
-				const models =
-					this.session.scopedModels.length > 0
-						? this.session.scopedModels.map((s) => s.model)
-						: this.session.modelRuntime.getAvailableSnapshot();
-
-				if (models.length === 0) return null;
-
-				// Create items with provider/id format
-				const items = models.map((m) => ({
-					id: m.id,
-					provider: m.provider,
-					name: m.name,
-					label: `${m.provider}/${m.id}`,
-				}));
-
-				return createFuzzyAutocompleteItems(items, prefix, getModelSearchText, (item) => ({
-					value: item.label,
-					label: item.id,
-					description: item.provider,
-				}));
-			};
-		}
-
-		const thinkingCommand = slashCommands.find((command) => command.name === "thinking");
-		if (thinkingCommand) {
-			thinkingCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
-				return createFuzzyAutocompleteItems(
-					this.session.getAvailableThinkingLevels(),
-					prefix,
-					(level) => level,
-					(level) => ({
-						value: level,
-						label: level,
-					}),
-				);
-			};
-		}
-
-		const loginCommand = slashCommands.find((command) => command.name === "login");
-		if (loginCommand) {
-			loginCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
-				const providers = getLoginProviderCompletionOptions(this.getLoginProviderOptions());
-				return createFuzzyAutocompleteItems(providers, prefix, getLoginProviderSearchText, (provider) => ({
-					value: provider.id,
-					label: provider.id,
-					description: formatLoginProviderCompletionDescription(provider),
-				}));
-			};
-		}
-
-		// Convert prompt templates to SlashCommand format for autocomplete
-		const templateCommands: SlashCommand[] = this.session.promptTemplates.map((cmd) => ({
-			name: cmd.name,
-			description: this.prefixAutocompleteDescription(cmd.description, cmd.sourceInfo),
-			...(cmd.argumentHint && { argumentHint: cmd.argumentHint }),
-		}));
-
-		// Convert extension commands to SlashCommand format
-		const builtinCommandNames = new Set(slashCommands.map((c) => c.name));
-		const extensionCommands: SlashCommand[] = this.session.extensionRunner
-			.getRegisteredCommands()
-			.filter((cmd) => !builtinCommandNames.has(cmd.name))
-			.map((cmd) => ({
-				name: cmd.invocationName,
-				description: this.prefixAutocompleteDescription(cmd.description, cmd.sourceInfo),
-				getArgumentCompletions: cmd.getArgumentCompletions,
-			}));
-
-		// Build skill commands from session.skills (if enabled)
-		this.skillCommands.clear();
-		const skillCommandList: SlashCommand[] = [];
-		if (this.settingsManager.getEnableSkillCommands()) {
-			for (const skill of this.session.resourceLoader.getSkills().skills) {
-				const commandName = `skill:${skill.name}`;
-				this.skillCommands.set(commandName, skill.filePath);
-				skillCommandList.push({
-					name: commandName,
-					description: this.prefixAutocompleteDescription(skill.description, skill.sourceInfo),
-				});
-			}
-		}
-
 		return new CombinedAutocompleteProvider(
-			[...slashCommands, ...templateCommands, ...extensionCommands, ...skillCommandList],
+			collectSlashCommands(InteractiveMode.commandSource(this)),
 			this.sessionManager.getCwd(),
 			this.fdPath,
 		);
@@ -1072,10 +957,12 @@ export class InteractiveMode {
 				hint("app.clear", "to clear"),
 				rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
 				hint("app.exit", "to exit (empty)"),
+				hint("app.palette", "for the command palette"),
+				hint("app.quit", "to quit"),
 				hint("app.suspend", "to suspend"),
 				keyHint("tui.editor.deleteToLineEnd", "to delete to end"),
 				hint("app.thinking.cycle", "to cycle thinking level"),
-				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
+				rawKeyHint(keyText("app.model.cycleBackward"), "to cycle models back"),
 				hint("app.model.select", "to select model"),
 				hint("app.tools.expand", "to expand tools"),
 				hint("app.thinking.toggle", "to expand thinking"),
@@ -3952,6 +3839,8 @@ export class InteractiveMode {
 		// Register app action handlers
 		this.defaultEditor.onAction("app.clear", () => this.handleCtrlC());
 		this.defaultEditor.onCtrlD = () => this.handleCtrlD();
+		this.defaultEditor.onAction("app.quit", () => this.showQuitConfirm());
+		this.defaultEditor.onAction("app.palette", () => this.handlePaletteShortcut());
 		this.defaultEditor.onAction("app.suspend", () => this.handleCtrlZ());
 		this.defaultEditor.onAction("app.thinking.cycle", () => this.cycleThinkingLevel());
 		this.defaultEditor.onAction("app.model.cycleForward", () => this.cycleModel("forward"));
@@ -4109,6 +3998,15 @@ export class InteractiveMode {
 			if (text === "/hotkeys") {
 				this.handleHotkeysCommand();
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/palette") {
+				this.editor.setText("");
+				this.showCommandPalette();
+				return;
+			}
+			if (text.startsWith("/palette ")) {
+				this.showError("Usage: /palette");
 				return;
 			}
 			if (text === "/fork") {
@@ -5807,6 +5705,80 @@ export class InteractiveMode {
 		this.editorContainer.addChild(created.component);
 		this.ui.setFocus(created.focus);
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Command palette (Ctrl+P): list every runnable command and run the chosen one.
+	 * Skipped while the editor's own command popup is up, because that popup already
+	 * owns the keyboard.
+	 */
+	private handlePaletteShortcut(): void {
+		if (isShowingAutocomplete(this.editor)) return;
+		this.showCommandPalette();
+	}
+
+	private showCommandPalette(): void {
+		// The palette never lists itself: its only row would reopen what is already open.
+		const commands: CommandPaletteEntry[] = collectSlashCommands(InteractiveMode.commandSource(this))
+			.filter((command) => command.name !== "palette")
+			.map((command) => ({ name: command.name, description: command.description }));
+		if (commands.length === 0) return;
+
+		// The overlay takes this share of the terminal, and clamps to the terminal as well, so a
+		// window shorter than the panel's own chrome still loses the frame.
+		const rowBudget = Math.floor((this.ui.terminal.rows * COMMAND_PALETTE_HEIGHT_PERCENT) / 100);
+		let handle: OverlayHandle | undefined;
+		const palette = new CommandPaletteComponent(
+			commands,
+			rowBudget,
+			(name) => {
+				handle?.hide();
+				this.runCommandFromPalette(name);
+			},
+			() => handle?.hide(),
+		);
+		handle = this.ui.showOverlay(palette, {
+			anchor: "center",
+			width: "78%",
+			maxHeight: `${COMMAND_PALETTE_HEIGHT_PERCENT}%`,
+			margin: 1,
+		});
+	}
+
+	/**
+	 * Run a palette selection through the editor's submit path, so the command's own
+	 * argument parsing, gating and error reporting apply unchanged. The command sees
+	 * its own text in the editor; once it is done with the editor, the draft that was
+	 * there goes back, so picking from the palette never costs the user what they had
+	 * typed.
+	 */
+	private runCommandFromPalette(name: string): void {
+		const text = `/${name}`;
+		const draft = this.editor.getText();
+		// A command that cleared the editor, or left the command text in it, is done with it.
+		const restoreDraft = () => {
+			const remaining = this.editor.getText();
+			if (!remaining.trim() || remaining === text) this.editor.setText(draft);
+		};
+		this.editor.setText(text);
+		void Promise.resolve(this.defaultEditor.onSubmit?.(text)).then(restoreDraft, (error: unknown) => {
+			restoreDraft();
+			this.showError(error instanceof Error ? error.message : String(error));
+		});
+	}
+
+	/**
+	 * Quit confirmation (Ctrl+Q). Ctrl+D keeps its immediate exit; this chord asks
+	 * first, so a stray press cannot end a session mid-task.
+	 */
+	private showQuitConfirm(): void {
+		let handle: OverlayHandle | undefined;
+		const hide = () => handle?.hide();
+		const overlay = new QuitConfirmComponent(() => {
+			hide();
+			void this.shutdown();
+		}, hide);
+		handle = this.ui.showOverlay(overlay, { anchor: "center", width: 72, margin: 1 });
 	}
 
 	private showSettingsSelector(): void {
@@ -7643,9 +7615,10 @@ export class InteractiveMode {
 		const interrupt = this.getAppKeyDisplay("app.interrupt");
 		const clear = this.getAppKeyDisplay("app.clear");
 		const exit = this.getAppKeyDisplay("app.exit");
+		const quit = this.getAppKeyDisplay("app.quit");
+		const palette = this.getAppKeyDisplay("app.palette");
 		const suspend = this.getAppKeyDisplay("app.suspend");
 		const cycleThinkingLevel = this.getAppKeyDisplay("app.thinking.cycle");
-		const cycleModelForward = this.getAppKeyDisplay("app.model.cycleForward");
 		const selectModel = this.getAppKeyDisplay("app.model.select");
 		const expandTools = this.getAppKeyDisplay("app.tools.expand");
 		const toggleThinking = this.getAppKeyDisplay("app.thinking.toggle");
@@ -7688,9 +7661,11 @@ export class InteractiveMode {
 | \`${interrupt}\` | Cancel autocomplete / abort streaming |
 | \`${clear}\` | Clear editor (first) / exit (second) |
 | \`${exit}\` | Exit (when editor is empty) |
+| \`${quit}\` | Quit (asks first) |
+| \`${palette}\` | Open command palette |
 | \`${suspend}\` | Suspend to background |
 | \`${cycleThinkingLevel}\` | Cycle thinking level |
-| \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
+| \`${cycleModelBackward}\` | Cycle to previous model |
 | \`${selectModel}\` | Open model selector |
 | \`${expandTools}\` | Toggle tool output expansion |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
