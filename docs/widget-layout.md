@@ -49,3 +49,27 @@ it.
 While a tab renders its widgets in the chat tail, both dock slots render nothing and the tail's own
 budget takes over. See [Inline Widgets](inline-widgets.md) for the tail's rules, including the
 priority order and the jitter guard.
+
+## Side panel
+
+`→` (`app.widgets.panel`) on an empty composer opens the tab's side panel: a right-hand column that
+collects every above- and below-editor widget beside the chat, so the dock stops rendering them.
+The composer keeps the full width — only the transcript's row region is split. `→` again closes
+the panel. The toggle is per tab and needs nothing persisted; a session starts with it closed.
+
+Opening requires at least one widget and a terminal of at least 80 columns; a refused open says
+why with a toast. Below 80 columns an already-open panel stops splitting instead of crushing the
+chat, and the widgets return to the dock.
+
+The column is one third of the terminal width (at least 30 cells) with a muted left border, a
+pinned dim `Widgets` title, a dim `─ key ─` rule heading each widget, and a dim `→ to close` hint
+as its last row. Wide widget lines wrap instead of truncating, and content taller than the panel
+scrolls at the wheel (3 rows per event) with `↑ more` / `↓ more` marking hidden rows; the wheel
+over the chat keeps scrolling the chat. A drag that starts on the panel selects within the panel
+only — points clamp to its body cells, and releasing copies the selected text without the frame,
+like any other copy.
+
+While an extension interaction (a selector, input, editor, or custom component) owns the
+composer, the panel stays open but leaves the wheel to the chat, and its toggle key goes to the
+focused component instead. In [inline mode](inline-widgets.md) the chat-tail widget block stands
+down while the panel is open; the tail and its collapse state return when it closes.

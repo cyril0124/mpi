@@ -246,6 +246,12 @@ import {
 	toastBoxWidth,
 	toastCardRows,
 } from "./components/mixcode/toast/toast-card.ts";
+import {
+	createWidgetPanelTabState,
+	WIDGET_PANEL_MIN_TERMINAL_WIDTH,
+	WidgetPanelComponent,
+	type WidgetPanelTabState,
+} from "./components/mixcode/widget-panel/widget-panel.ts";
 import { WindowedTranscript } from "./components/mixcode/windowed-chat/windowed-transcript.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
@@ -695,6 +701,8 @@ export class InteractiveMode {
 	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
 	private extensionInput: ExtensionInputComponent | undefined = undefined;
 	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
+	/** True while an extension custom component owns the composer (non-overlay). */
+	private extensionCustomOpen = false;
 	private extensionTerminalInputSubscriptions = new Set<{
 		handler: (data: string) => { consume?: boolean; data?: string } | undefined;
 		unsubscribe: () => void;
@@ -704,6 +712,7 @@ export class InteractiveMode {
 	private extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
 	private extensionWidgetsBelow = new Map<string, Component & { dispose?(): void }>();
 	private dockWidgets!: DockWidgetBudget;
+	private widgetPanel!: WidgetPanelComponent;
 
 	// Custom footer from extension (undefined = use built-in footer)
 	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
@@ -722,6 +731,8 @@ export class InteractiveMode {
 	private readonly tabTranscript = new Map<string, { signature: string; chat: Component[]; loaded: Component[] }>();
 	/** Session-only inline widget mode and collapse state, per tab id. */
 	private readonly inlineWidgetTabStates = new Map<string, InlineWidgetTabState>();
+	/** Per-tab side-panel state; a new tab starts closed and nothing is persisted. */
+	private readonly widgetPanelTabStates = new Map<string, WidgetPanelTabState>();
 	private inlineWidgets!: InlineWidgetsComponent;
 	/** MixCode settings (`mixcode_settings.json`), with defaults applied. */
 	private mixcodeSettings: MixCodeSettings = { ui: { inlineWidgets: DEFAULT_INLINE_WIDGETS } };
@@ -816,7 +827,10 @@ export class InteractiveMode {
 		this.documentContainer = new Container();
 		this.inlineWidgets = new InlineWidgetsComponent({
 			widgets: () => ({ above: this.extensionWidgetsAbove, below: this.extensionWidgetsBelow }),
-			state: () => this.inlineWidgetState(),
+			// The side panel owns the widgets while it is visible, so the chat-tail block
+			// stands down until it closes again; a panel state left open in a mode or width
+			// that cannot show it keeps the tail.
+			state: () => (this.widgetPanelVisible() ? undefined : this.inlineWidgetState()),
 			viewportRows: () => this.inlineViewportRows(),
 		});
 		this.buildDocumentChildren();
@@ -834,9 +848,19 @@ export class InteractiveMode {
 			widgets: () => ({ above: this.extensionWidgetsAbove, below: this.extensionWidgetsBelow }),
 			chromeRows: (width) => this.dockChromeRows(width),
 			viewportRows: () => this.renderer.terminal.rows,
-			// The dock shows no widget rows in inline mode (the chat tail has them) or on
-			// MixCode Home, whose chrome stays off the agent widgets.
-			widgetsHidden: () => this.inlineWidgetState()?.enabled === true || this.homeSelection.active,
+			// The dock shows no widget rows in inline mode (the chat tail has them), on
+			// MixCode Home, or while the side panel owns them on a wide enough terminal.
+			widgetsHidden: () =>
+				this.inlineWidgetState()?.enabled === true || this.homeSelection.active || this.widgetPanelVisible(),
+		});
+		this.widgetPanel = new WidgetPanelComponent({
+			widgets: () => ({ above: this.extensionWidgetsAbove, below: this.extensionWidgetsBelow }),
+			state: () => this.widgetPanelState(),
+			terminalWidth: () => this.ui.terminal.columns,
+			viewportHeight: () => this.transcriptScrollView?.viewportHeight ?? 0,
+			// A pending extension interaction takes the wheel with the chat.
+			interactive: () => !this.extensionUiPending(),
+			copySelection: (text) => this.copyWidgetPanelSelection(text),
 		});
 		this.keybindings = KeybindingsManager.create();
 		setKeybindings(this.keybindings);
@@ -1114,6 +1138,9 @@ export class InteractiveMode {
 			footer: this.footerContainer,
 			// Vim mode is a reading surface: its rows go to the transcript instead.
 			widgetsVisible: () => !this.vimTabState().active,
+			// The side panel splits the transcript rows while it is visible; the
+			// composer dock below keeps the full width either way.
+			panel: { component: this.widgetPanel, visible: (width) => this.widgetPanel.isOpen(width) },
 			scrollbar: this.settingsManager.getFullscreenScrollbar(),
 			scrollbarTrackStyle: (text) => theme.fg("scrollbarTrack", text),
 			scrollbarThumbStyle: (text) => theme.fg("scrollbarThumb", text),
@@ -2979,6 +3006,7 @@ export class InteractiveMode {
 	private disposeTabUi(tabId: string): void {
 		this.tabTranscript.delete(tabId);
 		this.inlineWidgetTabStates.delete(tabId);
+		this.widgetPanelTabStates.delete(tabId);
 		const ui = this.tabUi.get(tabId);
 		if (!ui) return;
 		this.tabUi.delete(tabId);
@@ -3998,6 +4026,103 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Side-panel state of the active tab. Created on first use, so a new tab
+	 * starts closed and nothing is persisted. Home owns no panel.
+	 */
+	private widgetPanelState(): WidgetPanelTabState | undefined {
+		if (this.homeSelection.active) return undefined;
+		const hasTabManager = this.tabManager !== undefined;
+		const tabId = this.activeTabIdForUi ?? (hasTabManager ? undefined : SINGLE_SESSION_TAB_ID);
+		if (!tabId) return undefined;
+		let state = this.widgetPanelTabStates.get(tabId);
+		if (!state) {
+			state = createWidgetPanelTabState();
+			this.widgetPanelTabStates.set(tabId, state);
+		}
+		return state;
+	}
+
+	/** Whether the side panel splits the chat right now (open tab on a wide terminal). */
+	private widgetPanelVisible(): boolean {
+		return this.widgetPanel.isOpen(this.ui.terminal.columns);
+	}
+
+	/**
+	 * Whether an extension interaction (selector, input, editor, or custom
+	 * component) currently owns the composer. Keys already route to it through
+	 * focus; this feeds the side panel, which must leave the wheel to the chat
+	 * while a pending interaction is up, matching the input the chat would get.
+	 */
+	private extensionUiPending(): boolean {
+		return (
+			this.extensionInput !== undefined ||
+			this.extensionEditor !== undefined ||
+			this.activeSelectorToken !== undefined ||
+			this.extensionCustomOpen
+		);
+	}
+
+	/** Copy a finished side-panel selection and report it like any other copy. */
+	private copyWidgetPanelSelection(text: string): void {
+		void (async () => {
+			try {
+				await copyToClipboard(text);
+				this.notifyToast("success", copyConfirmation(countGraphemes(text)));
+			} catch (error) {
+				this.notifyToast("error", copyFailure(error instanceof Error ? error.message : String(error)));
+			}
+		})();
+	}
+
+	/**
+	 * `app.widgets.panel` on an empty composer. Returns false to decline so the
+	 * key keeps flowing (editor caret move, extension shortcuts, Home arrows).
+	 */
+	private handleWidgetPanelKey(): boolean {
+		if (this.homeSelection.active) return false;
+		if (this.ui.mode !== "fullscreen") return false;
+		if (this.ui.hasOverlay()) return false;
+		if (this.editorAutocompleteOpen()) return false;
+		if (this.editor.getText().length > 0) return false;
+		this.toggleWidgetPanel();
+		return true;
+	}
+
+	/**
+	 * Toggle the side panel for the active tab. Opening needs at least one
+	 * above/below-editor widget and a wide-enough terminal; a refused open says
+	 * why with a toast. Closing always succeeds and resets the scroll.
+	 */
+	private toggleWidgetPanel(): void {
+		const state = this.widgetPanelState();
+		if (!state) return;
+		if (state.open) {
+			state.open = false;
+			state.scrollOffset = 0;
+			this.ui.requestRender();
+			return;
+		}
+		const hasWidgets = this.extensionWidgetsAbove.size > 0 || this.extensionWidgetsBelow.size > 0;
+		if (!hasWidgets) {
+			this.notifyToast("info", "No extension widgets to show.");
+			this.ui.requestRender();
+			return;
+		}
+		const columns = this.ui.terminal.columns;
+		if (columns > 0 && columns < WIDGET_PANEL_MIN_TERMINAL_WIDTH) {
+			this.notifyToast(
+				"warning",
+				`Terminal too narrow for the widget panel (need ${WIDGET_PANEL_MIN_TERMINAL_WIDTH} cols).`,
+			);
+			this.ui.requestRender();
+			return;
+		}
+		state.open = true;
+		state.scrollOffset = 0;
+		this.ui.requestRender();
+	}
+
+	/**
 	 * Inline mode and collapse state of the active tab. Created on first use from
 	 * the global default, so a new tab inherits it and nothing is persisted.
 	 */
@@ -4508,6 +4633,9 @@ export class InteractiveMode {
 				if (!customEditor.onVimEnterArmKey) {
 					customEditor.onVimEnterArmKey = (data: string) => this.defaultEditor.onVimEnterArmKey?.(data) ?? false;
 				}
+				if (!customEditor.onWidgetPanelKey) {
+					customEditor.onWidgetPanelKey = (data: string) => this.defaultEditor.onWidgetPanelKey?.(data) ?? false;
+				}
 				// Copy action handlers (clear, suspend, model switching, etc.)
 				for (const [action, handler] of this.defaultEditor.actionHandlers) {
 					customEditor.actionHandlers.set(action, handler);
@@ -4579,6 +4707,7 @@ export class InteractiveMode {
 			const close = (result: T) => {
 				if (closed) return;
 				closed = true;
+				this.extensionCustomOpen = false;
 				if (isOverlay) this.ui.hideOverlay();
 				else restoreEditor();
 				// Note: both branches above already call requestRender
@@ -4613,6 +4742,7 @@ export class InteractiveMode {
 						options?.onHandle?.(handle);
 					} else {
 						this.disposeActiveSelector();
+						this.extensionCustomOpen = true;
 						this.editorContainer.clear();
 						this.editorContainer.addChild(component);
 						this.ui.setFocus(component);
@@ -4889,6 +5019,10 @@ export class InteractiveMode {
 				}
 			}
 		};
+
+		// The empty-composer Right toggles the widget side panel; it runs before
+		// extension shortcuts, which may bind the same key.
+		this.defaultEditor.onWidgetPanelKey = () => this.handleWidgetPanelKey();
 
 		// Register app action handlers
 		this.defaultEditor.onAction("app.clear", () => this.handleCtrlC());

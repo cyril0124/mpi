@@ -39,6 +39,7 @@ export interface AppKeybindings {
 	"app.tab.new": true;
 	"app.tab.close": true;
 	"app.home.returnHome": true;
+	"app.widgets.panel": true;
 	"app.home.selectPrevious": true;
 	"app.home.selectNext": true;
 	"app.home.attach": true;
@@ -190,6 +191,10 @@ export const KEYBINDINGS = {
 	"app.home.returnHome": {
 		defaultKeys: "left",
 		description: "Return to MixCode Home when the composer is empty",
+	},
+	"app.widgets.panel": {
+		defaultKeys: "right",
+		description: "Toggle the extension widget side panel when the composer is empty",
 	},
 	"app.home.selectPrevious": { defaultKeys: "up", description: "Select the previous agent on MixCode Home" },
 	"app.home.selectNext": { defaultKeys: "down", description: "Select the next agent on MixCode Home" },

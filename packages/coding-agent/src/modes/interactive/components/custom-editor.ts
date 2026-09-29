@@ -45,6 +45,12 @@ export class CustomEditor extends Editor {
 	/** Handler for extension-registered shortcuts. Returns true if handled. */
 	public onExtensionShortcut?: (data: string) => boolean;
 	/**
+	 * Handler for the widget-panel key. Runs before extension shortcuts so an
+	 * extension binding the same key cannot take it from the panel toggle;
+	 * returning false declines and the key keeps flowing.
+	 */
+	public onWidgetPanelKey?: (data: string) => boolean;
+	/**
 	 * Hint drawn after the caret while the composer is empty, already styled by
 	 * the caller. Returning undefined, or a non-empty composer, draws nothing.
 	 */
@@ -147,6 +153,11 @@ export class CustomEditor extends Editor {
 		// The empty-editor vim entry arm intercepts ctrl+u before the editor's
 		// delete-to-line-start binding; a non-empty editor falls through.
 		if (this.onVimEnterArmKey?.(data)) {
+			return;
+		}
+
+		// The empty-composer panel toggle outranks extension shortcuts for its key.
+		if (this.keybindings.matches(data, "app.widgets.panel") && this.onWidgetPanelKey?.(data)) {
 			return;
 		}
 

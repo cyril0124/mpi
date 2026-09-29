@@ -18,6 +18,15 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Added
 
+- Extension widget side panel: `→` (`app.widgets.panel`) on an empty composer opens a per-tab
+  right-hand column that collects the above- and below-editor widgets beside the chat, so they stop
+  stacking around the composer. The column carries a pinned `Widgets` title, a dim section rule per
+  widget, and a `→ to close` hint; content taller than the panel scrolls with the wheel (routed by
+  region, so chat keeps its own wheel), wide lines wrap rather than truncate, and hidden rows are
+  marked `↑ more`/`↓ more`. Opening needs at least one widget and a terminal of at least 80 columns
+  (a toast says why otherwise). A drag that starts on the panel selects within the panel only —
+  points clamp to its body cells and releasing copies the text ANSI-clean without the frame, so a
+  selection never crosses the chat/panel split in either direction.
 - Input dock: the composer is framed by a rounded card whose top edge carries the working status,
   the mode badges (`[VIM]`, `[SHELL]`, `↑ N`), the tab name and the exact context usage
   (`12.3k/200k`), and whose bottom edge carries `↓ N more`. Under it sits one meta row with the
