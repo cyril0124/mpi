@@ -698,8 +698,6 @@ class TransientOverlay {
 	}
 }
 
-
-
 export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;
 	private tabManager: TabManager | undefined;
@@ -1403,8 +1401,7 @@ export class InteractiveMode {
 			// then each restored tab until it is bound.
 			this.stopTabLoadingRedraw = bindTabLoadingRedraw(
 				() => this.ui.requestRender(),
-				() =>
-					this.restoringTabs.length > 0 || (this.tabManager?.list().some((tab) => tab.loading) ?? false),
+				() => this.restoringTabs.length > 0 || (this.tabManager?.list().some((tab) => tab.loading) ?? false),
 			);
 		}
 		if (this.mixcodeSettingsError) {
@@ -2683,7 +2680,10 @@ export class InteractiveMode {
 		if (!manager) return { tabs: [], activeId: "" };
 		const zenAgent = this.zenHidesTabBar() ? manager.activeTab() : undefined;
 		const activeId = this.homeSelection.active ? HOME_TAB_ID : manager.getActive().id;
-		const tabs = this.restoringTabs.length > 0 ? this.restoringTabBarItems(activeId) : manager.list().map((tab) => this.tabBarItem(tab, activeId));
+		const tabs =
+			this.restoringTabs.length > 0
+				? this.restoringTabBarItems(activeId)
+				: manager.list().map((tab) => this.tabBarItem(tab, activeId));
 		return {
 			tabs,
 			activeId,
@@ -2796,9 +2796,7 @@ export class InteractiveMode {
 		if (!manager) return [];
 		if (this.restoringTabs.length === 0) return [...manager.list()];
 		const byId = new Map(manager.list().map((tab) => [tab.id, tab]));
-		return this.restoringTabs
-			.map((entry) => byId.get(entry.id))
-			.filter((tab): tab is AgentTab => tab !== undefined);
+		return this.restoringTabs.map((entry) => byId.get(entry.id)).filter((tab): tab is AgentTab => tab !== undefined);
 	}
 
 	/** Focus an existing agent tab, restoring its draft and transcript. */

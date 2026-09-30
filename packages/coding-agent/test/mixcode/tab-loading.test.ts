@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	bindTabLoadingRedraw,
-	TAB_LOADING_FRAMES,
 	TAB_LOADING_FRAME_MS,
+	TAB_LOADING_FRAMES,
 	tabLoadingFrame,
 } from "../../src/modes/interactive/components/mixcode/multi-tab/tab-loading.ts";
 
