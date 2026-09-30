@@ -278,17 +278,20 @@ export class ToolExecutionComponent extends Container {
 
 	override render(width: number): string[] {
 		const themeName = getActiveThemeName();
-		if (this.renderedLines && this.renderedWidth === width && this.renderedTheme === themeName) {
-			return this.renderedLines;
+		if (!this.renderedLines || this.renderedWidth !== width || this.renderedTheme !== themeName) {
+			this.renderedLines = this.renderCard(width);
+			this.renderedWidth = width;
+			this.renderedTheme = themeName;
 		}
-		const lines = this.renderCard(width);
-		this.renderedLines = lines;
-		this.renderedWidth = width;
-		this.renderedTheme = themeName;
-		return lines;
+		// The cue is painted after the memo: a passive move requests a render without
+		// invalidating, so a memoized cue would keep serving the pre-hover rows.
+		return this.hover.paint(this.renderedLines, width);
 	}
 
-	/** One card, from scratch. The result is memoized by {@link render}. */
+	/**
+	 * One card, from scratch, without the pointer cue. The result is memoized by
+	 * {@link render}, which paints the cue over it, so the memo never depends on hover.
+	 */
 	private renderCard(width: number): string[] {
 		if (this.hideComponent) {
 			return [];
@@ -316,10 +319,10 @@ export class ToolExecutionComponent extends Container {
 					lines.push(...imageComponent.render(width));
 				}
 			}
-			return this.hover.paint(lines, width);
+			return lines;
 		}
 
-		return this.hover.paint(super.render(width), width);
+		return super.render(width);
 	}
 
 	override handleMouse(event: TuiMouseEvent): ReturnType<Container["handleMouse"]> {

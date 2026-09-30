@@ -349,6 +349,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Pointer hover stopped painting on message blocks: the render memo added for tab-switch performance
+  cached the hover-painted rows, and a passive move requests a render without invalidating, so the
+  cached pre-hover rows were served and the cue never appeared. The tool card now memoizes only the
+  unpainted card and paints the cue after the memo, and a hovered thinking region reports the flip so
+  the assistant block drops its memo.
+
 - A theme switch (preview or permanent) left message blocks showing the old colors: `invalidate()` only cleared the block-level memo but did not propagate to child Markdown/Box components, whose caches are keyed on content and width only. The fix propagates `super.invalidate()` down the subtree when the theme name has changed, and skips the walk on relayouts and background tab-binds where the theme is unchanged.
 
 - The first visit to a tab still re-rendered its whole visible window, so a switch to an

@@ -37,6 +37,7 @@ export class BlockHover implements Component {
 	private hovered = false;
 	private readonly onClick: (event: TuiMouseEvent) => TuiMouseEventResult | undefined;
 	private readonly cardFirstRow: number;
+	private readonly onHoverChange: () => void;
 
 	/**
 	 * `owner` is the block that paints the cue; it owns one hover, so a second
@@ -44,14 +45,19 @@ export class BlockHover implements Component {
 	 * `cardFirstRow` is that block's first row carrying its own card: rows above it
 	 * are the blank gap a block may render to the message before it, which holds no
 	 * card for the cue to fill and no target for a click.
+	 * `onHoverChange` fires whenever the hovered state flips, so a block whose render
+	 * is memoized can drop the memo: a move requests a render but never invalidates,
+	 * and a cached cue would otherwise never change.
 	 */
 	constructor(
 		owner: Component,
 		onClick?: (event: TuiMouseEvent) => TuiMouseEventResult | undefined,
 		cardFirstRow = 0,
+		onHoverChange?: () => void,
 	) {
 		this.onClick = onClick ?? (() => undefined);
 		this.cardFirstRow = Math.max(0, cardFirstRow);
+		this.onHoverChange = onHoverChange ?? (() => {});
 		pointerCueCards.set(owner, this.cardFirstRow);
 	}
 
@@ -72,6 +78,7 @@ export class BlockHover implements Component {
 		const inside = onCard && event.x >= 0 && event.x < event.width && event.y < event.height;
 		const changed = inside !== this.hovered;
 		this.hovered = inside;
+		if (changed) this.onHoverChange();
 		return { handled: true, render: changed };
 	}
 

@@ -219,12 +219,19 @@ export class AssistantMessageComponent extends Container {
 							},
 						);
 				this.contentContainer.addChild(
-					new HoverRegion(thinkingComponent, (event) => {
-						if (event.type !== "click" || event.button !== "left") return undefined;
-						this.thinkingVisibilityOverrides.set(runIndex, !hidden);
-						if (this.lastMessage) this.updateContent(this.lastMessage);
-						return { handled: true };
-					}),
+					new HoverRegion(
+						thinkingComponent,
+						(event) => {
+							if (event.type !== "click" || event.button !== "left") return undefined;
+							this.thinkingVisibilityOverrides.set(runIndex, !hidden);
+							if (this.lastMessage) this.updateContent(this.lastMessage);
+							return { handled: true };
+						},
+						// The memo caches this region's painted cue, and a move does not invalidate.
+						() => {
+							this.renderedLines = undefined;
+						},
+					),
 				);
 				if (hasVisibleContentAfter) {
 					this.contentContainer.addChild(new Spacer(1));
