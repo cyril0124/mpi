@@ -25,6 +25,12 @@ point `## [Unreleased]` at the new tag.
   `*.json` and keying each file by the `name` inside it, rather than loading `dark.json` and
   `light.json` by name — so a new built-in theme is a new file, and a file that fails to parse or
   validate is skipped instead of taking the whole built-in set with it.
+- The dock meta row carries icons: a Nerd Font glyph before the model and the thinking level in its
+  full layouts, the context meter's own glyph, and a mark on the git branch. `ui.icons.mode` in
+  `mixcode_settings.json` (`nerd`, `ascii`, `auto`) picks the alphabet — `auto` probes the terminal,
+  and the ASCII set (`M`, `~`, `#`, `*`, with a `#`/`-` meter) keeps a terminal without the font
+  readable — and `/settings` exposes it as *Icon mode* in the MixCode section. See
+  [Icons](docs/icons.md).
 - `/toggle-zen-mode` (also in the `ctrl+p` palette) hides the tab bar's chips and leaves their row to
   the transcript. The separator under the bar stays and takes over what the chips still reported: one
   dot per other agent with something to report, in tab order — an accent braille frame while a tab

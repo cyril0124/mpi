@@ -18,6 +18,7 @@
 - **[Thinking 尾窗预览](thinking-tail-preview.zh.md)**：隐藏的 thinking 渲染为 3 行尾窗，耗时实时后冻结；含 `ui.boxedHiddenThinking` 设置项与标签覆盖。
 - **[组件布局](widget-layout.zh.md)**：坞区如何限制组件堆叠、单组件行数上限，以及把挂件移到对话旁边的 `→` 侧栏。
 - **[输入坞区](input-dock.zh.md)**：包住输入框的圆角卡片、上边框中的标签页名与精确上下文用量，以及取代 pi 状态页脚的 meta 行。
+- **[图标](icons.zh.md)**：坞区 meta 行的字形集、`ui.icons.mode` 设置（`nerd`、`ascii`、`auto`），以及 `auto` 能识别的终端。
 
 ## Fork 机制
 

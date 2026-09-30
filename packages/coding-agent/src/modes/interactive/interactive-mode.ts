@@ -137,11 +137,14 @@ import {
 } from "../../core/mixcode/home/home-state.ts";
 import {
 	DEFAULT_BOXED_HIDDEN_THINKING,
+	DEFAULT_ICON_MODE,
 	DEFAULT_INLINE_WIDGETS,
+	type IconMode,
 	loadMixCodeSettings,
 	type MixCodeSettings,
 	mixcodeSettingsFilePath,
 	writeBoxedHiddenThinkingSetting,
+	writeIconModeSetting,
 	writeInlineWidgetsSetting,
 } from "../../core/mixcode/mixcode-settings.ts";
 import {
@@ -889,7 +892,11 @@ export class InteractiveMode {
 	private inlineWidgets!: InlineWidgetsComponent;
 	/** MixCode settings (`mixcode_settings.json`), with defaults applied. */
 	private mixcodeSettings: MixCodeSettings = {
-		ui: { inlineWidgets: DEFAULT_INLINE_WIDGETS, boxedHiddenThinking: DEFAULT_BOXED_HIDDEN_THINKING },
+		ui: {
+			inlineWidgets: DEFAULT_INLINE_WIDGETS,
+			boxedHiddenThinking: DEFAULT_BOXED_HIDDEN_THINKING,
+			icons: { mode: DEFAULT_ICON_MODE },
+		},
 	};
 	/** Set when the settings file could not be read; reported once the UI is up. */
 	private mixcodeSettingsError: string | undefined;
@@ -2798,6 +2805,7 @@ export class InteractiveMode {
 			contextWindow: usage?.contextWindow ?? model?.contextWindow ?? 0,
 			extensionStatuses: this.footerDataProvider.getExtensionStatuses(),
 			statusesHidden: this.vimTabState().active,
+			iconMode: this.mixcodeSettings.ui.icons.mode,
 		};
 	}
 
@@ -4638,6 +4646,23 @@ export class InteractiveMode {
 			if (child instanceof AssistantMessageComponent) child.setBoxedHiddenThinking(enabled);
 		}
 		this.windowedTranscript?.invalidate();
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Apply the `ui.icons.mode` setting: write it to MixCode's settings file and
+	 * repaint the meta row with the glyphs the new mode picks.
+	 */
+	private setIconModeGlobal(mode: IconMode): void {
+		this.mixcodeSettings = { ...this.mixcodeSettings, ui: { ...this.mixcodeSettings.ui, icons: { mode } } };
+		try {
+			writeIconModeSetting(mixcodeSettingsFilePath(), mode);
+		} catch (error) {
+			this.showWarning(
+				`Failed to save mixcode_settings.json: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		this.footer.invalidate();
 		this.ui.requestRender();
 	}
 
@@ -7932,6 +7957,7 @@ export class InteractiveMode {
 					warnings: this.settingsManager.getWarnings(),
 					inlineWidgets: this.mixcodeSettings.ui.inlineWidgets,
 					boxedHiddenThinking: this.mixcodeSettings.ui.boxedHiddenThinking,
+					iconMode: this.mixcodeSettings.ui.icons.mode,
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -8125,6 +8151,9 @@ export class InteractiveMode {
 					},
 					onBoxedHiddenThinkingChange: (enabled) => {
 						this.setBoxedHiddenThinkingGlobal(enabled);
+					},
+					onIconModeChange: (mode) => {
+						this.setIconModeGlobal(mode);
 					},
 					onCancel: () => {
 						done();

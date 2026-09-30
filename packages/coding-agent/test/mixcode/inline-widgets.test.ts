@@ -140,7 +140,9 @@ async function bootInline(options: {
 		tabManager: undefined,
 		activeTabIdForUi: undefined,
 		inlineWidgetTabStates: new Map([[SESSION_KEY, state]]),
-		mixcodeSettings: { ui: { inlineWidgets: options.enabled ?? true, boxedHiddenThinking: true } },
+		mixcodeSettings: {
+			ui: { inlineWidgets: options.enabled ?? true, boxedHiddenThinking: true, icons: { mode: "nerd" } },
+		},
 		transcriptScrollView: undefined,
 		renderer: { terminal: { rows } },
 		windowedTranscript: document,

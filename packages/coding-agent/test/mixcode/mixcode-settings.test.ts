@@ -8,6 +8,7 @@ import type { MixCodeSettings } from "../../src/core/mixcode/mixcode-settings.ts
 import {
 	loadMixCodeSettings,
 	mixcodeSettingsFilePath,
+	writeIconModeSetting,
 	writeInlineWidgetsSetting,
 } from "../../src/core/mixcode/mixcode-settings.ts";
 import {
@@ -102,6 +103,34 @@ describe("mixcode_settings.json", () => {
 		expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ ui: { inlineWidgets: false } });
 	});
 
+	it("defaults the meta row to Nerd Font glyphs", () => {
+		const file = join(tempDir(), "mixcode_settings.json");
+		expect(loadMixCodeSettings(file).ui.icons.mode).toBe("nerd");
+	});
+
+	it("reads an explicit icon mode", () => {
+		const file = join(tempDir(), "mixcode_settings.json");
+		writeFileSync(file, '{\n  "ui": { "icons": { "mode": "ascii" } }\n}\n');
+		expect(loadMixCodeSettings(file).ui.icons.mode).toBe("ascii");
+	});
+
+	it("names the file and field when the icon mode is unknown", () => {
+		const file = join(tempDir(), "mixcode_settings.json");
+		writeFileSync(file, '{\n  "ui": { "icons": { "mode": "nerdfont" } }\n}\n');
+		expect(() => loadMixCodeSettings(file)).toThrow(/ui\.icons\.mode must be one of auto, nerd, ascii/);
+		expect(() => loadMixCodeSettings(file)).toThrow(file);
+	});
+
+	it("writes the icon mode without dropping the icon keys mixcode-pi owns", () => {
+		const file = join(tempDir(), "mixcode_settings.json");
+		writeFileSync(file, '{\n  "ui": { "icons": { "mode": "ascii", "glyphSet": "custom" } }\n}\n');
+		writeIconModeSetting(file, "auto");
+
+		expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({
+			ui: { icons: { mode: "auto", glyphSet: "custom" } },
+		});
+	});
+
 	it("stores the file in the state directory shared with mixcode-pi", () => {
 		const dir = tempDir();
 		vi.stubEnv("PI_CODING_AGENT_DIR", dir);
@@ -150,6 +179,7 @@ describe("/settings inline widgets row", () => {
 			tuiMode: "regular",
 			warnings: {},
 			inlineWidgets: true,
+			iconMode: "nerd",
 		} as unknown as SettingsConfig;
 		const callbacks = { onInlineWidgetsChange } as unknown as SettingsCallbacks;
 		const list = new SettingsSelectorComponent(config, callbacks).getSettingsList();

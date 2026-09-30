@@ -11,6 +11,7 @@ import {
 	Text,
 } from "@earendil-works/pi-tui";
 import { formatHttpIdleTimeoutMs, HTTP_IDLE_TIMEOUT_CHOICES } from "../../../core/http-dispatcher.ts";
+import { ICON_MODES, type IconMode } from "../../../core/mixcode/mixcode-settings.ts";
 import {
 	CACHE_WARMING_MODES,
 	type CacheWarmingMode,
@@ -95,6 +96,7 @@ export interface SettingsConfig {
 	warnings: WarningSettings;
 	inlineWidgets: boolean;
 	boxedHiddenThinking: boolean;
+	iconMode: IconMode;
 }
 
 export interface SettingsCallbacks {
@@ -135,6 +137,7 @@ export interface SettingsCallbacks {
 	onWarningsChange: (warnings: WarningSettings) => void;
 	onInlineWidgetsChange: (enabled: boolean) => void;
 	onBoxedHiddenThinkingChange: (enabled: boolean) => void;
+	onIconModeChange: (mode: IconMode) => void;
 	onCancel: () => void;
 }
 
@@ -749,6 +752,14 @@ export class SettingsSelectorComponent extends Container {
 				currentValue: config.boxedHiddenThinking ? "true" : "false",
 				values: ["true", "false"],
 			},
+			{
+				id: "icon-mode",
+				label: "Icon mode",
+				section: "MixCode",
+				description: "Glyphs in the dock meta row: Nerd Font icons, plain ASCII, or probe the terminal",
+				currentValue: config.iconMode,
+				values: [...ICON_MODES],
+			},
 		];
 
 		// Only show image toggle if terminal supports it
@@ -970,6 +981,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "boxed-hidden-thinking":
 						callbacks.onBoxedHiddenThinkingChange(newValue === "true");
+						break;
+					case "icon-mode":
+						callbacks.onIconModeChange(newValue as IconMode);
 						break;
 				}
 			},

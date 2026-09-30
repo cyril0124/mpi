@@ -21,11 +21,19 @@ export const DEFAULT_INLINE_WIDGETS = true;
 /** Hidden thinking blocks render as a 3-row tail instead of the placeholder. */
 export const DEFAULT_BOXED_HIDDEN_THINKING = true;
 
+/** How the meta row picks its glyphs: probe the terminal, or force one alphabet. */
+export const ICON_MODES = ["auto", "nerd", "ascii"] as const;
+export type IconMode = (typeof ICON_MODES)[number];
+
+/** Nerd Font glyphs unless the user asks the row to probe the terminal. */
+export const DEFAULT_ICON_MODE: IconMode = "nerd";
+
 /** Settings with every default applied. */
 export interface MixCodeSettings {
 	ui: {
 		inlineWidgets: boolean;
 		boxedHiddenThinking: boolean;
+		icons: { mode: IconMode };
 	};
 }
 
@@ -40,18 +48,26 @@ export function mixcodeSettingsFilePath(): string {
  * own settings there.
  */
 export function writeInlineWidgetsSetting(settingsFile: string, enabled: boolean): void {
-	writeUiBooleanSetting(settingsFile, "inlineWidgets", enabled);
+	writeUiSettings(settingsFile, (ui) => ({ ...ui, inlineWidgets: enabled }));
 }
 
 /** Write the hidden-thinking tail default; other keys survive, as above. */
 export function writeBoxedHiddenThinkingSetting(settingsFile: string, enabled: boolean): void {
-	writeUiBooleanSetting(settingsFile, "boxedHiddenThinking", enabled);
+	writeUiSettings(settingsFile, (ui) => ({ ...ui, boxedHiddenThinking: enabled }));
 }
 
-function writeUiBooleanSetting(settingsFile: string, key: string, enabled: boolean): void {
+/**
+ * Write the meta row's icon mode. `ui.icons` is an object mixcode-pi also owns,
+ * so the write merges into it and leaves its other keys alone.
+ */
+export function writeIconModeSetting(settingsFile: string, mode: IconMode): void {
+	writeUiSettings(settingsFile, (ui) => ({ ...ui, icons: { ...asRecord(ui.icons), mode } }));
+}
+
+/** Rewrite `ui` with one setting changed, leaving the rest of the file as it was. */
+function writeUiSettings(settingsFile: string, update: (ui: Record<string, unknown>) => Record<string, unknown>): void {
 	const next: Record<string, unknown> = { ...readSettingsSource(settingsFile) };
-	const ui = asRecord(next.ui);
-	next.ui = { ...ui, [key]: enabled };
+	next.ui = update(asRecord(next.ui));
 	writeSettingsFile(settingsFile, next);
 }
 
@@ -74,14 +90,28 @@ export function loadMixCodeSettings(settingsFile: string): MixCodeSettings {
 				DEFAULT_BOXED_HIDDEN_THINKING,
 				settingsFile,
 			),
+			icons: { mode: parseIconMode(asRecord(ui.icons).mode, settingsFile) },
 		},
 	};
 }
 
 function defaultMixCodeSettings(): MixCodeSettings {
 	return {
-		ui: { inlineWidgets: DEFAULT_INLINE_WIDGETS, boxedHiddenThinking: DEFAULT_BOXED_HIDDEN_THINKING },
+		ui: {
+			inlineWidgets: DEFAULT_INLINE_WIDGETS,
+			boxedHiddenThinking: DEFAULT_BOXED_HIDDEN_THINKING,
+			icons: { mode: DEFAULT_ICON_MODE },
+		},
 	};
+}
+
+/** A mode other than the three known ones is an error naming the file and the field. */ function parseIconMode(
+	value: unknown,
+	settingsFile: string,
+): IconMode {
+	if (value === undefined) return DEFAULT_ICON_MODE;
+	if ((ICON_MODES as readonly unknown[]).includes(value)) return value as IconMode;
+	throw new Error(`${settingsFile}: ui.icons.mode must be one of ${ICON_MODES.join(", ")}`);
 }
 
 /** A field present but not boolean is an error naming the file and the field. */

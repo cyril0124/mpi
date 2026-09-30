@@ -35,6 +35,8 @@ merge. Every place where this fork's behavior and upstream's documentation disag
   cap, and the `→` side panel that moves the widgets beside the chat.
 - **[Input Dock](input-dock.md)**: the rounded card around the composer, the tab name and exact
   context usage on its top edge, and the meta row that replaces pi's status footer.
+- **[Icons](icons.md)**: the glyph set of the dock meta row, the `ui.icons.mode` setting
+  (`nerd`, `ascii`, `auto`), and the terminals `auto` recognises.
 
 ## Fork Mechanics
 

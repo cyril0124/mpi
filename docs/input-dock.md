@@ -34,7 +34,7 @@ badges give way to it, and it takes the tab name's place before it would disappe
 ## The meta row
 
 ```
- anthropic/claude-sonnet-4-5    High   ~/proj/pi    # [██░░░░░░] 24.1%  * main
+ 󰚩 anthropic/claude-sonnet-4-5     High   ~/proj/pi     [██░░░░░░] 24.1%    main
  ● pi-subagents
 ```
 
@@ -45,7 +45,9 @@ reachable with the pointer. See [Workdir](tabs.md#workdir). The workdir only has
 row actually drew one: an extension footer that owns the row, or a row too narrow for the path,
 leaves nothing to click. The model reads as `<provider>/<model-id>`, so a session on a proxy or an
 aggregator still names the provider it is really going through. The meter has eight cells and is
-green below 50%, accent from 50%, and red from 80%.
+green below 50%, accent from 50%, and red from 80%. The glyphs the row paints come from
+`ui.icons.mode`: the Nerd Font set by default, ASCII on request or when `auto` finds no known
+terminal. See [Icons](icons.md).
 
 Every piece degrades in a fixed order as the terminal narrows: the branch goes first, then the
 meter, then the workdir compacts segment by segment, and the model drops to its id alone before it

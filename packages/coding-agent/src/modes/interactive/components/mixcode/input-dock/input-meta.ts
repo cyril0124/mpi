@@ -10,27 +10,20 @@
  * The model, the thinking level and the workdir are clickable: the render reports the cells
  * each one painted, and the dock footer opens that field's picker when a click lands inside
  * them.
+ *
+ * The glyphs come from `ui.icons.mode`.
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { DEFAULT_ICON_MODE, type IconMode } from "../../../../../core/mixcode/mixcode-settings.ts";
 import { theme } from "../../../theme/theme.ts";
 import { formatCwdForFooter } from "../../footer.ts";
 import { homeDir } from "../home-dir.ts";
+import { type IconGlyphs, resolveGlyphs } from "../icons.ts";
 import { compactWorkdir, padLine } from "../layout-text.ts";
 import { sanitizeTerminalText } from "../terminal-text.ts";
 
 /** Bar cells in the context meter. */
 const CONTEXT_BAR_WIDTH = 8;
-
-/**
- * Icons for the meta row. The model and thinking fields carry no glyph: the fork
- * has no Nerd Font detection, and a private-use glyph without the font paints a box.
- */
-const GLYPHS = {
-	context: "#",
-	git: "*",
-	barFilled: "█",
-	barEmpty: "░",
-} as const;
 
 /** A meta-row field that opens a picker when clicked. */
 export type MetaAction = "models" | "thinking" | "workdir";
@@ -65,6 +58,8 @@ export interface InputMetaData {
 	extensionStatuses: ReadonlyMap<string, string>;
 	/** Vim mode is a read-only surface, so the status row is hidden there. */
 	statusesHidden?: boolean;
+	/** `ui.icons.mode`; the row probes the terminal in `auto`. */
+	iconMode?: IconMode;
 }
 
 /**
@@ -75,11 +70,12 @@ export interface InputMetaData {
 export function renderInputMeta(data: InputMetaData, width: number): InputMetaRender {
 	if (width <= 0) return { lines: [], regions: [] };
 	const workdir = formatCwdForFooter(data.workdir, homeDir());
+	const glyphs = resolveGlyphs(data.iconMode);
 
 	// Absolute xxk/xxk lives on the card's top edge; this row keeps the meter only.
-	const contextBadge = ` ${contextBarAndPercentText(data.contextTokens, data.contextWindow)} `;
+	const contextBadge = ` ${contextBarAndPercentText(data.contextTokens, data.contextWindow, data.iconMode)} `;
 	const branch = data.gitBranch?.trim();
-	const git = branch ? theme.fg("accent", theme.bold(` ${GLYPHS.git} ${branch} `)) : "";
+	const git = branch ? theme.fg("accent", theme.bold(` ${glyphs.git} ${branch} `)) : "";
 	// Coverage falls back from the full right block to the meter alone, then to
 	// nothing, so the left block keeps the most room it can.
 	const rightOptions = [git ? `${contextBadge} ${git}` : contextBadge, contextBadge, ""];
@@ -88,7 +84,7 @@ export function renderInputMeta(data: InputMetaData, width: number): InputMetaRe
 	for (const candidate of rightOptions) {
 		const rightWidth = visibleWidth(candidate);
 		const leftBudget = candidate ? Math.max(0, width - rightWidth - 1) : width;
-		const attempt = renderInputMetaLeft(workdir, data.model, data.thinking, leftBudget);
+		const attempt = renderInputMetaLeft(workdir, data.model, data.thinking, leftBudget, glyphs);
 		if (!attempt.text) continue;
 		if (candidate && visibleWidth(attempt.text) + 1 + rightWidth > width) continue;
 		// A right block that squeezed the workdir off is worse than dropping it.
@@ -117,16 +113,21 @@ export function exactContextUsageText(tokens: number | null | undefined, limit: 
 	return `${formatCompactTokenCount(tokens)}/${formatCompactTokenCount(limit)}`;
 }
 
-/** Context meter: `# [████░░░░] 50.0%`. */
-export function contextBarAndPercentText(tokens: number | null | undefined, limit: number): string {
+/** Context meter: the context glyph, then eight cells and the percentage. */
+export function contextBarAndPercentText(
+	tokens: number | null | undefined,
+	limit: number,
+	iconMode: IconMode = DEFAULT_ICON_MODE,
+): string {
+	const glyphs = resolveGlyphs(iconMode);
 	const percent = contextUsagePercent(tokens, limit);
 	if (percent === undefined) {
 		// Empty meter until the first token count arrives; keep the width stable.
-		return theme.fg("dim", `${GLYPHS.context} [${GLYPHS.barEmpty.repeat(CONTEXT_BAR_WIDTH)}] ?%`);
+		return theme.fg("dim", `${glyphs.context} [${glyphs.barEmpty.repeat(CONTEXT_BAR_WIDTH)}] ?%`);
 	}
 	const filled = Math.max(0, Math.min(CONTEXT_BAR_WIDTH, Math.round((percent / 100) * CONTEXT_BAR_WIDTH)));
-	const cells = `${GLYPHS.barFilled.repeat(filled)}${GLYPHS.barEmpty.repeat(CONTEXT_BAR_WIDTH - filled)}`;
-	const bar = `${GLYPHS.context} [${cells}] ${percent.toFixed(1)}%`;
+	const cells = `${glyphs.barFilled.repeat(filled)}${glyphs.barEmpty.repeat(CONTEXT_BAR_WIDTH - filled)}`;
+	const bar = `${glyphs.context} [${cells}] ${percent.toFixed(1)}%`;
 	if (percent >= 80) return theme.fg("error", bar);
 	if (percent >= 50) return theme.fg("accent", bar);
 	return theme.fg("success", bar);
@@ -167,16 +168,24 @@ interface MetaMode {
 /**
  * The left block, in the richest layout that fits: full model name with the
  * thinking level and the workdir, then the module name, then a truncated model
- * with single-space gaps. In `strict` mode a part that does not fit fails
+ * with single-space gaps. The two full layouts carry a glyph per field; the
+ * tightest layout drops the glyphs along with the padding, since it exists to
+ * fit the narrowest terminal. In `strict` mode a part that does not fit fails
  * instead of compacting; the returned `fits` and `workdirIntact` say whether the
  * caller may use the block.
  */
-function renderInputMetaLeft(workdirPath: string, model: string, thinking: string, width: number): LeftBlock {
+function renderInputMetaLeft(
+	workdirPath: string,
+	model: string,
+	thinking: string,
+	width: number,
+	glyphs: IconGlyphs,
+): LeftBlock {
 	if (width <= 0) return { text: "", regions: [], fits: false, workdirIntact: false };
 	const moduleName = shortModelName(model);
 	const modes: MetaMode[] = [
-		{ model, thinking, gap: "  " },
-		{ model: moduleName, thinking, gap: "  " },
+		{ model: ` ${glyphs.model} ${model} `, thinking: ` ${glyphs.thinking} ${thinking} `, gap: "  " },
+		{ model: ` ${glyphs.model} ${moduleName} `, thinking: ` ${glyphs.thinking} ${thinking} `, gap: "  " },
 		{ model: moduleName, thinking, gap: " " },
 	];
 	// Strict modes need model, thinking and workdir all visible at natural width.
