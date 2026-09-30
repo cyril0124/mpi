@@ -39,6 +39,9 @@ moved the thinking cycle to `alt+t`. See [Upstream Drift](upstream-drift.md).
 | `/restore-workspace <name>` | Reopen a saved layout, closing tabs that are not part of it. |
 | `/delete-workspace <name>` | Delete a saved tab layout. |
 
+The session confirmations (`/close-session`, `/delete-session` and the two all-sessions variants)
+take `y` to confirm and `n` or `esc` to cancel, in addition to the arrow-key selector.
+
 ## Workdir
 
 `/workdir <path>` moves the current tab onto another working directory. The session itself keeps

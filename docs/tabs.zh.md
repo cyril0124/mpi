@@ -36,6 +36,9 @@
 | `/restore-workspace <name>` | 恢复命名工作区，关闭不属于该布局的标签页。 |
 | `/delete-workspace <name>` | 删除命名工作区。 |
 
+会话确认框（`/close-session`、`/delete-session` 以及两个 all-sessions 变体）除方向键选择器外，
+也可以按 `y` 确认、按 `n` 或 `esc` 取消。
+
 ## 工作目录
 
 `/workdir <path>` 把当前标签页切到另一个工作目录。会话本身继续运行：对话记录不变，agent 的

@@ -14,6 +14,8 @@ export interface ExtensionSelectorOptions {
 	timeout?: number;
 	onToggleToolsExpanded?: () => void;
 	description?: string;
+	/** Lowercase keys that pick an option directly, e.g. `{ y: "Yes", n: "No" }`. */
+	keyShortcuts?: Record<string, string>;
 }
 
 export class ExtensionSelectorComponent extends Container {
@@ -26,6 +28,7 @@ export class ExtensionSelectorComponent extends Container {
 	private baseTitle: string;
 	private countdown: CountdownTimer | undefined;
 	private onToggleToolsExpanded: (() => void) | undefined;
+	private keyShortcuts: Record<string, string> | undefined;
 
 	constructor(
 		title: string,
@@ -40,6 +43,7 @@ export class ExtensionSelectorComponent extends Container {
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
 		this.onToggleToolsExpanded = opts?.onToggleToolsExpanded;
+		this.keyShortcuts = opts?.keyShortcuts;
 		this.baseTitle = title;
 
 		this.addChild(new DynamicBorder());
@@ -67,7 +71,8 @@ export class ExtensionSelectorComponent extends Container {
 		this.addChild(new Spacer(1));
 		this.addChild(
 			new Text(
-				rawKeyHint("↑↓", "navigate") +
+				this.shortcutHint() +
+					rawKeyHint("↑↓", "navigate") +
 					"  " +
 					keyHint("tui.select.confirm", "select") +
 					"  " +
@@ -80,6 +85,14 @@ export class ExtensionSelectorComponent extends Container {
 		this.addChild(new DynamicBorder());
 
 		this.updateList();
+	}
+
+	/** `y yes  n no  `, one entry per shortcut, trailing separator included. */
+	private shortcutHint(): string {
+		const entries = Object.entries(this.keyShortcuts ?? {});
+		if (entries.length === 0) return "";
+		const hints = entries.map(([key, option]) => rawKeyHint(key, option.toLowerCase()));
+		return `${hints.join("  ")}  `;
 	}
 
 	private updateList(): void {
@@ -108,6 +121,9 @@ export class ExtensionSelectorComponent extends Container {
 			if (selected) this.onSelectCallback(selected);
 		} else if (kb.matches(keyData, "tui.select.cancel")) {
 			this.onCancelCallback();
+		} else {
+			const shortcut = this.keyShortcuts?.[keyData.toLowerCase()];
+			if (shortcut !== undefined) this.onSelectCallback(shortcut);
 		}
 	}
 

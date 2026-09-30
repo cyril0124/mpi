@@ -244,7 +244,7 @@ import { DynamicBorder } from "./components/dynamic-border.ts";
 import { EarendilAnnouncementComponent } from "./components/earendil-announcement.ts";
 import { ExtensionEditorComponent } from "./components/extension-editor.ts";
 import { ExtensionInputComponent } from "./components/extension-input.ts";
-import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
+import { ExtensionSelectorComponent, type ExtensionSelectorOptions } from "./components/extension-selector.ts";
 import { type FooterComponent, formatTokens } from "./components/footer.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
@@ -5298,7 +5298,7 @@ export class InteractiveMode {
 	private showExtensionSelector(
 		title: string,
 		options: string[],
-		opts?: ExtensionUIDialogOptions,
+		opts?: ExtensionUIDialogOptions & ExtensionSelectorOptions,
 	): Promise<string | undefined> {
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
@@ -5325,7 +5325,12 @@ export class InteractiveMode {
 					this.hideExtensionSelector();
 					resolve(undefined);
 				},
-				{ tui: this.ui, timeout: opts?.timeout, onToggleToolsExpanded: () => this.toggleToolOutputExpansion() },
+				{
+					tui: this.ui,
+					timeout: opts?.timeout,
+					keyShortcuts: opts?.keyShortcuts,
+					onToggleToolsExpanded: () => this.toggleToolOutputExpansion(),
+				},
 			);
 
 			this.disposeActiveSelector();
@@ -5356,7 +5361,10 @@ export class InteractiveMode {
 		message: string,
 		opts?: ExtensionUIDialogOptions,
 	): Promise<boolean> {
-		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts);
+		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], {
+			...opts,
+			keyShortcuts: { y: "Yes", n: "No" },
+		});
 		return result === "Yes";
 	}
 

@@ -240,6 +240,10 @@ point `## [Unreleased]` at the new tag.
 
 ### Changed
 
+- The session confirmations take the keys directly: `/close-session`, `/delete-session` and the
+  two all-sessions variants confirm on `y` and cancel on `n` next to the arrow-key selector, so the
+  question is answered without stepping onto the `Yes`/`No` row first. `esc` still cancels and the
+  `[yes]` argument still skips the prompt.
 - The composer card holds its text one column further from the left border: the draft, the empty
   composer's placeholder and the autocomplete menu all move right by one cell, the card's right edge
   stays where it was, and a click is translated so it still lands on the character under it. A pointer
