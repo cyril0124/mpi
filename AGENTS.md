@@ -63,6 +63,10 @@
 
 ## Upstream Fork
 
+Design every fork change to be merge-friendly: prefer new fork-owned files and narrow
+integration points, and avoid reformatting or unrelated edits in upstream-owned files so
+future official pi release merges touch as few overlapping lines as possible.
+
 This checkout is a fork of pi, not an upstream working tree. Fork-local rules live in [MIXCODE.md](MIXCODE.md) and fork documentation in [docs/](docs/README.md) — no upstream page under `packages/` is edited for fork behavior. Read `MIXCODE.md` before any fork work.
 
 ## Git
