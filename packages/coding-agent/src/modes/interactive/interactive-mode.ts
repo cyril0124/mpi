@@ -925,6 +925,8 @@ export class InteractiveMode {
 	private readonly pendingResourcesBlocks = new Set<string>();
 	/** Cached transcript components per tab, reused when the tab is unchanged. */
 	private readonly tabTranscript = new Map<string, { signature: string; chat: Component[]; loaded: Component[] }>();
+	/** Composer text parked with ctrl+c, per tab id, newest first. */
+	private readonly stashedPrompts = new Map<string, string[]>();
 	/** Session-only inline widget mode and collapse state, per tab id. */
 	private readonly inlineWidgetTabStates = new Map<string, InlineWidgetTabState>();
 	/** Per-tab side-panel state; a new tab starts closed and nothing is persisted. */
@@ -997,6 +999,7 @@ export class InteractiveMode {
 					this.homeMessageCache.delete(tabId);
 					clearHomeTabCache(tabId);
 					this.followUpStates.delete(tabId);
+					this.stashedPrompts.delete(tabId);
 				},
 				// Ring the bell when a tab the user is not looking at finishes, so a
 				// background result is noticeable with the terminal unfocused.
@@ -2889,9 +2892,19 @@ export class InteractiveMode {
 		const leavingHome = this.homeSelection.active;
 		this.leaveHome();
 		const current = manager.getActive();
-		if (tab.id === current.id) return;
-		// Home's composer is ephemeral: never store its text as a tab draft.
-		if (!leavingHome) manager.setDraft(current.id, this.editorText());
+		// Compare against the tab whose UI is mounted, not the manager's focus: a
+		// startup restore moves the focus without switching the UI, so the two can
+		// disagree and skipping the switch would leave the previous transcript up.
+		if (tab.id === this.activeTabIdForUi) {
+			// The bound tab is already the one to focus, so nothing is rebuilt and the
+			// render path that seeds the composer history does not run; seed it here.
+			this.syncEditorHistory();
+			return;
+		}
+		// Home's composer is ephemeral: never store its text as a tab draft. The
+		// manager's focus can already be `tab` while another tab's UI is mounted,
+		// so only save when the tab being left is a different one.
+		if (!leavingHome && current.id !== tab.id) manager.setDraft(current.id, this.editorText());
 		const active = manager.activate(tab.id);
 		await this.enqueueTabSwitch(() => this.switchActiveTab(active));
 	}
@@ -3420,6 +3433,9 @@ export class InteractiveMode {
 		this.hiddenThinkingLabel = this.tabUi.get(tab.id)?.hiddenThinkingLabel;
 		this.applyRuntimeSettings();
 		if (!this.restoreTranscript(tab.id)) this.renderCurrentSessionState();
+		// A warmed restored tab shows its parked transcript without re-rendering, so
+		// the render path that seeds the composer history is bypassed; seed it here.
+		this.syncEditorHistory();
 		// The windowed table stays: the reused transcript is the same component
 		// instances, and each block caches its own render against its content, so a
 		// quiet switch repaints without re-rendering the conversation. A rebuilt
@@ -3475,10 +3491,7 @@ export class InteractiveMode {
 			this.activeTabIdForUi = tab.id;
 			this.hiddenThinkingLabel = this.tabUi.get(tab.id)?.hiddenThinkingLabel;
 			// Leave the shared footer and the editor history alone: this build is not a visit.
-			this.renderSessionEntries(this.sessionManager.buildContextEntries(), {
-				updateFooter: false,
-				populateHistory: false,
-			});
+			this.renderSessionEntries(this.sessionManager.buildContextEntries(), { updateFooter: false });
 			// Render the parked blocks: each keeps its own rendered lines, so the first
 			// visit repaints rows it already has instead of rendering the window cold.
 			// The windowed container is not used here because it reads its block list
@@ -4281,6 +4294,43 @@ export class InteractiveMode {
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
 		this.renderInitialMessages();
+	}
+
+	/**
+	 * Seed the composer's `up`/`down` prompt history from the bound session's user
+	 * messages.
+	 *
+	 * The composer is shared by every tab, so an activation replaces the history
+	 * instead of appending to it: a revisited tab would otherwise repeat its own
+	 * messages, and two tabs would interleave. A warmed restored tab shows its
+	 * parked transcript without re-rendering, so this runs on its own as well as
+	 * from the render path.
+	 */
+	private syncEditorHistory(): void {
+		const texts: string[] = [];
+		for (const entry of this.sessionManager.buildContextEntries()) {
+			for (const message of sessionEntryToContextMessages(entry)) {
+				if (message.role !== "user") continue;
+				const text = this.getUserMessageText(message);
+				if (text) texts.push(text);
+			}
+		}
+		// Parked (ctrl+c) drafts are newer than anything the session recorded; keep
+		// them at the newest end so a revisit still recalls them. Keep only the newest
+		// copy of each prompt, so an entry equal to a newer one is dropped rather than
+		// repeated further down the list.
+		const tabId = this.activeTabIdForUi;
+		const stashed = tabId ? (this.stashedPrompts.get(tabId) ?? []) : [];
+		const oldestFirst = [...texts, ...[...stashed].reverse()];
+		const seen = new Set<string>();
+		const newestFirst: string[] = [];
+		for (let index = oldestFirst.length - 1; index >= 0; index--) {
+			const item = oldestFirst[index];
+			if (seen.has(item)) continue;
+			seen.add(item);
+			newestFirst.push(item);
+		}
+		this.editor.setHistory?.(newestFirst.reverse());
 	}
 
 	/**
@@ -6689,7 +6739,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(component);
 	}
 
-	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
+	private addMessageToChat(message: AgentMessage): void {
 		switch (message.role) {
 			case "bashExecution": {
 				const component = new BashExecutionComponent(message.command, this.ui, message.excludeFromContext);
@@ -6758,9 +6808,6 @@ export class InteractiveMode {
 					} else {
 						this.addUserMessage(textContent, message.timestamp);
 					}
-					if (options?.populateHistory) {
-						this.editor.addToHistory?.(textContent);
-					}
 				}
 				break;
 			}
@@ -6787,10 +6834,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private renderSessionItems(
-		items: readonly RenderSessionItem[],
-		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
-	): void {
+	private renderSessionItems(items: readonly RenderSessionItem[], options: { updateFooter?: boolean } = {}): void {
 		this.pendingTools.clear();
 		const renderedPendingTools = new Map<string, ToolExecutionComponent>();
 		// Cache misses are not persisted, unlike successful cache-warming usage.
@@ -6871,7 +6915,7 @@ export class InteractiveMode {
 				}
 			} else {
 				// All other messages use standard rendering
-				this.addMessageToChat(message, options);
+				this.addMessageToChat(message);
 			}
 		}
 
@@ -6885,12 +6929,8 @@ export class InteractiveMode {
 	 * Render session entries to chat. Used for initial load and rebuild after compaction.
 	 * @param entries Compaction-aware session entries to render
 	 * @param options.updateFooter Update footer state
-	 * @param options.populateHistory Add user messages to editor history
 	 */
-	private renderSessionEntries(
-		entries: SessionEntry[],
-		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
-	): void {
+	private renderSessionEntries(entries: SessionEntry[], options: { updateFooter?: boolean } = {}): void {
 		const items = entries.flatMap((entry): RenderSessionItem[] => {
 			if (entry.type === "custom" || (entry.type === "usage" && entry.kind === "cache_warm")) {
 				return [entry];
@@ -7016,10 +7056,8 @@ export class InteractiveMode {
 
 	renderInitialMessages(): void {
 		const entries = this.sessionManager.buildContextEntries();
-		this.renderSessionEntries(entries, {
-			updateFooter: true,
-			populateHistory: true,
-		});
+		this.renderSessionEntries(entries, { updateFooter: true });
+		this.syncEditorHistory();
 		this.renderProjectTrustWarningIfNeeded();
 
 		// Show compaction info if session was compacted
@@ -7079,9 +7117,32 @@ export class InteractiveMode {
 		if (now - this.lastSigintTime < 500) {
 			void this.shutdown();
 		} else {
+			this.stashEditorInput();
 			this.clearEditor();
+			// Clearing the composer also disarms a pending double-escape.
+			this.lastEscapeTime = 0;
 			this.lastSigintTime = now;
 		}
+	}
+
+	/**
+	 * Park the composer's text in the prompt history before `ctrl+c` clears it, so
+	 * `up` recalls it. Home's composer is ephemeral, so nothing is parked there.
+	 */
+	private stashEditorInput(): void {
+		const text = (this.editor.getExpandedText?.() ?? this.editor.getText()).trim();
+		if (!text || this.homeSelection.active) return;
+		const tabId = this.activeTabIdForUi;
+		if (!tabId) {
+			// No tabs: the one shared history takes the parked text.
+			this.editor.addToHistory?.(text);
+			return;
+		}
+		// Park the draft in the stash, then rebuild: the stash already drops an equal
+		// older copy, so the editor must not also append one.
+		const stashed = [text, ...(this.stashedPrompts.get(tabId) ?? []).filter((item) => item !== text)];
+		this.stashedPrompts.set(tabId, stashed.slice(0, 100));
+		this.syncEditorHistory();
 	}
 
 	private handleCtrlD(): void {

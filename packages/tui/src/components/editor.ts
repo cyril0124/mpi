@@ -434,6 +434,20 @@ export class Editor implements Component, Focusable {
 		}
 	}
 
+	/**
+	 * Replace the prompt history. `texts` is oldest first, matching the order the
+	 * session recorded them, so the newest entry ends up at the front where
+	 * history browsing starts. Browsing is abandoned: the entries it was walking
+	 * are being replaced.
+	 */
+	setHistory(texts: readonly string[]): void {
+		this.history = [];
+		this.exitHistoryBrowsing();
+		for (const text of texts) {
+			this.addToHistory(text);
+		}
+	}
+
 	private isEditorEmpty(): boolean {
 		return this.state.lines.length === 1 && this.state.lines[0] === "";
 	}
@@ -478,7 +492,9 @@ export class Editor implements Component, Focusable {
 				this.setTextInternal("");
 			}
 		} else {
-			this.setTextInternal(this.history[this.historyIndex] || "", direction === -1 ? "start" : "end");
+			// The recalled entry takes the caret at its end, so the next keystroke appends
+			// instead of overwriting from the front.
+			this.setTextInternal(this.history[this.historyIndex] || "");
 		}
 	}
 
@@ -488,11 +504,11 @@ export class Editor implements Component, Focusable {
 	}
 
 	/** Internal setText that doesn't reset history state - used by navigateHistory */
-	private setTextInternal(text: string, cursorPlacement: "start" | "end" = "end"): void {
+	private setTextInternal(text: string): void {
 		const lines = text.split("\n");
 		this.state.lines = lines.length === 0 ? [""] : lines;
-		this.state.cursorLine = cursorPlacement === "start" ? 0 : this.state.lines.length - 1;
-		this.setCursorCol(cursorPlacement === "start" ? 0 : this.state.lines[this.state.cursorLine]?.length || 0);
+		this.state.cursorLine = this.state.lines.length - 1;
+		this.setCursorCol(this.state.lines[this.state.cursorLine]?.length || 0);
 		// Reset scroll - render() will adjust to show cursor
 		this.scrollOffset = 0;
 
@@ -921,10 +937,12 @@ export class Editor implements Component, Focusable {
 
 		// Arrow key navigation (with history support)
 		if (kb.matches(data, "tui.editor.cursorUp")) {
-			if (
-				this.isOnFirstVisualLine() &&
-				(this.isEditorEmpty() || this.historyIndex > -1 || this.state.cursorCol === 0)
-			) {
+			// A recalled entry keeps its caret at the end, so browsing steps to the older
+			// entry from any visual line; the caret moves within the text only outside a
+			// browse.
+			const browsingHistory = this.historyIndex > -1;
+			const atFirstLineStart = this.isOnFirstVisualLine() && (this.isEditorEmpty() || this.state.cursorCol === 0);
+			if (browsingHistory || atFirstLineStart) {
 				this.navigateHistory(-1);
 			} else if (this.isOnFirstVisualLine()) {
 				// Already at top - jump to start of line

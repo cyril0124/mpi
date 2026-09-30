@@ -18,6 +18,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- `ctrl+c` with text in the composer now clears it and parks that text at the front of the prompt
+  history, so `up` recalls it (a stash). The stash is kept per tab and rebuilt into the composer on
+  each activation, so it survives a tab switch and a revisited tab does not repeat it. Home's
+  ephemeral composer parks nothing, a new session keeps parked drafts, and a second `ctrl+c`
+  within 500 ms still quits.
+
 - `/compact` accepts an optional `provider/modelId` before its instructions, including model IDs containing `/`. Only the summary request uses that model; the session model and thinking level stay unchanged. Model references are offered by slash-command completion until the instruction separator is entered.
 - Compaction status names a requested summary model and colors its message by reason: accent for manual, warning for threshold, and error for context overflow.
 - Startup lists the previous run's tabs before building any of them: the tab bar carries a chip per
@@ -252,6 +258,10 @@ point `## [Unreleased]` at the new tag.
 
 ### Changed
 
+- Prompt-history recall puts the caret at the end of the recalled entry instead of its start, and
+  `up`/`down` keep stepping between entries while one is browsed rather than moving the caret
+  inside a multi-line entry. See [Upstream Drift](docs/upstream-drift.md).
+
 - The session confirmations take the keys directly: `/close-session`, `/delete-session` and the
   two all-sessions variants confirm on `y` and cancel on `n` next to the arrow-key selector, so the
   question is answered without stepping onto the `Yes`/`No` row first. `esc` still cancels and the
@@ -360,6 +370,14 @@ point `## [Unreleased]` at the new tag.
   longer dim.
 
 ### Fixed
+
+- `up`/`down` stopped recalling a restored tab's messages: the startup restore warm-builds every
+  persisted tab, and a warm build deliberately seeds nothing, so the composer's history was never
+  filled, and attaching from Home to the already-focused tab skipped the tab switch that used to
+  fill it. The composer now rebuilds its prompt history from the bound session on every activation,
+  replacing it so two tabs cannot interleave, and `activateTab` compares against the tab whose UI is
+  mounted rather than the manager's focus, so a restore that moves the focus still switches the
+  surface. `pi-tui`'s editor gains `setHistory(texts)`, also declared on `EditorComponent`.
 
 - The chat tail lost both of its separating rows in inline widget mode: the dock dropped every row
   while its above-editor widgets were hidden, including the row that keeps the editor off the chat,

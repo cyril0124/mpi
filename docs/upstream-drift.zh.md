@@ -37,6 +37,7 @@
 | MixCode Home | 没有此页面；transcript 始终显示当前会话 | `home` 伪标签页列出所有已打开 agent 并给出对话预览 | [MixCode Home](home.zh.md) |
 | `left`/`right`/`up`/`down`/`enter`/`ctrl+f` | 编辑器光标、历史、提交 | 在 Home 上用于选择/附着/发送/过滤列表；在 agent 标签页仍归编辑器 | [MixCode Home](home.zh.md) |
 | 应用动作键处理器 | 命中的处理器直接消费该按键 | 处理器可返回 `false` 主动放弃该键，并会收到原始按键数据 | Home 的绑定不能抢走输入框的 `up`/`down`/`left`/`right`/`enter`，而 `enter` 同时匹配裸换行（`ctrl+j`） |
+| 历史回溯 | 回溯到的条目，`up` 时光标在其开头、`down` 时在末尾；浏览多行条目时方向键在条目内移动光标 | 回溯到的条目光标一律在末尾；浏览期间方向键继续在条目间步进 | 光标应落在下一次输入的位置，唤回后是追加而不是从头覆盖；浏览也不该被多行条目卡住 |
 | 空输入框 | 不显示任何内容 | agent 标签页提示 `Describe your next change...  @ files  / commands  ← Home · → widgets`，Vim 标签页列出导航键位，Home 上写出目标 agent 并用中性的 thinking 边框色 | 名册明确了目标；Home 自身没有 thinking 等级；输入框也说明它能接受什么。两个按键提示取自实际键位绑定，在不会分栏的 TUI 模式下不显示侧栏那一半 |
 | 交互模式下的控制台输出 | `console.log` 等方法直接写到终端 | 画进底部居中的 `Notice` 弹窗（不进对话记录）；`/console-history` 把最近 1000 行交给外部编辑器打开，带时间戳与产生它的标签页 | [控制台历史](console-history.zh.md) |
 | 输入框边框 | 输入框上下各一条平直的分隔线 | 圆角卡片，上边框承载工作状态、模式徽标、标签页名与精确上下文用量，卡片内文字与左边框之间空出一格 | 输入区无需额外表头即可说明当前 agent 与上下文；见 [输入坞区](input-dock.zh.md) |
