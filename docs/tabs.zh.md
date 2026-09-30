@@ -101,11 +101,15 @@
 
 `<agentDir>` 是 `PI_CODING_AGENT_DIR` 或 `~/.pi/agent`。工作目录的哈希算法与 mixcode-pi 一致，所以两者共用一个目录：在其中一个里打开的标签页，另一个也能看到。
 
+标签页集合、顺序、标题、颜色发生变化时写这两个文件，进程退出时再写一次；切换焦点不会写。
+
 保存的工作区包含 `name`、`startup_workdir`、`updated_at`、`active_session_id`，以及每个标签页一项（`session_id`、`session_path`、`title`、`workdir`、`model`、`thinking_level`）。
 
 ## 启动恢复
 
 启动时只有满足"起始会话已持久化且不含任何对话轮次"（即全新会话，不是 `-r`/`--continue`）才恢复上次布局。最多恢复 12 个标签页（`RESTORE_TAB_LIMIT`），超出的部分会提示而不是静默丢弃；读不出的会话文件跳过；恢复成功后关闭临时的启动标签页。标题和颜色从 `mixcode_state.json` 重新应用；默认命名的标签页会重新编号，避免被关掉的启动标签页占掉号段。
+
+布局会在任何一个标签页建好之前就列进 tab 栏：每个持久化的标签页立刻有一个 chip，在自己的标签页就绪前显示旋转的 spinner。随后按记录的次序逐个构建，同一时刻只有一个 session 在内存里；打开后停在 MixCode Home，上一次聚焦的标签页只是 roster 里的选中项，不会被直接打开。
 
 ## 会话删除
 

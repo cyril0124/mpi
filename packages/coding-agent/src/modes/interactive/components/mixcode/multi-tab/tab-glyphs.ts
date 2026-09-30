@@ -8,9 +8,14 @@
  * cadence it uses.
  */
 import type { TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
+import { tabLoadingFrame } from "./tab-loading.ts";
 
-/** Status glyphs of the tab chips; the Home roster cards and the zen dots share them. */
-export const TAB_STATUS_GLYPHS: Record<TabStatus, string> = {
+/**
+ * Status glyphs of the tab chips; the Home roster cards and the zen dots share them.
+ * `"loading"` is a view state rather than a tab status, so it is not in the table:
+ * a loading chip paints the spinner frame from {@link tabStatusGlyph} instead.
+ */
+export const TAB_STATUS_GLYPHS: Record<Exclude<TabStatus, "loading">, string> = {
 	idle: "-",
 	running: "\u25cf",
 	thinking: "\u25cf",
@@ -20,6 +25,8 @@ export const TAB_STATUS_GLYPHS: Record<TabStatus, string> = {
 
 /** Glyph for a tab's status; an unread completion reads as done, an error outranks it. */
 export function tabStatusGlyph(status: TabStatus, unread: boolean): string {
+	// A loading tab spins: the frame comes from the clock, not from the tab.
+	if (status === "loading") return tabLoadingFrame();
 	if (unread && status !== "error") return TAB_STATUS_GLYPHS.done;
 	return TAB_STATUS_GLYPHS[status];
 }

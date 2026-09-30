@@ -43,6 +43,11 @@ export interface AgentTab {
 	status: TabStatus;
 	/** True when a background tab finished a turn the user has not viewed yet. */
 	unread: boolean;
+	/**
+	 * True from the moment the tab exists until its runtime is bound and it can run a
+	 * turn. The chip shows a spinner while it holds, and `status` is left untouched.
+	 */
+	loading: boolean;
 	/** Non-persisted: when this tab last took focus, starting its title shimmer. */
 	activatedAt?: number;
 	workingStartedAt?: string;
@@ -162,7 +167,8 @@ export class TabManager {
 
 	/**
 	 * Focus a tab, clearing its unread badge and a `done` status. An error status
-	 * survives focus so the failure stays visible until the next run.
+	 * survives focus so the failure stays visible until the next run. Focus is not a
+	 * layout change, so the persisted layout is left to the callers that alter it.
 	 */
 	activate(id: string): AgentTab {
 		const tab = this.get(id);
@@ -175,7 +181,6 @@ export class TabManager {
 		if (previous && previous !== tab) transferVimMode(previous.vim, tab.vim);
 		if (previous) this.transferZenMode(previous, tab);
 		this.noteRecent(id);
-		this.notifyLayoutChanged();
 		this.onTabsChanged();
 		return tab;
 	}
@@ -187,8 +192,14 @@ export class TabManager {
 		return this.activate(this.tabs[nextIndex]!.id);
 	}
 
-	/** Create a fresh session in a new tab. */
-	async createTab(options: { title?: string; workdir?: string } = {}): Promise<AgentTab> {
+	/**
+	 * Create a fresh session in a new tab.
+	 *
+	 * `id` names the tab up front, which a restore needs: the tab bar lists every
+	 * persisted tab before its runtime exists, and the chip has to be the same one
+	 * once it does.
+	 */
+	async createTab(options: { title?: string; workdir?: string; id?: string } = {}): Promise<AgentTab> {
 		const active = this.getActive();
 		const cwd = options.workdir ?? active.runtime.cwd;
 		const sessionDir = active.runtime.session.sessionManager.getSessionDir();
@@ -199,11 +210,21 @@ export class TabManager {
 			sessionManager,
 			sessionStartEvent: { type: "session_start", reason: "new" },
 		});
-		return this.addRuntime(runtime, options.title);
+		const title = this.resolveTabTitle(options.title);
+		const tab = this.attachTab(title, runtime, options.id);
+		const previous = this.getActive();
+		this.setActive(tab);
+		this.transferZenMode(previous, tab);
+		this.notifyLayoutChanged();
+		this.onTabsChanged();
+		return tab;
 	}
 
-	/** Open an existing session file in a new tab (`/restore-workspace`). */
-	async openSessionTab(sessionPath: string, options: { title?: string; workdir?: string } = {}): Promise<AgentTab> {
+	/** Open an existing session file in a new tab (`/restore-workspace`). `id` as in `createTab`. */
+	async openSessionTab(
+		sessionPath: string,
+		options: { title?: string; workdir?: string; id?: string } = {},
+	): Promise<AgentTab> {
 		const active = this.getActive();
 		const sessionDir = active.runtime.session.sessionManager.getSessionDir();
 		const sessionManager = SessionManager.open(sessionPath, sessionDir, options.workdir);
@@ -213,18 +234,9 @@ export class TabManager {
 			sessionManager,
 			sessionStartEvent: { type: "session_start", reason: "resume" },
 		});
-		return this.addRuntime(runtime, options.title);
-	}
-
-	/**
-	 * Add a freshly created runtime as the new active tab: resolve its title,
-	 * attach it, focus it, hand it the chrome mode the tab being left held, and
-	 * notify the layout listeners.
-	 */
-	private addRuntime(runtime: AgentSessionRuntime, title: string | undefined): AgentTab {
+		const title = this.resolveTabTitle(options.title);
+		const tab = this.attachTab(title, runtime, options.id);
 		const previous = this.getActive();
-		const resolved = this.resolveTabTitle(title);
-		const tab = this.attachTab(resolved, runtime);
 		this.setActive(tab);
 		this.transferZenMode(previous, tab);
 		this.notifyLayoutChanged();
@@ -334,6 +346,9 @@ export class TabManager {
 	markDone(id: string): void {
 		const tab = this.get(id);
 		if (!tab) throw new Error(`Unknown tab: ${id}`);
+		if (tab.loading) {
+			throw new Error("Tab is still loading; /mark-done is only allowed once it is ready");
+		}
 		if (isWorkingStatus(tab.status)) {
 			throw new Error("Agent is still working; /mark-done is only allowed when idle");
 		}
@@ -369,6 +384,18 @@ export class TabManager {
 		if (!tab) return;
 		tab.unread = unread;
 		this.onTabsChanged();
+	}
+
+	/**
+	 * Clear a tab's loading state once its runtime is bound, so its chip shows the
+	 * real status again. Returns whether it changed.
+	 */
+	markLoaded(id: string): boolean {
+		const tab = this.get(id);
+		if (!tab?.loading) return false;
+		tab.loading = false;
+		this.onTabsChanged();
+		return true;
 	}
 
 	/** MRU rank of an open tab (0 = most recent), or -1 when not recently used. */
@@ -420,7 +447,7 @@ export class TabManager {
 		return this.recentIds.filter((id) => this.tabs.some((tab) => tab.id === id));
 	}
 
-	private attachTab(title: string, runtime: AgentSessionRuntime): AgentTab {
+	private attachTab(title: string, runtime: AgentSessionRuntime, id?: string): AgentTab {
 		// A session that already carries a name (resume, `/name`, auto-rename) owns
 		// the tab title; otherwise fall back to the caller-provided default.
 		const sessionName = runtime.session.sessionManager.getSessionName()?.trim();
@@ -429,11 +456,12 @@ export class TabManager {
 			this.tabs.map((tab) => tab.title),
 		);
 		const tab: AgentTab = {
-			id: crypto.randomUUID(),
+			id: id ?? crypto.randomUUID(),
 			title: resolved,
 			autoTitle: !sessionName,
 			status: "idle",
 			unread: false,
+			loading: true,
 			draftInput: "",
 			vim: createVimTabState(),
 			zenMode: false,

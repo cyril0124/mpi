@@ -2,8 +2,11 @@
  * Multi-tab domain types: one open agent tab per concurrent `AgentSessionRuntime`.
  */
 
-/** Live status of a tab, driving its glyph in the tab bar. */
-export type TabStatus = "idle" | "running" | "thinking" | "error" | "done";
+/**
+ * Live status of a tab, driving its glyph in the tab bar. `"loading"` is a view state: a tab
+ * carries it until its runtime is bound, and `AgentTab.status` never holds it.
+ */
+export type TabStatus = "loading" | "idle" | "running" | "thinking" | "error" | "done";
 
 /** Named tab colors offered by `/color`. */
 export const TAB_COLOR_NAMES = ["red", "green", "yellow", "blue", "magenta", "cyan", "white", "gray"] as const;

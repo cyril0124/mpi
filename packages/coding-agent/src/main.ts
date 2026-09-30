@@ -729,6 +729,27 @@ export async function main(args: string[], options?: MainOptions) {
 	const trustPromptMode: AppMode = parsed.help || parsed.listModels !== undefined ? "print" : appMode;
 	const projectTrustByCwd = new Map<string, boolean>();
 
+	// `ModelRuntime.create` reads and merges the model catalogue and the credentials
+	// (measured ~235 ms of main-thread work per call, on a network home). Every tab of
+	// the same working directory wants the same catalogue, so it is built once and
+	// shared, the way the startup session and its restored tabs can share one.
+	const modelRuntimes = new Map<string, Promise<ModelRuntime>>();
+	const sharedModelRuntime = (targetCwd: string, targetAgentDir: string): Promise<ModelRuntime> => {
+		const key = `${targetCwd}\0${targetAgentDir}`;
+		let runtime = modelRuntimes.get(key);
+		if (!runtime) {
+			runtime = ModelRuntime.create({
+				authPath: expandTildePath(`${targetAgentDir}/auth.json`),
+				modelsPath: expandTildePath(`${targetAgentDir}/models.json`),
+				signal: AbortSignal.timeout(15_000),
+			});
+			// Evict a failure so a retry does not get the rejected promise.
+			runtime.catch(() => modelRuntimes.delete(key));
+			modelRuntimes.set(key, runtime);
+		}
+		return runtime;
+	};
+
 	const resolvedExtensionPaths = resolveCliPaths(cwd, parsed.extensions);
 	const resolvedSkillPaths = resolveCliPaths(cwd, parsed.skills);
 	const resolvedPromptTemplatePaths = resolveCliPaths(cwd, parsed.promptTemplates);
@@ -756,7 +777,7 @@ export async function main(args: string[], options?: MainOptions) {
 			cwd,
 			agentDir,
 			settingsManager: runtimeSettingsManager,
-			modelRuntimeSignal: AbortSignal.timeout(15_000),
+			modelRuntime: await sharedModelRuntime(cwd, agentDir),
 			extensionFlagValues: parsed.unknownFlags,
 			resourceLoaderReloadOptions: shouldResolveProjectTrust
 				? {

@@ -124,6 +124,9 @@ Tab state is per working directory, in the directory mixcode-pi (`mpi`) also use
 `<agentDir>` is `PI_CODING_AGENT_DIR` or `~/.pi/agent`. The workdir is hashed the same way
 mixcode-pi hashes it, so both agents share one directory: tabs opened in one appear in the other.
 
+The files are written when the tab set, its order, a title, or a color changes, and once when
+the process exits. Focusing a tab does not write them.
+
 A saved workspace stores `name`, `startup_workdir`, `updated_at`, `active_session_id`, and one
 entry per tab (`session_id`, `session_path`, `title`, `workdir`, `model`, `thinking_level`).
 
@@ -135,6 +138,11 @@ no conversation turns — a fresh session, not `-r`/`--continue`. It restores at
 it cannot read, and closes the transient startup tab once the restored layout replaces it.
 Titles and colors are re-applied from `mixcode_state.json`; default-named tabs are renumbered so
 the dropped startup tab does not push them to the next free number.
+
+The layout is listed in the tab bar before any of it is built: every persisted tab gets a chip
+straight away, showing a spinner until its tab is ready. The tabs are then built one at a time, in
+the recorded order, so one session is in memory at a time and the session that opens is MixCode
+Home — with the tab that was focused last selected in the roster, not opened.
 
 ## Session deletion
 

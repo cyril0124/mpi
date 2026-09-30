@@ -1,7 +1,7 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { type Component, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
-import { getMarkdownTheme, theme } from "../theme/theme.ts";
+import { getMarkdownTheme, getActiveThemeName, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 import { HoverRegion } from "./mixcode/hover/hover-region.ts";
 import {
@@ -31,6 +31,10 @@ export class AssistantMessageComponent extends Container {
 	private thinkingVisibilityOverrides = new Map<number, boolean>();
 	/** Per thinking run: the stamps the live/frozen duration is read from. */
 	private thinkingTailTimers = new Map<number, ThinkingTailTimer>();
+	/** Last rendered block, reused while the width and the content are unchanged. */
+	private renderedLines: string[] | undefined;
+	private renderedWidth = -1;
+	private renderedTheme: string | undefined;
 	private boxedHiddenThinking: boolean;
 
 	constructor(
@@ -60,11 +64,20 @@ export class AssistantMessageComponent extends Container {
 		}
 	}
 
+	/**
+	 * Drop the memo so the next paint rebuilds the block.
+	 *
+	 * Rebuilding eagerly (calling updateContent here) would flush the rendered
+	 * lines on every tree invalidation, which arrives on each relayout and on
+	 * every tab-bind via the extension adapter path. Content is unchanged in
+	 * those cases, so the eager rebuild would make the first visit to a tab
+	 * re-render all its assistant blocks from scratch, exactly like the problem
+	 * in ToolExecutionComponent. Letting render() rebuild lazily is correct:
+	 * callers that change content (updateContent, setters) clear the memo
+	 * directly, so the lazy path never serves stale lines.
+	 */
 	override invalidate(): void {
-		super.invalidate();
-		if (this.lastMessage) {
-			this.updateContent(this.lastMessage);
-		}
+		this.renderedLines = undefined;
 	}
 
 	setHideThinkingBlock(hide: boolean): void {
@@ -76,6 +89,7 @@ export class AssistantMessageComponent extends Container {
 	}
 
 	setHiddenThinkingLabel(label?: string): void {
+		if (this.hiddenThinkingLabel === label) return;
 		this.hiddenThinkingLabel = label;
 		if (this.lastMessage) {
 			this.updateContent(this.lastMessage);
@@ -97,6 +111,10 @@ export class AssistantMessageComponent extends Container {
 	}
 
 	override render(width: number): string[] {
+		const themeName = getActiveThemeName();
+		if (this.renderedLines && this.renderedWidth === width && this.renderedTheme === themeName) {
+			return this.renderedLines;
+		}
 		const lines = super.render(width);
 		if (this.hasToolCalls || lines.length === 0) {
 			return lines;
@@ -104,10 +122,14 @@ export class AssistantMessageComponent extends Container {
 
 		lines[0] = OSC133_ZONE_START + lines[0];
 		lines[lines.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + lines[lines.length - 1];
+		this.renderedLines = lines;
+		this.renderedWidth = width;
+		this.renderedTheme = themeName;
 		return lines;
 	}
 
 	updateContent(message: AssistantMessage, isStreaming = this.isStreaming): void {
+		this.renderedLines = undefined;
 		this.lastMessage = message;
 		this.isStreaming = isStreaming;
 

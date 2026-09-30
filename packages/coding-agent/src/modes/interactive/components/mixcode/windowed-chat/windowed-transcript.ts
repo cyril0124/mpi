@@ -76,14 +76,33 @@ export class WindowedTranscript extends Container {
 		return this.blocksSource();
 	}
 
-	/** Forward invalidation to the blocks the container renders (its `children` stay empty). */
+	/**
+	 * Drop this container's measurements.
+	 *
+	 * The blocks are not invalidated: the layout invalidates this subtree on every
+	 * relayout, and forwarding that to the blocks discarded their rendered lines even
+	 * though the content had not changed, which made the first paint of a tab render
+	 * its whole window from scratch. A memo that depends on the theme compares
+	 * {@link getThemeGeneration} instead, so theme changes still miss on their own.
+	 */
 	override invalidate(): void {
+		this.resetMeasurements();
+	}
+
+	/**
+	 * Drop the height table without touching the blocks' own rendered lines.
+	 *
+	 * A surface swap (Home to a transcript, or one tab to another) changes which blocks
+	 * are painted but not their content, so the table has to go while the blocks keep
+	 * whatever they have already rendered: clearing their caches here is what made the
+	 * first visit to a tab re-render its whole window from scratch.
+	 */
+	resetMeasurements(): void {
 		this.passLines.clear();
 		this.measuredHeights = new WeakMap<Component, number>();
 		this.measuredSum = 0;
 		this.measuredCount = 0;
 		this.syncedBlocks = -1;
-		for (const block of this.blockList()) block.invalidate?.();
 	}
 
 	/**

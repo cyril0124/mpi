@@ -770,6 +770,17 @@ export const theme: Theme = new Proxy({} as Theme, {
 	},
 });
 
+/**
+ * Name of the theme currently applied, or undefined before one is set.
+ *
+ * Rendered lines carry theme colors, so a component that memoizes them has to know
+ * when they went stale. The name is the right key: it changes when the user switches
+ * theme, but not when the same theme is re-registered or reloaded.
+ */
+export function getActiveThemeName(): string | undefined {
+	return currentThemeName;
+}
+
 function setGlobalTheme(t: Theme): void {
 	(globalThis as Record<symbol, Theme>)[THEME_KEY] = t;
 	(globalThis as Record<symbol, Theme>)[THEME_KEY_OLD] = t;

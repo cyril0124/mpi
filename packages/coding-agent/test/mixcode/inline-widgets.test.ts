@@ -598,7 +598,7 @@ describe("inline widget tab state", () => {
 			loadedResourcesContainer: loaded,
 			chatContainer: chat,
 			inlineWidgets,
-			windowedTranscript: { invalidate: () => {} },
+			windowedTranscript: { invalidate: () => {}, resetMeasurements: () => {} },
 		} as unknown as InlineWiringContext;
 		context.buildDocumentChildren = () => proto.buildDocumentChildren.call(context);
 

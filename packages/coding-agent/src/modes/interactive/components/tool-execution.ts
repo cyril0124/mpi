@@ -34,7 +34,7 @@ export interface ToolRenderers {
 
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.ts";
 import { convertToPng } from "../../../utils/image-convert.ts";
-import { theme } from "../theme/theme.ts";
+import { getActiveThemeName, theme } from "../theme/theme.ts";
 import { keyHint } from "./keybinding-hints.ts";
 import { BlockHover } from "./mixcode/hover/hover-block.ts";
 
@@ -82,6 +82,10 @@ export class ToolExecutionComponent extends Container {
 		{ sourceData: string; sourceMimeType: string; data: string; mimeType: string }
 	> = new Map();
 	private hideComponent = false;
+	/** Last rendered card, reused while the width, the content and the theme are unchanged. */
+	private renderedLines: string[] | undefined;
+	private renderedWidth = -1;
+	private renderedTheme: string | undefined;
 
 	constructor(
 		toolName: string,
@@ -252,12 +256,33 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	/**
+	 * Drop the memo so the next paint rebuilds the card.
+	 *
+	 * The rebuild is deliberately lazy. A tree invalidation - a relayout, or an
+	 * extension re-installing its adapters while a tab binds in the background -
+	 * says nothing about this row's content, and rebuilding every row's renderer
+	 * tree eagerly is what made showing a tab re-render its whole window. Nothing
+	 * is lost by waiting: `render` rebuilds from the same fields the setters keep.
+	 */
 	override invalidate(): void {
-		super.invalidate();
-		this.updateDisplay();
+		this.renderedLines = undefined;
 	}
 
 	override render(width: number): string[] {
+		const themeName = getActiveThemeName();
+		if (this.renderedLines && this.renderedWidth === width && this.renderedTheme === themeName) {
+			return this.renderedLines;
+		}
+		const lines = this.renderCard(width);
+		this.renderedLines = lines;
+		this.renderedWidth = width;
+		this.renderedTheme = themeName;
+		return lines;
+	}
+
+	/** One card, from scratch. The result is memoized by {@link render}. */
+	private renderCard(width: number): string[] {
 		if (this.hideComponent) {
 			return [];
 		}
@@ -314,6 +339,7 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private updateDisplay(): void {
+		this.renderedLines = undefined;
 		const bgFn = this.isPartial
 			? (text: string) => theme.bg("toolPendingBg", text)
 			: this.result?.isError

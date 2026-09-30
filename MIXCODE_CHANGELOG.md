@@ -18,6 +18,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- Startup lists the previous run's tabs before building any of them: the tab bar carries a chip per
+  persisted tab from the first frame, each showing a spinner until its tab is ready, and the tabs are
+  built one at a time in the recorded order. The session opens on MixCode Home with the tab that was
+  focused last selected in the roster instead of opened, so nothing waits on the restore. See
+  [Agent Tabs](docs/tabs.md).
 - `install.sh` accepts `--name <name>` (or `MIXCODE_INSTALL_NAME`) and uses that name for both the installed bin wrapper and its runtime directory, allowing one-command installation under a custom command name.
 - The `aurora` theme ships as a built-in, selectable from `/theme` and the settings panel. It is
   not the default: with no `theme` in `settings.json` the terminal background still picks between
@@ -336,6 +341,27 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The first visit to a tab still re-rendered its whole visible window, so a switch to an
+  unvisited tab took 0.1-1.5 s while a repeat visit took 0.05 s. Two causes, both invisible
+  without a per-call counter: the tool-display extension re-installs its row adapters while a
+  tab binds, and its `invalidate` callback ran the row's eager `updateDisplay`, which threw away
+  the rendered lines the row had just been warm-built with; assistant and user blocks did the
+  same through `updateContent`/`rebuild` on every tree invalidation. All three now drop only
+  their memo in `invalidate()` and rebuild lazily in `render()`, so a relayout or a background
+  extension bind no longer discards rendered lines, and a genuine content change still clears the
+  memo through its own setter. Restored tabs are also built once at startup, beside the bind that
+  already walks their resources, so their first visit paints parked blocks instead of building
+  them. The same 10-tab switch pass now runs at 0.04-0.18 s on the first pass, matching the
+  source's 0.05 s. See [Agent Tabs](docs/tabs.md).
+- Agent-tab switching paid three costs the focus path did not need: every focus change rewrote
+  `open_tabs.json` and `mixcode_state.json` under a lock (~9 ms of synchronous writes on a network
+  home, plus a lock wait another instance could hold), the first visit to a tab bound that tab's
+  extensions inline (0.3-7 s of `session_start` handlers, measured), and the windowed transcript
+  table was dropped on every switch, so the first frame re-parsed every rendered block (median frame
+  48 ms before, 1.2 ms after). Focus now writes nothing (the layout is written when it actually
+  changes, and once more on shutdown), a tab's extensions are bound by a background worker that drains
+  right after the restored layout is in place and records its chrome against the tab, and the
+  transcript table survives a switch. See [Agent Tabs](docs/tabs.md).
 - A steer flush whose batch turned out to hold nothing deliverable dropped the texts it had already
   taken out of the queue: `flushSteerQueue` spliced them out, removed the mirrored copies from the
   session queue, then returned before the block that restores both on failure. A flush of only blank

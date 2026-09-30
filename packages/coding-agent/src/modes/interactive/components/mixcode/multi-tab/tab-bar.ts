@@ -121,6 +121,7 @@ export function tabColorPaint(color: TabColorName): (text: string) => string {
 }
 
 function glyphPainter(item: TabBarItem): ((text: string) => string) | undefined {
+	if (item.status === "loading") return (text) => theme.fg("dim", text);
 	if (item.status === "error") return (text) => theme.fg("error", text);
 	if (item.unread) return (text) => theme.fg("success", text);
 	if (isWorkingStatus(item.status)) return (text) => theme.fg("accent", text);
