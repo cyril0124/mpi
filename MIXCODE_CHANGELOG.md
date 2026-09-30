@@ -371,6 +371,18 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Reopening a saved tab layout no longer opens a second tab per session: peer tab sync started
+  before the startup restore finished, so its first poll treated the tabs the loader had not built
+  yet as missing and opened them again, and the transient startup session was written into the
+  shared layout as well. Peer sync now starts once the restore settles.
+- Switching tabs no longer paints an empty transcript after the first couple of switches: the
+  windowed transcript resynced its running height only when the block list's length or edges
+  changed, and a tab switch replaces the conversation in the middle, so the previous tab's
+  measured blocks stayed counted and the total went negative. The counters now resync on the
+  identity of the block list.
+- Warming a restored tab's transcript no longer wipes the chat when a tab is already on screen:
+  the cache is built in the shared chat container, which the warm pass then clears. Warming now
+  stops once the user has left Home and that tab builds its transcript on the focus path instead.
 - `up`/`down` stopped recalling a restored tab's messages: the startup restore warm-builds every
   persisted tab, and a warm build deliberately seeds nothing, so the composer's history was never
   filled, and attaching from Home to the already-focused tab skipped the tab switch that used to

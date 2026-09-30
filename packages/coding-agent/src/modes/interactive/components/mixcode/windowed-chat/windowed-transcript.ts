@@ -56,8 +56,9 @@ export class WindowedTranscript extends Container {
 	/** Measured heights currently in the table, maintained incrementally. */
 	private measuredSum = 0;
 	private measuredCount = 0;
-	/** Block list the counters were last synced against. */
-	private syncedBlocks = -1;
+	/** Block list the counters were last synced against, its length, and its edges. */
+	private syncedList: readonly Component[] | undefined;
+	private syncedLength = -1;
 	private syncedFirst: Component | undefined;
 	private syncedLast: Component | undefined;
 	/** Rendered lines for the current pass, so one pass renders a block once. */
@@ -102,7 +103,8 @@ export class WindowedTranscript extends Container {
 		this.measuredHeights = new WeakMap<Component, number>();
 		this.measuredSum = 0;
 		this.measuredCount = 0;
-		this.syncedBlocks = -1;
+		this.syncedList = undefined;
+		this.syncedLength = -1;
 	}
 
 	/**
@@ -394,10 +396,13 @@ export class WindowedTranscript extends Container {
 	/** Total rows, maintained incrementally: measured heights plus the estimate for the rest. */
 	private totalHeight(): number {
 		const blocks = this.blockList();
-		// Resync when the list changed outright: a different length, or a different first
-		// or last block, which covers appends, removals and a wholesale replacement.
+		// Resync when the list changed. A replaced list is not always a different length with different
+		// edges: a tab switch swaps the conversation in the middle while the header and the widget block
+		// stay, so the identity of the list is what tells the new blocks from the old. Without it the
+		// previous tab's counters stay in the table and the total counts two conversations at once.
 		if (
-			blocks.length !== this.syncedBlocks ||
+			blocks !== this.syncedList ||
+			blocks.length !== this.syncedLength ||
 			blocks[0] !== this.syncedFirst ||
 			blocks[blocks.length - 1] !== this.syncedLast
 		) {
@@ -411,7 +416,8 @@ export class WindowedTranscript extends Container {
 			}
 			this.measuredSum = sum;
 			this.measuredCount = count;
-			this.syncedBlocks = blocks.length;
+			this.syncedList = blocks;
+			this.syncedLength = blocks.length;
 			this.syncedFirst = blocks[0];
 			this.syncedLast = blocks[blocks.length - 1];
 		}
@@ -464,7 +470,8 @@ export class WindowedTranscript extends Container {
 		this.measuredHeights = new WeakMap<Component, number>();
 		this.measuredSum = 0;
 		this.measuredCount = 0;
-		this.syncedBlocks = -1;
+		this.syncedList = undefined;
+		this.syncedLength = -1;
 	}
 }
 

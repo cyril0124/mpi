@@ -1556,8 +1556,10 @@ export class InteractiveMode {
 		await this.restoreOpenTabsOnStartup();
 
 		// SharedTabLayout.start() seeds the union snapshot and begins peer polling.
-		// publish() is a no-op before start(), so any persistOpenTabs() calls during
-		// the restore were safely ignored; start() publishes the settled state now.
+		// It runs once the startup restore has settled, so the first published baseline
+		// is the restored layout, not the transient startup tab, and the first poll cannot
+		// race the loader into opening a tab it is about to open itself. publish() is a
+		// no-op before start(), so persistOpenTabs() calls during the restore are ignored.
 		this.sharedTabLayout?.start();
 
 		// Startup keeps the fork's restored tab focus; Home is reached with `left`, the tab
@@ -3483,6 +3485,10 @@ export class InteractiveMode {
 	 * their own rendered lines, so the first switch repaints them instead of rebuilding.
 	 */
 	private warmTabTranscript(tab: AgentTab): void {
+		// The warm pass renders into the shared chat container and then clears it. While a tab is on
+		// screen that container holds that tab's live transcript, so warming is limited to Home,
+		// where the container is parked; a tab's focus path builds its transcript on demand instead.
+		if (!this.homeSelection.active) return;
 		const previousHost = this.runtimeHost;
 		const previousTabId = this.activeTabIdForUi;
 		const previousLabel = this.hiddenThinkingLabel;
@@ -3932,7 +3938,11 @@ export class InteractiveMode {
 				return { id, title: tabMeta?.title ?? defaultAgentTitle(index + 1), color: tabMeta?.color };
 			});
 			await this.activateHome();
-			void this.loadRestoredTabs({
+			// Awaited: the loader is what settles the layout, and peer sync must not
+			// start before it, or the poll opens a second tab for every session the
+			// loader has not reached yet. Home is already on screen, so the first
+			// frame does not wait for this.
+			await this.loadRestoredTabs({
 				entries,
 				meta,
 				sessionDir,

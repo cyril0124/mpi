@@ -169,6 +169,27 @@ describe("windowed transcript window", () => {
 		expect(second).toBe(first);
 	});
 
+	it("keeps the running height when a tab switch replaces the middle of the block list", () => {
+		// A tab switch swaps the conversation while the header and the widget block stay and the
+		// list keeps its length, so only the identity of the list tells the new blocks from the old.
+		const header = new Block("header", 3);
+		const widget = new Block("widget", 1);
+		let conversation = makeBlocks(60, 3);
+		const transcript = new WindowedTranscript({ blocks: () => [header, ...conversation, widget] });
+		const scrollView = new ScrollView(transcript, { follow: "end", primary: true });
+		const root = new VStack([{ component: scrollView, basis: 0, grow: 1, shrink: 1, minSize: 1 }]);
+		const painted = (): string[] =>
+			renderLayoutFrame(root, 24, 12, () => {}).lines.filter((line) => line.trim() !== "");
+
+		// Each switch measures the whole new conversation: the total must stay at the rows the
+		// blocks really occupy, and the window must keep painting.
+		for (let tab = 0; tab < 3; tab++) {
+			conversation = makeBlocks(60, 3);
+			transcript.materialize(24);
+			expect([painted().length > 0, transcript.lineCount(24)]).toEqual([true, 184]);
+		}
+	});
+
 	it("places the window at the requested offset when it changes", () => {
 		const blocks = makeBlocks(200, 4);
 		const transcript = new WindowedTranscript({ blocks: () => blocks });
