@@ -34,7 +34,7 @@ MixCode Home 是本 fork 的起始页面：一页列出所有已打开的 agent 
 
 每张卡片占三行加一个空行：标题与状态标签、`模型 · 上下文 · 最近时间`、以及最新的一条 assistant（其次 system、user）文本。选中的卡片带选中背景。列表会围绕选中项开窗，并在隐藏的两侧标记 `↑ older above` / `↓ newer below`。
 
-启动检查发现扩展包有更新时，Home 会在名册上方列出：`Package Updates Available`、更新命令，以及每个包一行。视口放不下时保留开头几条，并在末尾显示 `… more package updates · pi update --extensions`。
+启动检查发现扩展包有更新时，Home 会在名册上方列出：`Package Updates Available`、说明行 `Package updates are available. Run pi update --extensions`、`Packages:` 标签，以及每个包一行。该提示只在 Home 出现：chat 记录里没有它，pi 也不会提示自身的版本更新。视口放不下时保留开头几条，并在末尾显示 `… more package updates · pi update --extensions`。
 
 Home 上不画 footer：工作目录、用量与模型行、扩展状态以及编辑器上下的扩展 widget 都属于某个 agent，因此工作指示器同样隐藏；附着到 agent 后全部恢复。
 

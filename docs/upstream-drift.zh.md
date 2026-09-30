@@ -48,6 +48,8 @@
 | 指针 hover 反馈 | 无提示：列表忽略指针移动，消息区域只响应点击，跳到底部标签只有一种样式 | 指针下的单元格获得选中背景与下划线（标签页 chip、命令面板行、坞区 meta 行的模型与 thinking 字段）；响应点击的消息块整块填充为一个矩形；全屏渲染器在指针离开后告知对应组件，捕获型浮层打开时保持其下方界面无高亮，非捕获型浮层区域外仍保持 hover，终端尺寸变化时清除所有 hover | 本 fork 的可点击界面需要一个不改变键盘选择与活动标签页的提示 |
 | 扩展模块解析 | bun 跑构建产物时保留 jiti 的 `tryNative`（原生 TS 导入），扩展的 `@earendil-works/*` 裸导入因此从环境 `node_modules` 解析 | bun 跑构建产物时改走 `virtualModules`，清单内的 specifier 一律取运行中宿主自己的那份；bun 跑 TypeScript 源码不受影响 | 第二份 `@earendil-works/pi-tui` 会让 `ToolExecutionComponent.prototype` 的补丁打在宿主从未渲染的类上，渲染扩展于是静默退回内置工具行 |
 
+| 新版本提示 | 启动时请求 `pi.dev/api/latest-version`，打印带 changelog 链接的 `Update Available` 块，由 `PI_SKIP_VERSION_CHECK` 关闭 | 不再提示 pi 自身的新版本：启动检查、`checkForNewPiVersion` 与 `PI_SKIP_VERSION_CHECK` 均已删除 | 本 fork 改为只在 [MixCode Home](home.zh.md) 报告过期的扩展包 |
+
 ## 已过期的上游页面与源码文案
 
 有意不打补丁：
@@ -62,6 +64,8 @@
 | `packages/coding-agent/src/cli/args.ts:303`（源码文案） | `--models` 帮助说是 "patterns for Ctrl+P cycling" | `ctrl+p` 打开命令面板；循环键是 `shift+ctrl+p`（Windows 与 WSL 为 `alt+p`） |
 | `packages/coding-agent/docs/slash-commands.md:30` | `/compact [instructions]` | 本 fork 还接受前置的 `provider/modelId`，让摘要只用该模型执行 |
 | `packages/coding-agent/docs/compaction.md:41` | "trigger manually with `/compact [instructions]`" | 同上：可在指令前指定摘要模型 |
+| `packages/coding-agent/docs/environment-variables.md:85` | `PI_SKIP_VERSION_CHECK` 关闭 `pi.dev` 最新版本请求 | 该变量与读取它的启动检查已删除 |
+| `packages/coding-agent/src/utils/version-check.ts`（源码文案） | 导出 `checkForNewPiVersion`，即读取 `PI_SKIP_VERSION_CHECK` 的启动检查 | 已删除；`getLatestPiRelease` 与 `isNewerPackageVersion` 保留供 `pi update --self` 使用 |
 
 上面这些页面也都没有列出标签页键位和标签页斜杠命令；这些以 [Agent 标签页](tabs.zh.md) 为准。
 
@@ -111,6 +115,9 @@
 - `packages/coding-agent/src/cli/args.ts`：`--tui-mode` 帮助行写出 fork 的默认值
 - `packages/coding-agent/test/settings-manager.test.ts`：TUI 模式断言改为 fork 的 fullscreen 默认值
 - `packages/coding-agent/test/keybindings.test.ts`、`packages/coding-agent/test/interactive-mode-compaction.test.ts`：队列绑定与压缩路径
+- `packages/coding-agent/src/utils/version-check.ts`：删除 `checkForNewPiVersion`，启动提示是它唯一的调用方
+- `scripts/profile-coding-agent-node.mjs`：`--offline` 不再设置已删除的 `PI_SKIP_VERSION_CHECK`
+- `packages/coding-agent/test/version-check.test.ts`、`packages/coding-agent/test/package-command-paths.test.ts`：用例中去掉已删除的检查与对应环境变量
 - `AGENTS.md`、`.gitignore`
 
 本 fork 还给 `keybindings.ts` 加了键位绑定 —— 工作目录选择器响应的 `app.workdir.*`，以及排队消息编辑响应的 `app.queueEdit.*`；`core/mixcode/multi-tab/tab-manager.ts` 与 `tab-state.ts` 是 fork 自有文件。

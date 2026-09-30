@@ -41,9 +41,11 @@ background. The roster windows around the selection and marks the hidden sides w
 `↑ older above` / `↓ newer below`.
 
 When the startup check finds outdated extension packages, Home lists them above the roster:
-`Package Updates Available`, the command that updates them, and one line per package. A viewport too
-short for the list keeps the first entries and ends with `… more package updates · pi update
---extensions`.
+`Package Updates Available`, the instruction line `Package updates are available. Run pi update
+--extensions`, the `Packages:` label, and one line per package. Home is the only place this notice
+appears: the chat transcript does not carry it, and pi does not prompt about its own releases. A
+viewport too short for the list keeps the first entries and ends with `… more package updates · pi
+update --extensions`.
 
 Home paints no footer: the working directory, the usage and model line, extension statuses and the
 extension widgets are per-agent chrome, so it also hides the working indicator. Everything comes back

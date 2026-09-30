@@ -50,6 +50,8 @@ commit that causes it.
 | Extension module resolution | bun loading the built dist keeps jiti's `tryNative` (native TS import), so an extension's bare `@earendil-works/*` imports resolve from ambient `node_modules` | bun loading the built dist resolves through `virtualModules`, so the specifiers that map lists always come from the running host; bun running the TypeScript source is unchanged | a second copy of `@earendil-works/pi-tui` puts `ToolExecutionComponent.prototype` patching on a class the host never rendered, so renderer extensions silently fell back to the built-in tool rows |
 | Hidden thinking | the full reasoning text when hiding is off, the italic `Thinking...` label when it is on | with hiding on, each block renders as a three-row tail that follows the stream: a `Thinking` header whose duration ticks live and freezes when the block stops growing, and the last three visual rows behind a left rail, `…`-marked when earlier content was dropped. An extension `setHiddenThinkingLabel` still replaces the whole block. The `Thinking tail preview` row in `/settings` turns it off, and it defaults to on | the tail keeps the reasoning legible while it streams without giving the block the whole transcript |
 
+| New-version prompt | checks `pi.dev/api/latest-version` at startup and prints an `Update Available` block with a changelog link, gated by `PI_SKIP_VERSION_CHECK` | no prompt about pi's own releases: the startup check, `checkForNewPiVersion` and `PI_SKIP_VERSION_CHECK` are gone | the fork reports outdated extension packages on [MixCode Home](home.md), and only there |
+
 ## Outdated upstream pages and source copy
 
 Deliberately left unpatched:
@@ -64,6 +66,8 @@ Deliberately left unpatched:
 | `packages/coding-agent/src/cli/args.ts:303` (source copy) | the `--models` help says "patterns for Ctrl+P cycling" | `ctrl+p` opens the command palette; the cycle key is `shift+ctrl+p` (`alt+p` on Windows and WSL) |
 | `packages/coding-agent/docs/slash-commands.md:30` | `/compact [instructions]` | the fork also accepts a leading `provider/modelId` that runs only the summary on that model |
 | `packages/coding-agent/docs/compaction.md:41` | "trigger manually with `/compact [instructions]`" | same: the summary model can be named before the instructions |
+| `packages/coding-agent/docs/environment-variables.md:85` | `PI_SKIP_VERSION_CHECK` disables the `pi.dev` latest-version request | the variable and the startup check that read it are removed |
+| `packages/coding-agent/src/utils/version-check.ts` (source copy) | exports `checkForNewPiVersion`, the startup check that reads `PI_SKIP_VERSION_CHECK` | removed; `getLatestPiRelease` and `isNewerPackageVersion` stay for `pi update --self` |
 
 Those pages also never list the tab keybindings and tab slash commands; [Agent Tabs](tabs.md) is the source of truth for those.
 
@@ -127,6 +131,9 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/test/settings-manager.test.ts`: the TUI mode assertions expect the fork's
   fullscreen default
 - `packages/coding-agent/test/keybindings.test.ts`, `packages/coding-agent/test/interactive-mode-compaction.test.ts`: the queue bindings and the compaction paths
+- `packages/coding-agent/src/utils/version-check.ts`: `checkForNewPiVersion` removed, since the startup prompt was its only caller
+- `scripts/profile-coding-agent-node.mjs`: `--offline` no longer sets the removed `PI_SKIP_VERSION_CHECK`
+- `packages/coding-agent/test/version-check.test.ts`, `packages/coding-agent/test/package-command-paths.test.ts`: the removed check and its env var dropped from the cases
 - `AGENTS.md`, `.gitignore`
 
 The fork also adds keys to upstream's `keybindings.ts` — the `app.workdir.*` bindings the workdir

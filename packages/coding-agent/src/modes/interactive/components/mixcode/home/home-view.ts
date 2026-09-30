@@ -474,15 +474,19 @@ function renderStackedTable(
 }
 
 /**
- * Outdated-package block above the roster: the heading, the command that updates
- * them, and one line per package. A trailing blank row separates it from the table.
+ * Outdated-package block above the roster: the heading, the instruction line with
+ * the update command, the `Packages:` label, and one line per package. A trailing
+ * blank row separates it from the table.
  */
 function renderPackageUpdateNotice(packages: readonly string[], width: number): string[] {
 	if (packages.length === 0) return [];
+	const instruction =
+		theme.fg("muted", "Package updates are available. Run ") + theme.fg("accent", PACKAGE_UPDATE_COMMAND);
 	return [
 		theme.fg("warning", theme.bold("Package Updates Available")),
-		theme.fg("dim", PACKAGE_UPDATE_COMMAND),
-		...packages.map((name) => theme.fg("dim", truncateToWidth(`- ${singleLinePreview(name)}`, width, "…"))),
+		truncateToWidth(instruction, width, "…"),
+		theme.fg("muted", "Packages:"),
+		...packages.map((name) => truncateToWidth(`- ${singleLinePreview(name)}`, width, "…")),
 		"",
 	];
 }

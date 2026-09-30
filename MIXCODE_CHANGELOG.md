@@ -346,6 +346,10 @@ point `## [Unreleased]` at the new tag.
   separator's glyph map is the tab bar's table. `interactive-mode.ts` sheds the composer's frame-time
   reads: `composer-state.ts` renders the placeholder and the input-card chrome from a
   `ComposerContext` the interactive mode gathers.
+- The outdated-package notice lives only on Home: the chat transcript no longer repeats it. Home now
+  carries the full wording (the heading, the `Package updates are available. Run pi update --extensions`
+  instruction line with the command accented, the `Packages:` label), and the package lines are no
+  longer dim.
 
 ### Fixed
 
@@ -466,3 +470,10 @@ point `## [Unreleased]` at the new tag.
 - The tab bar's wrapped rows indented past the first agent chip, so a second row started under
   the second chip and left the first chip's column empty as if it were a continuation of the
   pinned Home chrome. They now line up under the first agent chip.
+
+### Removed
+
+- pi's own version-update prompt is gone: the startup check against the release endpoint, the
+  `Update Available` transcript block with its changelog link, and the `PI_SKIP_VERSION_CHECK`
+  environment variable that gated them are removed. The only update notice left is Home's list of
+  outdated extension packages.
