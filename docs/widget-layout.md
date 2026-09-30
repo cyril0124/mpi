@@ -46,9 +46,10 @@ it.
 
 ## Inline mode
 
-While a tab renders its widgets in the chat tail, both dock slots render nothing and the tail's own
-budget takes over. See [Inline Widgets](inline-widgets.md) for the tail's rules, including the
-priority order and the jitter guard.
+While a tab renders its widgets in the chat tail, both dock slots render no widget rows and the
+tail's own budget takes over. The above-editor slot keeps its separating row, so the chat tail does
+not end against the editor. See [Inline Widgets](inline-widgets.md) for the tail's rules, including
+the priority order and the jitter guard.
 
 ## Side panel
 

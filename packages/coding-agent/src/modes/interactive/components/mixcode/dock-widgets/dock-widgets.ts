@@ -167,12 +167,13 @@ export class DockWidgetSlot implements Component {
 
 	render(width: number): string[] {
 		this.hits = [];
-		if (this.budget.widgetsHidden()) return [];
+		// The above-editor slot keeps the separating row the dock always had: without
+		// it the editor sits against the chat. Hiding the widget rows keeps the row,
+		// because it is what separates the transcript from the editor.
+		const leadingRow = this.side === "above" ? [""] : [];
+		if (this.budget.widgetsHidden()) return leadingRow;
 
 		const plan = this.budget.planFor(width, this.side);
-		// The above-editor slot keeps the separating row the dock always had: without
-		// it the editor sits against the chat.
-		const leadingRow = this.side === "above" ? [""] : [];
 		if (plan.lines.length === 0) return leadingRow;
 
 		const offset = leadingRow.length;

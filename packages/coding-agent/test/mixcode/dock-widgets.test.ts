@@ -119,13 +119,14 @@ describe("dock widget budget", () => {
 		expect(budget.above.render(40)).toHaveLength(31);
 	});
 
-	it("renders nothing in either slot while the tab is in inline mode", () => {
+	it("drops the widget rows but keeps the above slot's separator while hidden", () => {
 		const budget = makeBudget({
 			above: [WidgetBody.keyed("a", 2)],
 			below: [WidgetBody.keyed("b", 2)],
 			widgetsHidden: true,
 		});
-		expect(budget.above.render(40)).toEqual([]);
+		// The separator is not a widget row: it stays while the widget rows are hidden.
+		expect(budget.above.render(40)).toEqual([""]);
 		expect(budget.below.render(40)).toEqual([]);
 	});
 

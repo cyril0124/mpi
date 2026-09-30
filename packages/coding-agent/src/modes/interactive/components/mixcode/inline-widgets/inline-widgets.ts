@@ -47,6 +47,11 @@ const INLINE_ROW_ELLIPSIS = "…";
 const INLINE_HEADER_PREFIX_WIDTH = visibleWidth(INLINE_WIDGET_HEADER_PREFIX) + 2;
 /** Room kept for ` · /widgets expand` on the one-line summary row. */
 const INLINE_SUMMARY_COMMAND_WIDTH = visibleWidth(` · ${INLINE_WIDGET_EXPAND_COMMAND}`);
+/**
+ * Blank row the block leads with, separating the widgets from the chat above.
+ * The dock's above-editor slot draws the matching row below the block.
+ */
+const INLINE_TAIL_LEADING_ROW = "";
 
 /** Widget keys the user owns outright: `true` collapsed, `false` pinned open. */
 type InlineWidgetManualState = Map<string, boolean>;
@@ -155,9 +160,11 @@ export class InlineWidgetsComponent implements Component {
 		const budget = viewportRows === undefined ? undefined : inlineTailBudget(viewportRows);
 		const plan = planInlineWidgetBlock(state, entries, budget, width);
 		this.hits = [];
-		if (plan.bodyRows.size === 0) return [` ${inlineWidgetSummaryLine(entries.length, bodyWidth)}`];
+		if (plan.bodyRows.size === 0) {
+			return [INLINE_TAIL_LEADING_ROW, ` ${inlineWidgetSummaryLine(entries.length, bodyWidth)}`];
+		}
 
-		const lines: string[] = [];
+		const lines: string[] = [INLINE_TAIL_LEADING_ROW];
 		const hits: RowHitRegion[] = [];
 		for (const [index, entry] of entries.entries()) {
 			const body = plannedBodyRows(entries, plan.bodyRows, index);

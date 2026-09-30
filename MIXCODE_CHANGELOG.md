@@ -353,6 +353,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The chat tail lost both of its separating rows in inline widget mode: the dock dropped every row
+  while its above-editor widgets were hidden, including the row that keeps the editor off the chat,
+  and the inline widget block started flush against the last message. The above-editor slot now
+  keeps its separating row when its widget rows are hidden, and the inline block leads with a blank
+  row, so the widget block is framed by the chat above and the composer below.
+
 - Shared tab layouts publish local changes incrementally, so creating, closing, reordering, or
   replacing a session no longer erases tabs opened in another instance. Peers reconcile every
   2 seconds through the tab operation queue, preserve editor focus, and defer closing busy tabs.

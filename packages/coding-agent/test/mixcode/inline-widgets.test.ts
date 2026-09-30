@@ -213,9 +213,19 @@ describe("inline widgets in the chat tail", () => {
 		expect(body).toBe(header + 1);
 		expect(queue).toBeGreaterThan(body);
 		expect(lines.indexOf("message-2")).toBeLessThan(header);
-		// The dock slots give their rows back to the chat in inline mode.
-		expect(frame.dockWidgets.above.render(60)).toEqual([]);
+		// The dock gives the widget rows back to the chat but keeps the above-editor
+		// separator, so the transcript does not end against the editor.
+		expect(frame.dockWidgets.above.render(60)).toEqual([""]);
 		expect(frame.dockWidgets.below.render(60)).toEqual([]);
+	});
+
+	it("keeps a separating row between the chat tail and the editor in inline mode", async () => {
+		const frame = await bootInline({ widgets: [] });
+		const lines = await frame.painted();
+		const editor = lines.indexOf("editor");
+
+		expect(editor).toBeGreaterThan(0);
+		expect(lines[editor - 1]).toBe("");
 	});
 
 	it("restores the docked widgets when the tab leaves inline mode", async () => {
@@ -240,7 +250,7 @@ describe("inline widgets in the chat tail", () => {
 		frame.handleToggleInlineWidgets();
 		expect(frame.state.enabled).toBe(true);
 		expect((await frame.painted()).some((line) => line.includes("▸ Inline · goal"))).toBe(true);
-		expect(frame.dockWidgets.above.render(60)).toEqual([]);
+		expect(frame.dockWidgets.above.render(60)).toEqual([""]);
 	});
 
 	it("orders above-editor widgets before below-editor ones", async () => {
@@ -355,7 +365,7 @@ describe("inline widget row budget", () => {
 			state: () => state,
 			viewportRows: () => 14,
 		});
-		const summaryAt = (width: number) => component.render(width).map(stripAnsi)[0] ?? "";
+		const summaryAt = (width: number) => component.render(width).map(stripAnsi)[1] ?? "";
 
 		expect(summaryAt(60)).toContain("▸ Inline · 40 widgets · /widgets expand");
 		expect(summaryAt(30)).toContain("/widgets expand");
@@ -502,7 +512,7 @@ describe("inline widget budget decisions", () => {
 			state: () => state,
 			viewportRows: () => 14,
 		});
-		const headerAt = (width: number) => component.render(width).map(stripAnsi)[0] ?? "";
+		const headerAt = (width: number) => component.render(width).map(stripAnsi)[1] ?? "";
 
 		expect(headerAt(60)).toContain("(auto) /widgets expand goal");
 		const withoutMarker = headerAt(38);
@@ -524,7 +534,7 @@ describe("inline widget budget decisions", () => {
 			viewportRows: () => 14,
 		});
 
-		expect(component.render(20).map(stripAnsi)[0]).toContain("▸ Inline");
+		expect(component.render(20).map(stripAnsi)[1]).toContain("▸ Inline");
 	});
 
 	it("keeps a key's colour and line breaks out of the header row", () => {
@@ -540,12 +550,12 @@ describe("inline widget budget decisions", () => {
 
 		const lines = component.render(60);
 		// A line break in the key would otherwise split the header across two rows.
-		expect(lines).toHaveLength(1);
-		const header = stripAnsi(lines[0] as string);
+		expect(lines).toHaveLength(2);
+		const header = stripAnsi(lines[1] as string);
 		expect(header).toContain("▸ Inline · evil");
 		expect(header).toContain("(auto) /widgets expand evil second");
-		expect(lines[0]).not.toContain("\u001b[2J");
-		expect(lines[0]).not.toContain("\u001b[3;40H");
+		expect(lines[1]).not.toContain("\u001b[2J");
+		expect(lines[1]).not.toContain("\u001b[3;40H");
 	});
 
 	it("keeps a body line on one row when the widget embeds a line break", () => {
@@ -558,8 +568,8 @@ describe("inline widget budget decisions", () => {
 		});
 
 		const lines = component.render(60).map(stripAnsi);
-		expect(lines).toHaveLength(2);
-		expect(lines[1]).toBe(" first second");
+		expect(lines).toHaveLength(3);
+		expect(lines[2]).toBe(" first second");
 	});
 
 	it("keeps a body's colours but drops the escapes that would move the cursor", () => {
@@ -574,10 +584,10 @@ describe("inline widget budget decisions", () => {
 		});
 
 		const lines = component.render(60);
-		expect(lines).toHaveLength(2);
-		expect(lines[1]).toContain("\u001b[31mred\u001b[0m");
-		expect(lines[1]).not.toContain("\u001b[2J");
-		expect(lines[1]).not.toContain("\u001b[5;5H");
+		expect(lines).toHaveLength(3);
+		expect(lines[2]).toContain("\u001b[31mred\u001b[0m");
+		expect(lines[2]).not.toContain("\u001b[2J");
+		expect(lines[2]).not.toContain("\u001b[5;5H");
 	});
 });
 
@@ -650,7 +660,7 @@ describe("inline widget tab state", () => {
 			widgetsHidden: () => context.inlineWidgetState()?.enabled === true,
 		});
 
-		expect(budget.above.render(60)).toEqual([]);
+		expect(budget.above.render(60)).toEqual([""]);
 
 		// The tab being attached owns the placement, so a docked tab gets its rows back.
 		context.activeTabIdForUi = "docked";
