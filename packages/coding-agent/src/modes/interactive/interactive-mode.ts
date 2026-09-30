@@ -5442,6 +5442,7 @@ export class InteractiveMode {
 	/** Repaint the editor frame after the modal surface started or ended. */
 	private refreshVimChrome(): void {
 		this.updateEditorBorderColor();
+		this.viewportTui()?.refreshMouseHover();
 		this.ui.requestRender();
 	}
 

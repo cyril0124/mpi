@@ -162,6 +162,56 @@ describe("fullscreen hover tracking", () => {
 		tui.stop();
 	});
 
+	it("replays hover after an app layout reflow without pointer motion", async () => {
+		const terminal = new VirtualTerminal(20, 2);
+		const tui = new TuiAltScreen(terminal);
+		const probe = { hovered: false, renders: 0 };
+		let vimActive = false;
+		const dock = new Text("dock", 0, 0);
+		tui.setLayoutRoot(
+			new VStack([
+				{ component: hoverProbe(probe), basis: 0, grow: 1, minSize: 1 },
+				{ component: dock, basis: "auto", minSize: 1, visible: () => !vimActive },
+			]),
+		);
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput(motion(1, 1));
+		await terminal.waitForRender();
+		assert.strictEqual(probe.hovered, true);
+
+		// A key clears the old cue, then the app changes layout mode while the pointer stays still.
+		terminal.sendInput("a");
+		await terminal.waitForRender();
+		assert.strictEqual(probe.hovered, false);
+		vimActive = true;
+		tui.refreshMouseHover();
+		await terminal.waitForRender();
+		assert.strictEqual(probe.hovered, true);
+		tui.stop();
+	});
+
+	it("keeps background hover live outside a non-capturing overlay", async () => {
+		const terminal = new VirtualTerminal(30, 2);
+		const tui = new TuiAltScreen(terminal);
+		const probe = { hovered: false, renders: 0 };
+		tui.addChild(hoverProbe(probe));
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput(motion(1, 1));
+		await terminal.waitForRender();
+		assert.strictEqual(probe.hovered, true);
+
+		tui.showOverlay(new Text("overlay", 0, 0), { anchor: "top-left", width: 8, nonCapturing: true });
+		await terminal.waitForRender();
+		terminal.sendInput(motion(12, 1));
+		await terminal.waitForRender();
+		assert.strictEqual(probe.hovered, true);
+		tui.stop();
+	});
+
 	it("drops the hover when the terminal is resized under the pointer", async () => {
 		const terminal = new VirtualTerminal(20, 4);
 		const tui = new TuiAltScreen(terminal);

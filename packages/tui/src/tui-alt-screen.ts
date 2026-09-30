@@ -288,6 +288,10 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private scrollToEndIndicatorHover = false;
 	/** Component the pointer last hovered; it is sent a leave event when the pointer leaves. */
 	private hoverTarget?: TuiMouseDispatchTarget;
+	/** Last terminal pointer cell, used to restore hover after an app-owned layout reflow. */
+	private lastMousePosition?: { x: number; y: number };
+	/** Re-run passive hover hit-testing after the next committed layout frame. */
+	private refreshMouseHoverPending = false;
 	private activeSearch?: ActiveSearch;
 	private pressedUrl?: string;
 	private selectionDragged = false;
@@ -344,6 +348,13 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.onCopyResult = options.onCopyResult;
 		this.selection = options.selection;
 		this.addInputListener((data) => this.handleViewportInput(data));
+	}
+
+	/** Re-run hover hit-testing at the last pointer cell after the next layout frame. */
+	refreshMouseHover(): void {
+		if (!this.lastMousePosition) return;
+		this.refreshMouseHoverPending = true;
+		this.requestRender();
 	}
 
 	get viewportTop(): number {
@@ -414,6 +425,8 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.selectionGranularity = "character";
 		this.selectionInitialRange = undefined;
 		this.lastClick = undefined;
+		this.lastMousePosition = undefined;
+		this.refreshMouseHoverPending = false;
 		this.pressedUrl = undefined;
 		this.releaseSelectionScrollPin(this.selectionDragged ? "keep" : "resume-silently");
 		this.selectionDragged = false;
@@ -773,6 +786,8 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 				if (hadNonEmptyActiveSelection) this.requestRender();
 			}
 			this.lastClick = undefined;
+			this.lastMousePosition = undefined;
+			this.refreshMouseHoverPending = false;
 			return { consume: true };
 		}
 		if (data === FOCUS_IN) return { consume: true };
@@ -1066,7 +1081,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private updateScrollToEndIndicatorHover(x: number, y: number): boolean {
 		const rect = this.scrollToEndIndicatorRect;
 		const inside = Boolean(
-			rect && !this.hasOverlay() && y === rect.row && x >= rect.column && x < rect.column + rect.width,
+			rect && !this.hasCapturingOverlay() && y === rect.row && x >= rect.column && x < rect.column + rect.width,
 		);
 		if (inside === this.scrollToEndIndicatorHover) return false;
 		this.scrollToEndIndicatorHover = inside;
@@ -1075,6 +1090,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 
 	private handleMouseEvent(raw: SgrMouseEvent): void {
 		const isMotion = (raw.button & 32) !== 0;
+		this.lastMousePosition = { x: raw.x, y: raw.y };
 		const type: TuiMouseEvent["type"] = raw.release
 			? "release"
 			: isMotion
@@ -1117,7 +1133,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 
 		const overlay = this.dispatchMouseToOverlay(event);
 		if (!overlay.hit) {
-			if (type === "move" && this.hasOverlay()) {
+			if (type === "move" && this.hasCapturingOverlay()) {
 				// A visible overlay owns the pointer: the chrome beneath it keeps no hover, even
 				// for a move outside the overlay's own rectangle.
 				this.updateHoverTarget(type);
@@ -1259,7 +1275,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	}
 
 	private getScrollbarTargetAt(x: number, y: number, includeHiddenAuto = false): ScrollbarTarget | undefined {
-		if (this.hasOverlay() || !this.currentLayout) return undefined;
+		if (this.hasCapturingOverlay() || !this.currentLayout) return undefined;
 		for (const scrollView of getScrollViewsAt(this.currentLayout, x, y)) {
 			const box = getScrollViewBox(this.currentLayout, scrollView);
 			const geometry = box ? getScrollbarGeometry(box, includeHiddenAuto) : undefined;
@@ -1641,7 +1657,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const scrollView =
 			surface && surface.component instanceof ScrollView
 				? surface.component
-				: !this.hasOverlay() && this.currentLayout
+				: !this.hasCapturingOverlay() && this.currentLayout
 					? getScrollViewsAt(this.currentLayout, event.x, event.y)[0]
 					: undefined;
 		const anchor = this.getSelectionPoint(event, scrollView);
@@ -1996,6 +2012,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			// The geometry every hover was measured against just moved. Drop it; the next move
 			// re-establishes whatever is under the pointer.
 			this.clearHoverTarget();
+			this.lastMousePosition = undefined;
 			this.stopScrollbarHover();
 			this.scrollToEndIndicatorHover = false;
 		}
@@ -2078,5 +2095,10 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.previousScreenWidth = width;
 		this.previousScreenHeight = height;
 		this.currentLayout = nextLayout;
+		if (this.refreshMouseHoverPending) {
+			this.refreshMouseHoverPending = false;
+			const pointer = this.lastMousePosition;
+			if (pointer) this.handleMouseEvent({ button: SGR_NO_BUTTON | 32, x: pointer.x, y: pointer.y, release: false });
+		}
 	}
 }

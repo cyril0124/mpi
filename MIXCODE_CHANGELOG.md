@@ -352,6 +352,10 @@ point `## [Unreleased]` at the new tag.
 - `TabManager.markDone` wrote `status` directly, leaving the timer fields as the last run left them. It
   now goes through `setTabStatus`, so flagging a tab done records the transition time like every other
   status change.
+- Vim mode no longer loses transcript and chrome hover highlights when entering or leaving changes
+  the fullscreen layout while the pointer stays still; the last pointer cell is re-tested after
+  the new frame commits, and non-capturing Vim toasts/previews no longer block hover outside their
+  own rectangles.
 
 - MixCode Home's working indicators only moved when something else repainted the frame: a tab that
   worked without emitting session events (a blocked or long-running tool, a stalled model response)
