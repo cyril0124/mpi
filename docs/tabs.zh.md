@@ -97,7 +97,7 @@
 
 ```text
 <agentDir>/mixcode-pi/workdirs/<sha16(workdir)>/
-  open_tabs.json      { version, sessionIds, updatedAt }   打开的集合与顺序
+  open_tabs.json      { version, sessionIds, updatedAt }   打开的集合与顺序（成员权威来源）
   mixcode_state.json  { children, workdirs, tab_titles, tab_colors, startup_workdir, unseen_done }
   workspaces.json     命名布局
 ```
@@ -107,6 +107,14 @@
 标签页集合、顺序、标题、颜色发生变化时写这两个文件，进程退出时再写一次；切换焦点不会写。
 
 保存的工作区包含 `name`、`startup_workdir`、`updated_at`、`active_session_id`，以及每个标签页一项（`session_id`、`session_path`、`title`、`workdir`、`model`、`thinking_level`）。
+
+## 并发访问
+
+共享同一工作目录的实例每 2 秒轮询 `open_tabs.json`。打开、关闭、重排和替换会话时，只发布相对于上次本地布局的变化，因此尚未看到对端新标签的实例不会把它删除。对端变化复用本地标签操作的队列，不抢编辑器焦点。正在运行或压缩的标签保留到空闲；会话文件尚不可用时，后续轮询重试。
+
+标题、颜色、工作目录和未读标记只合并发生变化的 session 元数据，并由锁保护；未变的本地值不会覆盖对端的新值。命名工作区的读改写也在锁内完成。这些锁协调本 fork 的写入；写同一文件的其他应用也需要遵循相同加锁协议。
+
+启动恢复加入已存布局，不丢弃对端条目。显式恢复工作区会替换共享集合与顺序，其他实例在下一次轮询跟随该布局。`--no-session` 会话不参与共享持久化和轮询。
 
 ## 启动恢复
 

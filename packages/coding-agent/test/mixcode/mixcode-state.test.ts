@@ -9,7 +9,7 @@ import {
 	readTabMeta,
 	readWorkspaces,
 	resolveSessionPath,
-	saveTabLayout,
+	saveTabMeta,
 	scopedStateDir,
 	stateFilePath,
 	upsertWorkspace,
@@ -94,13 +94,11 @@ describe("open_tabs.json", () => {
 
 describe("mixcode_state.json", () => {
 	it("writes the six shared keys and leaves a generated position title out", () => {
-		saveTabLayout(workdir, {
-			activeSessionId: "s2",
-			tabs: [
-				{ sessionId: "s1", title: "Agent-01", autoTitle: true, workdir },
-				{ sessionId: "s2", title: "chosen", workdir, color: "red", unread: true },
-			],
-		});
+		writeOpenTabs(workdir, ["s1", "s2"], "s2");
+		saveTabMeta(workdir, [
+			{ sessionId: "s1", title: "Agent-01", autoTitle: true, workdir },
+			{ sessionId: "s2", title: "chosen", workdir, color: "red", unread: true },
+		]);
 		const state = JSON.parse(readFileSync(stateFilePath(workdir), "utf-8"));
 		expect(Object.keys(state).sort()).toEqual([
 			"children",
@@ -118,15 +116,13 @@ describe("mixcode_state.json", () => {
 	});
 
 	it("keeps a title the user typed that looks like a generated one", () => {
-		saveTabLayout(workdir, {
-			tabs: [{ sessionId: "s1", title: "Agent-01", workdir }],
-		});
+		saveTabMeta(workdir, [{ sessionId: "s1", title: "Agent-01", workdir }]);
 		const state = JSON.parse(readFileSync(stateFilePath(workdir), "utf-8"));
 		expect(state.tab_titles).toEqual({ s1: "Agent-01" });
 	});
 
 	it("drops a color outside the palette and ignores ids that are not open", () => {
-		saveTabLayout(workdir, { tabs: [{ sessionId: "s1", title: "tab", workdir }] });
+		saveTabMeta(workdir, [{ sessionId: "s1", title: "tab", workdir }]);
 		const path = stateFilePath(workdir);
 		const state = JSON.parse(readFileSync(path, "utf-8"));
 		state.tab_colors = { s1: "banana", gone: "red" };

@@ -9,8 +9,10 @@
  *     mixcode_state.json { children, workdirs, tab_titles, tab_colors, startup_workdir, unseen_done }
  *     workspaces.json    named layouts (snake_case fields)
  *
- * The module also resolves a session id to its file in a session directory, and
- * holds the pid lock both agents take before writing.
+ * `open_tabs.json` holds the authoritative shared order. Normal UI mutations
+ * publish deltas under its lock; explicit workspace replacement writes a new set.
+ * `mixcode_state.json` merges changed per-session metadata under a separate lock.
+ * `workspaces.json` locks the entire named-layout read-modify-write.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -112,14 +114,13 @@ export function readOpenTabs(workdir: string): OpenTabsReadResult {
 }
 
 /**
- * Atomically replace the open-tab set under the shared lock file. Refuses to
- * write over a snapshot it cannot read, so another agent's tab list is never
- * silently dropped because of a partial or foreign file.
+ * Replace the whole open-tab set under the shared lock. Refuses to write over a
+ * snapshot it cannot read, so a partial or foreign file cannot drop another
+ * agent's list. Callers that change one tab at a time use `mutateOpenTabs`,
+ * which keeps a peer's entries.
  */
 export function writeOpenTabs(workdir: string, sessionIds: readonly string[], activeSessionId?: string): void {
 	const filePath = openTabsFilePath(workdir);
-	const existing = readOpenTabs(workdir);
-	if (existing.kind === "invalid") throw new Error(existing.error);
 	const snapshot: OpenTabsSnapshot = {
 		version: OPEN_TABS_VERSION,
 		sessionIds: [...new Set(sessionIds.filter((id) => id.trim()))],
@@ -127,7 +128,42 @@ export function writeOpenTabs(workdir: string, sessionIds: readonly string[], ac
 		...(activeSessionId?.trim() ? { activeSessionId } : {}),
 	};
 	withStateLock(`${filePath}.lock`, () => {
+		const existing = readOpenTabs(workdir);
+		if (existing.kind === "invalid") throw new Error(existing.error);
 		atomicWrite(filePath, `${JSON.stringify(snapshot, null, 2)}\n`);
+	});
+}
+
+/**
+ * Locked read-modify-write on open_tabs.json. The mutator receives the current
+ * ordered set and may add, remove, or reorder entries in-place. The result is
+ * written back atomically. Returns the new ordered id list.
+ *
+ * Missing file: treated as empty set (first writer creates it). Invalid file:
+ * throws rather than silently overwriting a potentially readable snapshot.
+ */
+export function mutateOpenTabs(
+	workdir: string,
+	mutator: (ids: Set<string>) => void,
+	activeSessionId?: string,
+): string[] {
+	const filePath = openTabsFilePath(workdir);
+	return withStateLock(`${filePath}.lock`, () => {
+		const existing = readOpenTabs(workdir);
+		if (existing.kind === "invalid") throw new Error(existing.error);
+		const ids = new Set(existing.kind === "ok" ? existing.snapshot.sessionIds : []);
+		mutator(ids);
+		const sessionIds = [...ids];
+		const active = activeSessionId ?? (existing.kind === "ok" ? existing.snapshot.activeSessionId : undefined);
+		const snapshot: OpenTabsSnapshot = {
+			version: OPEN_TABS_VERSION,
+			sessionIds,
+			updatedAt: new Date().toISOString(),
+			...(active && ids.has(active) ? { activeSessionId: active } : {}),
+		};
+		ensureDir(filePath);
+		atomicWrite(filePath, `${JSON.stringify(snapshot, null, 2)}\n`);
+		return sessionIds;
 	});
 }
 
@@ -174,7 +210,16 @@ export function readTabMeta(workdir: string): Map<string, MixcodeTabMeta> {
 	const colors = asRecord(state.tab_colors);
 	const workdirs = asRecord(state.workdirs);
 	const unseen = new Set(Array.isArray(state.unseen_done) ? state.unseen_done.map(String) : []);
-	const children = Array.isArray(state.children) ? state.children.map(String).filter((id) => id.trim()) : [];
+	// Membership comes from open_tabs.json (authoritative for which tabs are open);
+	// `children` in mixcode_state.json is only a fallback for a state file written
+	// before the open-tabs membership existed / when open_tabs.json is missing.
+	const openTabs = readOpenTabs(workdir);
+	const children =
+		openTabs.kind === "ok"
+			? openTabs.snapshot.sessionIds
+			: Array.isArray(state.children)
+				? state.children.map(String).filter((id) => id.trim())
+				: [];
 	const meta = new Map<string, MixcodeTabMeta>();
 	for (const sessionId of children) {
 		const title = typeof titles[sessionId] === "string" ? (titles[sessionId] as string).trim() : undefined;
@@ -206,43 +251,60 @@ export type TabLayoutEntry = Omit<MixcodeTabMeta, "workdir" | "unread"> & {
 	autoTitle?: boolean;
 };
 
-/**
- * Persist the open-tab layout: `open_tabs.json` holds the set and its order,
- * `mixcode_state.json` holds titles, colors, workdirs, and unread badges.
- * Fields another writer left in a readable `mixcode_state.json` are preserved;
- * when the file is missing or corrupt it reads as `{}`, so those fields are not
- * known and the write replaces the file.
- */
-export function saveTabLayout(
-	workdir: string,
-	layout: { tabs: readonly TabLayoutEntry[]; activeSessionId?: string },
-): void {
-	writeOpenTabs(
-		workdir,
-		layout.tabs.map((tab) => tab.sessionId),
-		layout.activeSessionId,
-	);
+/** A metadata patch: omitted fields are preserved, explicit undefined clears a value. */
+export type TabMetaUpdate = Pick<TabLayoutEntry, "sessionId"> & Partial<Omit<TabLayoutEntry, "sessionId">>;
 
-	const existing = readStateJson(workdir);
-	// Only a chosen title is recorded: a generated `Agent-NN` is re-derived from
-	// the tab's position on the next start, and storing it would freeze a stale
-	// number. The entry says which kind it holds, so a user-typed `Agent-03` is
-	// kept rather than mistaken for a default.
-	const customTitles = layout.tabs
-		.filter((tab) => tab.title?.trim() && !tab.autoTitle)
-		.map((tab) => [tab.sessionId, tab.title!.trim()]);
-	const next: Record<string, unknown> = {
-		...existing,
-		children: layout.tabs.map((tab) => tab.sessionId),
-		workdirs: Object.fromEntries(layout.tabs.map((tab) => [tab.sessionId, tab.workdir])),
-		tab_titles: Object.fromEntries(customTitles),
-		tab_colors: Object.fromEntries(
-			layout.tabs.filter((tab) => tab.color).map((tab) => [tab.sessionId, tab.color as TabColorName]),
-		),
-		startup_workdir: normalizeWorkdir(workdir),
-		unseen_done: layout.tabs.filter((tab) => tab.unread).map((tab) => tab.sessionId),
-	};
-	atomicWrite(stateFilePath(workdir), `${JSON.stringify(next, null, 2)}\n`);
+/**
+ * Write the given tabs' cosmetic metadata: titles, colors, workdirs, and unread
+ * badges. A field absent from an entry keeps whatever another writer left, and
+ * `open_tabs.json` is untouched, so a peer's membership survives.
+ */
+export function saveTabMeta(workdir: string, tabs: readonly TabMetaUpdate[]): void {
+	const stateFile = stateFilePath(workdir);
+	withStateLock(`${stateFile}.lock`, () => {
+		const existing = readStateJson(workdir);
+		const mergedTitles = { ...asRecord(existing.tab_titles) };
+		const mergedColors = { ...asRecord(existing.tab_colors) };
+		const mergedWorkdirs = { ...asRecord(existing.workdirs) };
+		for (const tab of tabs) {
+			if ("title" in tab || "autoTitle" in tab) {
+				if (tab.title?.trim() && !tab.autoTitle) mergedTitles[tab.sessionId] = tab.title.trim();
+				else delete mergedTitles[tab.sessionId];
+			}
+			if ("color" in tab) {
+				if (tab.color) mergedColors[tab.sessionId] = tab.color;
+				else delete mergedColors[tab.sessionId];
+			}
+			if (tab.workdir !== undefined) mergedWorkdirs[tab.sessionId] = tab.workdir;
+		}
+		const unseen = new Set(Array.isArray(existing.unseen_done) ? existing.unseen_done.map(String) : []);
+		for (const tab of tabs) {
+			if (!("unread" in tab)) continue;
+			if (tab.unread) unseen.add(tab.sessionId);
+			else unseen.delete(tab.sessionId);
+		}
+		const shared = readOpenTabs(workdir);
+		if (shared.kind === "invalid") throw new Error(shared.error);
+		const children =
+			shared.kind === "ok"
+				? shared.snapshot.sessionIds
+				: [
+						...new Set([
+							...(Array.isArray(existing.children) ? existing.children.map(String) : []),
+							...tabs.map((tab) => tab.sessionId),
+						]),
+					];
+		const next: Record<string, unknown> = {
+			...existing,
+			children,
+			workdirs: mergedWorkdirs,
+			tab_titles: mergedTitles,
+			tab_colors: mergedColors,
+			startup_workdir: normalizeWorkdir(workdir),
+			unseen_done: [...unseen].filter((id) => children.includes(id)),
+		};
+		atomicWrite(stateFile, `${JSON.stringify(next, null, 2)}\n`);
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -309,7 +371,8 @@ function normalizeWorkspace(record: MixcodeWorkspace): MixcodeWorkspace | undefi
 	return { ...record, name, startup_workdir: normalizeWorkdir(record.startup_workdir ?? ""), tabs };
 }
 
-function writeWorkspaces(workdir: string, workspaces: readonly MixcodeWorkspace[]): void {
+/** Write the cleaned workspace list without acquiring a lock (caller holds one). */
+function writeWorkspacesUnlocked(workdir: string, workspaces: readonly MixcodeWorkspace[]): void {
 	const cleaned = workspaces
 		.map((workspace) => normalizeWorkspace(workspace))
 		.filter((workspace): workspace is MixcodeWorkspace => workspace !== undefined);
@@ -320,22 +383,28 @@ function writeWorkspaces(workdir: string, workspaces: readonly MixcodeWorkspace[
 export function upsertWorkspace(workdir: string, record: MixcodeWorkspace): void {
 	const normalized = normalizeWorkspace(record);
 	if (!normalized) throw new Error("Workspace name cannot be empty");
-	const next = readWorkspaces(workdir).filter((workspace) => workspace.name !== normalized.name);
-	next.push(normalized);
-	next.sort((a, b) => a.name.localeCompare(b.name));
-	writeWorkspaces(workdir, next);
+	const filePath = workspacesFilePath(workdir);
+	withStateLock(`${filePath}.lock`, () => {
+		const next = readWorkspaces(workdir).filter((workspace) => workspace.name !== normalized.name);
+		next.push(normalized);
+		next.sort((a, b) => a.name.localeCompare(b.name));
+		writeWorkspacesUnlocked(workdir, next);
+	});
 }
 
 /** Remove a saved layout. Unknown names are an error; removing the last one deletes the file. */
 export function deleteWorkspaceRecord(workdir: string, name: string): void {
-	const existing = readWorkspaces(workdir);
-	const next = existing.filter((workspace) => workspace.name !== name);
-	if (next.length === existing.length) throw new Error(`Unknown workspace: ${name}`);
-	if (next.length === 0) {
-		rmSync(workspacesFilePath(workdir), { force: true });
-		return;
-	}
-	writeWorkspaces(workdir, next);
+	const filePath = workspacesFilePath(workdir);
+	withStateLock(`${filePath}.lock`, () => {
+		const existing = readWorkspaces(workdir);
+		const next = existing.filter((workspace) => workspace.name !== name);
+		if (next.length === existing.length) throw new Error(`Unknown workspace: ${name}`);
+		if (next.length === 0) {
+			rmSync(filePath, { force: true });
+			return;
+		}
+		writeWorkspacesUnlocked(workdir, next);
+	});
 }
 
 // ---------------------------------------------------------------------------

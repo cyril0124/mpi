@@ -353,6 +353,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Shared tab layouts publish local changes incrementally, so creating, closing, reordering, or
+  replacing a session no longer erases tabs opened in another instance. Peers reconcile every
+  2 seconds through the tab operation queue, preserve editor focus, and defer closing busy tabs.
+  Empty persisted sessions are written before their ids are published, so peers can resume them.
+- Tab metadata merges only changed per-session values under a lock, preserving peer titles,
+  colors and unread badges. Named workspace updates lock their read-modify-write; workspace
+  restoration explicitly replaces the shared layout. See [Agent Tabs](docs/tabs.md#concurrency).
 - Pointer hover stopped painting on message blocks: the render memo added for tab-switch performance
   cached the hover-painted rows, and a passive move requests a render without invalidating, so the
   cached pre-hover rows were served and the cue never appeared. The tool card now memoizes only the
@@ -391,8 +398,8 @@ point `## [Unreleased]` at the new tag.
   taken out of the queue: `flushSteerQueue` spliced them out, removed the mirrored copies from the
   session queue, then returned before the block that restores both on failure. A flush of only blank
   entries now puts them back.
-- A tab title the user typed as `Agent-NN` was lost on save. `saveTabLayout` decided whether a title
-  was worth persisting by comparing it against the default title for the tab's position, so a hand-typed
+- A tab title the user typed as `Agent-NN` was lost on save. Persisting a layout decided whether a title
+  was worth keeping by comparing it against the default title for the tab's position, so a hand-typed
   `Agent-03` read as generated and was left out of `mixcode_state.json`; on the next start the title came
   back renumbered. The tab now carries `autoTitle`, set where a title is chosen and cleared where one is
   picked by hand, and the restore pass renumbers only the flagged tabs.

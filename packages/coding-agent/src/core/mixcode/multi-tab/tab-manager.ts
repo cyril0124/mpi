@@ -426,6 +426,20 @@ export class TabManager {
 		this.onTabsChanged();
 	}
 
+	/** Apply a shared tab order, leaving tabs the order does not name at the end. */
+	reorder(orderedIds: readonly string[]): void {
+		const ordered = orderedIds.flatMap((id) => {
+			const tab = this.get(id);
+			return tab ? [tab] : [];
+		});
+		const unique = [...new Set(ordered)];
+		const next = [...unique, ...this.tabs.filter((tab) => !unique.includes(tab))];
+		if (next.every((tab, index) => tab === this.tabs[index])) return;
+		this.tabs.splice(0, this.tabs.length, ...next);
+		this.notifyLayoutChanged();
+		this.onTabsChanged();
+	}
+
 	/** Reorder by color: colored tabs first in palette order, then uncolored; stable. */
 	groupByColor(): void {
 		const rank = (tab: AgentTab) => (tab.color ? TAB_COLOR_NAMES.indexOf(tab.color) : TAB_COLOR_NAMES.length);

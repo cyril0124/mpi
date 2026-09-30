@@ -119,7 +119,7 @@ Tab state is per working directory, in the directory mixcode-pi (`mpi`) also use
 
 ```text
 <agentDir>/mixcode-pi/workdirs/<sha16(workdir)>/
-  open_tabs.json      { version, sessionIds, updatedAt }   open set and order
+  open_tabs.json      { version, sessionIds, updatedAt }   open set and order (authoritative membership)
   mixcode_state.json  { children, workdirs, tab_titles, tab_colors, startup_workdir, unseen_done }
   workspaces.json     named layouts
 ```
@@ -132,6 +132,23 @@ the process exits. Focusing a tab does not write them.
 
 A saved workspace stores `name`, `startup_workdir`, `updated_at`, `active_session_id`, and one
 entry per tab (`session_id`, `session_path`, `title`, `workdir`, `model`, `thinking_level`).
+
+## Concurrency
+
+Two instances sharing the same workdir poll `open_tabs.json` every 2 seconds. Opening, closing,
+reordering, and replacing a session publish changes relative to the last local layout, so an
+instance that has not yet seen a peer's tab does not erase it. Peer changes run through the same
+queue as local tab operations and do not steal editor focus. A running or compacting tab remains
+open until idle, and a session whose file is not yet available is retried on a later poll.
+
+Changed titles, colors, workdirs, and unread badges are merged per session under a lock;
+unchanged local metadata is not republished over a peer's newer values. Named workspace updates
+also lock their read-modify-write. These locks coordinate writers in this fork; other applications
+writing the same files need to follow the same locking protocol.
+
+Startup joins the stored layout without discarding peer entries. An explicit workspace restore
+replaces the shared set and order, so other instances follow that layout on their next poll.
+`--no-session` sessions do not participate in shared persistence or polling.
 
 ## Startup restore
 
