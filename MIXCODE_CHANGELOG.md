@@ -18,6 +18,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- The `aurora` theme ships as a built-in, selectable from `/theme` and the settings panel. It is
+  not the default: with no `theme` in `settings.json` the terminal background still picks between
+  `dark` and `light`. Built-in themes are now discovered by scanning the theme directory for
+  `*.json` and keying each file by the `name` inside it, rather than loading `dark.json` and
+  `light.json` by name — so a new built-in theme is a new file, and a file that fails to parse or
+  validate is skipped instead of taking the whole built-in set with it.
 - `/toggle-zen-mode` (also in the `ctrl+p` palette) hides the tab bar's chips and leaves their row to
   the transcript. The separator under the bar stays and takes over what the chips still reported: one
   dot per other agent with something to report, in tab order — an accent braille frame while a tab
@@ -30,7 +36,6 @@ point `## [Unreleased]` at the new tag.
   Zen follows focus like vim: at most one tab holds it, a tab opened or focused while another holds it
   takes it over, Home puts the full bar back, and nothing about it is persisted, so a session
   restored at startup starts with the bar. See [Zen Mode](docs/zen-mode.md).
-
 - `/workdir [path]` moves the active tab onto another working directory, and without a path it opens
   a directory picker over the composer. The session keeps running: the transcript is unchanged, the
   agent's cwd-bound services are rebuilt in the new directory, and the session header records it so a

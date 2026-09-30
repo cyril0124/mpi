@@ -9,6 +9,7 @@
 | 方面 | 上游 | 本 fork | 原因 |
 | --- | --- | --- | --- |
 | `install.sh` | 通过 `scripts/build-binaries.sh` 构建发布归档 | 在 `<prefix>/lib/mpi/release.*/` 准备完整运行时后，原子替换 `<prefix>/bin/mpi`；保留旧运行时目录 | 升级失败时保留可用安装，NFS 上运行中的进程仍可访问自己的资源 |
+| 内置主题发现 | `getBuiltinThemes()` 按名字读取 `dark.json` 与 `light.json`，丢进主题目录的 JSON 不会被发现；主题选择器只列出它们与用户主题 | 主题目录下每个 `*.json` 都会被加载，并以文件内的 `name` 作为键（跳过 `theme-schema.json`）；某个文件解析或校验失败时只是被丢弃，不会带掉其余内置主题。`aurora` 即由此提供 | 一个主题一个文件，新增主题就是新增文件，无需改动加载器 |
 | `app.thinking.cycle` 默认键 | `shift+tab` | `alt+t` | `shift+tab` 改作 `app.tab.previous` |
 | Agent 标签页 | 一个终端一个会话 | 多个并发标签页，各自持有 `AgentSessionRuntime` | [Agent 标签页](tabs.zh.md) |
 | 会话删除 | 直接删除所选会话文件 | 所属标签页有对话进行中时拒绝 | 可能还有另一个标签页在写该文件 |

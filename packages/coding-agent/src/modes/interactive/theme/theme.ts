@@ -404,15 +404,31 @@ export class Theme {
 
 let BUILTIN_THEMES: Record<string, ThemeJson> | undefined;
 
+/**
+ * Load every theme in the built-in theme directory, keyed by the name each file declares.
+ * Discovery is by directory rather than by a fixed list, so a new built-in theme is a new
+ * file. A file that fails to parse or validate is left out of the picker rather than
+ * thrown, so one broken theme cannot hide the others or the dark fallback.
+ */
 function getBuiltinThemes(): Record<string, ThemeJson> {
 	if (!BUILTIN_THEMES) {
 		const themesDir = getThemesDir();
-		const darkPath = path.join(themesDir, "dark.json");
-		const lightPath = path.join(themesDir, "light.json");
-		BUILTIN_THEMES = {
-			dark: JSON.parse(stripBom(fs.readFileSync(darkPath, "utf-8"))) as ThemeJson,
-			light: JSON.parse(stripBom(fs.readFileSync(lightPath, "utf-8"))) as ThemeJson,
-		};
+		const themes: Record<string, ThemeJson> = {};
+		for (const file of fs.readdirSync(themesDir).sort()) {
+			if (!file.endsWith(".json") || file === "theme-schema.json") {
+				continue;
+			}
+			const themePath = path.join(themesDir, file);
+			try {
+				const themeJson = parseThemeJsonContent(themePath, fs.readFileSync(themePath, "utf-8"));
+				if (themeJson.name) {
+					themes[themeJson.name] = themeJson;
+				}
+			} catch {
+				// Skipped here; `loadTheme` reports the failure when the theme is selected.
+			}
+		}
+		BUILTIN_THEMES = themes;
 	}
 	return BUILTIN_THEMES;
 }
