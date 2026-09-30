@@ -89,6 +89,7 @@ import type {
 	ExtensionWidgetOptions,
 	MarkdownTransformer,
 	ProjectTrustContext,
+	ToolInfo,
 	UserBashEventResult,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
@@ -165,6 +166,10 @@ import {
 	type TabColorName,
 } from "../../core/mixcode/multi-tab/types.ts";
 import { persistSessionCwd, writeSessionFile } from "../../core/mixcode/session-workdir.ts";
+import { type EditorFlagRequest, parseEditorFlag } from "../../core/mixcode/system-inspection/editor-flag.ts";
+import { getEffectiveSystemPrompt } from "../../core/mixcode/system-inspection/effective-system-prompt.ts";
+import { renderSystemPromptSectionStats } from "../../core/mixcode/system-inspection/system-prompt-stats.ts";
+import { renderSystemToolsText } from "../../core/mixcode/system-inspection/system-tools.ts";
 import {
 	activeToast,
 	clearToast,
@@ -5929,6 +5934,21 @@ export class InteractiveMode {
 				this.showError("Usage: /console-history");
 				return;
 			}
+			if (text === "/system-prompt") {
+				this.editor.setText("");
+				await this.handleSystemPromptCommand();
+				return;
+			}
+			if (text.startsWith("/system-prompt ")) {
+				this.showError("Usage: /system-prompt");
+				return;
+			}
+			if (text === "/system-tools" || text.startsWith("/system-tools ")) {
+				const args = text.startsWith("/system-tools ") ? text.slice("/system-tools ".length) : "";
+				this.editor.setText("");
+				await this.handleSystemToolsCommand(args);
+				return;
+			}
 			if (text === "/palette") {
 				this.editor.setText("");
 				this.showCommandPalette();
@@ -7643,19 +7663,57 @@ export class InteractiveMode {
 	private async handleConsoleHistoryCommand(): Promise<void> {
 		const history = getConsoleHistory();
 		const text = history.length > 0 ? history.join("\n") : "No console history in this process.";
-		const editor = resolveOutputEditor(this.configuredHistoryEditor());
+		await this.showInspectionOutput(text, { title: "Console History" });
+	}
+
+	/**
+	 * `/system-prompt` shows the prompt the provider receives: the replayed
+	 * transcript system message, or the base render before the first request records
+	 * one. The footer breaks the prompt into its named sections.
+	 */
+	private async handleSystemPromptCommand(): Promise<void> {
+		const effective = getEffectiveSystemPrompt(this.session);
+		let text = effective?.text ?? this.session.systemPrompt;
+		if (effective) text += renderSystemPromptSectionStats(effective.sections, text);
+		await this.showInspectionOutput(text, { title: "System Prompt" });
+	}
+
+	/** `/system-tools` shows every active tool definition, with a per-tool size breakdown. */
+	private async handleSystemToolsCommand(args: string): Promise<void> {
+		// The report names itself, so it needs no block title.
+		await this.showInspectionOutput(renderSystemToolsText(this.activeToolInfos()), {
+			request: parseEditorFlag(args),
+		});
+	}
+
+	/** Active tools with their source metadata, in the session's tool order. */
+	private activeToolInfos(): ToolInfo[] {
+		const active = new Set(this.session.getActiveToolNames());
+		return this.session.getAllTools().filter((tool) => active.has(tool.name));
+	}
+
+	/**
+	 * Show read-only command output: in the resolved external editor when one is
+	 * available, in a chat block otherwise. The text is handed over to be read, so
+	 * only an editor failure is reported and anything it wrote back is dropped.
+	 */
+	private async showInspectionOutput(
+		text: string,
+		options: { title?: string; request?: EditorFlagRequest } = {},
+	): Promise<void> {
+		const editor = options.request?.editorDisabled
+			? undefined
+			: options.request?.editor || resolveOutputEditor(this.configuredOutputEditor());
 		if (editor) {
-			// The text is handed over to be read, not edited, so only a failure is
-			// reported; the content the editor wrote back is dropped.
 			const result = await this.runExternalEditor(editor, text);
 			if (result.status === "failed") this.showError(`External editor "${editor}" exited with an error.`);
 			return;
 		}
-		this.renderConsoleHistoryBlock(text);
+		this.renderOutputBlock(options.title, text);
 	}
 
 	/** `externalEditor` from the project scope first, then the global scope. */
-	private configuredHistoryEditor(): string | undefined {
+	private configuredOutputEditor(): string | undefined {
 		const project = this.settingsManager.getProjectSettings().externalEditor;
 		return typeof project === "string" ? project : this.settingsManager.getGlobalSettings().externalEditor;
 	}
@@ -7676,11 +7734,14 @@ export class InteractiveMode {
 		}
 	}
 
-	private renderConsoleHistoryBlock(text: string): void {
+	/** Render read-only command output as a bordered block in the transcript. */
+	private renderOutputBlock(title: string | undefined, text: string): void {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Console History")), 1, 0));
-		this.chatContainer.addChild(new Spacer(1));
+		if (title !== undefined) {
+			this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", title)), 1, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
 		this.chatContainer.addChild(new Text(text, this.outputPad, 0));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();

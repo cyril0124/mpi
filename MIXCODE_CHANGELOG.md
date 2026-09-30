@@ -241,6 +241,14 @@ point `## [Unreleased]` at the new tag.
   output, the row the viewport landed on highlighted, `↑ N older above` / `↓ N newer below` hints when
   the list is longer than its row budget, and a 1.8 s lifetime. The panel sits above the dock with the
   scrollbar column left clear. See [Vim Mode](docs/vim-mode.md).
+- `/system-prompt` shows the prompt the provider receives — the system message replayed from the
+  transcript, so sections a `before_agent_start` extension wrote are included, or the base render
+  before the first request records one — followed by a table that sizes every named prompt section
+  (chars, estimated tokens, share, and `project_instructions` files one row each). `/system-tools`
+  shows every active tool's description, owner and parameter schema, followed by the same table over
+  what a tool definition actually sends (name, description, parameter schema). Both open in the
+  read-only external editor (`/system-tools` also takes `--editor=<cmd>` and `--editor=false` for the
+  in-app block), and both estimate tokens at ~4 characters per token with one token per CJK character.
 
 ### Changed
 
