@@ -2,13 +2,13 @@
 set -euo pipefail
 
 # MixCode installer - build the workspace, compile a standalone binary, install as `mpi`.
-# Usage: ./install.sh [--prefix ~/.local]
+# Usage: ./install.sh [--name <name>] [--prefix ~/.local]
 #
 # Layout: the compiled binary reads its runtime files (themes, assets, export templates,
 # docs, wasm, native prebuilds) from its own directory, so the binary lives in
-# <prefix>/lib/mpi/ and <prefix>/bin/mpi is a wrapper that execs it.
+# <prefix>/lib/<name>/ and <prefix>/bin/<name> is a wrapper that execs it.
 
-INSTALL_NAME="mpi"
+INSTALL_NAME="${MIXCODE_INSTALL_NAME:-mpi}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Helpers ---
@@ -25,6 +25,10 @@ PREFIX="${MIXCODE_INSTALL_PREFIX:-$HOME/.local}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --name)
+      [ $# -lt 2 ] && error "--name requires an argument"
+      INSTALL_NAME="$2"; shift 2 ;;
+    --name=*) INSTALL_NAME="${1#--name=}"; shift ;;
     --prefix)
       [ $# -lt 2 ] && error "--prefix requires an argument"
       PREFIX="$2"; shift 2 ;;
@@ -36,11 +40,13 @@ while [ $# -gt 0 ]; do
 Usage: install.sh [OPTIONS]
 
 Options:
-  --prefix <path>   Install wrapper to <path>/bin/mpi, runtime files to <path>/lib/mpi
-                    (default: ~/.local)
+  --name <name>     Install as <name> in bin/ and lib/ (default: $INSTALL_NAME)
+  --prefix <path>   Install wrapper to <path>/bin/<name>, runtime files to
+                    <path>/lib/<name> (default: ~/.local)
   -h, --help        Show this help
 
 Environment variables:
+  MIXCODE_INSTALL_NAME    Same as --name
   MIXCODE_INSTALL_PREFIX  Same as --prefix
 
 Requires bun (installed automatically if missing) and network access for the
@@ -51,6 +57,10 @@ EOF
     *) error "Unknown option: $1" ;;
   esac
 done
+
+case "$INSTALL_NAME" in
+  ''|.|..|*[!A-Za-z0-9._-]*) error "--name must be a simple filename" ;;
+esac
 
 # Strip trailing slashes for consistent PATH matching
 PREFIX="${PREFIX%/}"

@@ -18,6 +18,7 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- `install.sh` accepts `--name <name>` (or `MIXCODE_INSTALL_NAME`) and uses that name for both the installed bin wrapper and its runtime directory, allowing one-command installation under a custom command name.
 - The `aurora` theme ships as a built-in, selectable from `/theme` and the settings panel. It is
   not the default: with no `theme` in `settings.json` the terminal background still picks between
   `dark` and `light`. Built-in themes are now discovered by scanning the theme directory for
