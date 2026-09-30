@@ -284,6 +284,7 @@ import { MixcodePromptEditor } from "./components/mixcode/input-dock/prompt-edit
 import { primaryKeyGlyphText } from "./components/mixcode/key-hints.ts";
 import { TabBar, type TabBarItem, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
 import { bindWorkingIndicatorRedraw } from "./components/mixcode/multi-tab/tab-glyphs.ts";
+import { TabJumpComponent, type TabJumpEntry } from "./components/mixcode/multi-tab/tab-jump.ts";
 import { bindTabLoadingRedraw } from "./components/mixcode/multi-tab/tab-loading.ts";
 import { zenStatusMarkers } from "./components/mixcode/multi-tab/zen-status.ts";
 import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
@@ -606,6 +607,14 @@ export interface InteractiveModeOptions {
 const COMMAND_PALETTE_HEIGHT_PERCENT = 80;
 /** Share of the terminal width the command-palette overlay may take. */
 const COMMAND_PALETTE_WIDTH_PERCENT = 78;
+/** Share of the terminal height the Tab Jump overlay may take; matches the palette's. */
+const TAB_JUMP_HEIGHT_PERCENT = 80;
+/** Share of the terminal width the Tab Jump overlay may take; matches the palette's. */
+const TAB_JUMP_WIDTH_PERCENT = 78;
+/** Share of the terminal's rows the Tab Jump list itself may show. */
+const TAB_JUMP_MAX_ROWS_SHARE = 0.5;
+/** Floor of visible rows the Tab Jump list keeps, so a short terminal still shows one. */
+const TAB_JUMP_MIN_VISIBLE_ROWS = 5;
 /** Fixed width of the quit dialog: one sentence and two buttons. */
 const QUIT_CONFIRM_WIDTH = 72;
 /**
@@ -1394,7 +1403,19 @@ export class InteractiveMode {
 		this.tabBarContainer.addChild(
 			new TabBar(
 				() => this.getTabBarModel(),
-				(id) => void this.activateTabById(id),
+				(id) => {
+					// A chip click is chrome, and chrome is dropped while another surface owns the
+					// keyboard: a floating overlay or a selector in the editor slot. Acting behind either
+					// would switch tabs under a surface the user is working in.
+					if (this.ui.hasCapturingOverlay() || this.activeSelectorToken !== undefined) return;
+					// Re-clicking the chip of the tab already focused opens Tab Jump instead of
+					// re-activating it: the chip is then the second way into the switcher.
+					if (id === (this.homeSelection.active ? HOME_TAB_ID : this.tabManager?.getActive().id)) {
+						this.showTabJump();
+						return;
+					}
+					void this.activateTabById(id);
+				},
 			),
 		);
 		this.fullscreenLayoutRoot = new TuiLayouts.VStack([
@@ -1473,7 +1494,10 @@ export class InteractiveMode {
 				rawKeyHint(keyText("app.model.cycleBackward"), "to cycle models back"),
 				hint("app.model.select", "to select model"),
 				hint("app.tools.expand", "to expand tools"),
-				hint("app.thinking.toggle", "to expand thinking"),
+				// The thinking-block toggle is not listed: `app.tab.jump` holds its `ctrl+t`
+				// default, and a compact hint row must not name a chord that does nothing here.
+				// `/hotkeys` still reports it, marked as taken.
+				hint("app.tab.jump", "to jump between tabs"),
 				hint("app.editor.external", "for external editor"),
 				rawKeyHint("/", "for commands"),
 				rawKeyHint("!", "to run bash"),
@@ -5822,6 +5846,9 @@ export class InteractiveMode {
 		this.ui.onDebug = () => this.handleDebugCommand();
 		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
+		// Tab Jump takes ctrl+t; the thinking-block toggle keeps its own ctrl+t default and is
+		// declined here by registration order, so the chord reaches this handler first.
+		this.defaultEditor.onAction("app.tab.jump", () => this.handleTabJumpShortcut());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.editor.external", () => void this.handleOpenExternalEditor());
 		this.defaultEditor.onAction("app.message.copy", () => void this.handleCopyCommand({ preferSelection: true }));
@@ -6016,6 +6043,15 @@ export class InteractiveMode {
 			}
 			if (text.startsWith("/palette ")) {
 				this.showError("Usage: /palette");
+				return;
+			}
+			if (text === "/jump") {
+				this.editor.setText("");
+				this.showTabJump();
+				return;
+			}
+			if (text.startsWith("/jump ")) {
+				this.showError("Usage: /jump");
 				return;
 			}
 			if (text === "/fork") {
@@ -8147,6 +8183,62 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Tab Jump (Ctrl+T): list Home and every open agent tab and jump to the chosen one.
+	 * Skipped while the editor's own command popup is up, like the palette chord.
+	 */
+	private handleTabJumpShortcut(): void {
+		if (isShowingAutocomplete(this.editor)) return;
+		this.showTabJump();
+	}
+
+	private showTabJump(): void {
+		// Something already owns the keyboard: a capturing overlay, or a selector in the
+		// editor slot (tree, model, resume). Opening over either would stack two surfaces and
+		// leave the first one's close path unrun.
+		if (!this.tabManager || this.ui.hasCapturingOverlay() || this.activeSelectorToken !== undefined) return;
+		const model = this.getTabBarModel();
+
+		const maxVisibleRows = Math.max(
+			TAB_JUMP_MIN_VISIBLE_ROWS,
+			Math.floor(this.ui.terminal.rows * TAB_JUMP_MAX_ROWS_SHARE),
+		);
+		let handle: OverlayHandle | undefined;
+		const overlay = new TabJumpComponent(
+			this.tabJumpEntries(model),
+			model.activeId || HOME_TAB_ID,
+			maxVisibleRows,
+			(id) => {
+				handle?.hide();
+				void this.activateTabById(id);
+			},
+			() => handle?.hide(),
+		);
+		handle = this.ui.showOverlay(overlay, {
+			anchor: "center",
+			width: `${TAB_JUMP_WIDTH_PERCENT}%`,
+			maxHeight: `${TAB_JUMP_HEIGHT_PERCENT}%`,
+			margin: 1,
+		});
+	}
+
+	/**
+	 * The rows Tab Jump lists: Home first, then the tabs the tab bar is showing. Reusing that
+	 * projection keeps the two surfaces from disagreeing, and a tab still coming up shows its
+	 * spinner in both.
+	 */
+	private tabJumpEntries(model: TabBarModel): TabJumpEntry[] {
+		return [
+			{ id: HOME_TAB_ID, title: model.home?.label ?? "MixCode Home", status: "idle", unread: false },
+			...model.tabs.map((tab) => ({
+				id: tab.id,
+				title: tab.title,
+				status: tab.status,
+				unread: tab.unread,
+			})),
+		];
+	}
+
+	/**
 	 * Run a palette selection through the editor's submit path, so the command's own
 	 * argument parsing, gating and error reporting apply unchanged. The command sees
 	 * its own text in the editor; once it is done with the editor, the draft that was
@@ -10070,6 +10162,8 @@ export class InteractiveMode {
 		const exit = this.getAppKeyDisplay("app.exit");
 		const quit = this.getAppKeyDisplay("app.quit");
 		const palette = this.getAppKeyDisplay("app.palette");
+		const jumpTab = this.getAppKeyDisplay("app.tab.jump");
+		const jumpNonIdle = this.getAppKeyDisplay("app.tabJump.toggleNonIdle");
 		const suspend = this.getAppKeyDisplay("app.suspend");
 		const cycleThinkingLevel = this.getAppKeyDisplay("app.thinking.cycle");
 		const selectModel = this.getAppKeyDisplay("app.model.select");
@@ -10116,12 +10210,14 @@ export class InteractiveMode {
 | \`${exit}\` | Exit (when editor is empty) |
 | \`${quit}\` | Quit (asks first) |
 | \`${palette}\` | Open command palette |
+| \`${jumpTab}\` | Open tab jump overlay |
+| \`${jumpNonIdle}\` | Toggle the tab jump non-idle filter |
 | \`${suspend}\` | Suspend to background |
 | \`${cycleThinkingLevel}\` | Cycle thinking level |
 | \`${cycleModelBackward}\` | Cycle to previous model |
 | \`${selectModel}\` | Open model selector |
 | \`${expandTools}\` | Toggle tool output expansion |
-| \`${toggleThinking}\` | Toggle thinking block visibility |
+| \`${toggleThinking}\` | Toggle thinking block visibility (taken by Tab Jump; rebind it to use it) |
 | \`${externalEditor}\` | Edit message in external editor |
 | \`${copyMessage}\` | Copy selection or last assistant message |
 | \`${followUp}\` | Queue follow-up message (rounds merge while the agent runs) |

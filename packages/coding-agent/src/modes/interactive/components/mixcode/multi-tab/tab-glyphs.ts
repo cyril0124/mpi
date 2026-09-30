@@ -1,13 +1,14 @@
 /**
- * What the tab surfaces paint with: a chip's glyph per status, the frames and
- * cadence of the animated working indicator, and the rule the bar and its
- * separator are drawn from.
+ * What the tab surfaces paint with: a chip's glyph and colour per status, the
+ * frames and cadence of the animated working indicator, and the rule the bar and
+ * its separator are drawn from.
  *
- * The zen separator reads the same glyphs without going through `tab-bar.ts`,
- * the component that owns the chips, and the repaint loop sits next to the
- * cadence it uses.
+ * The zen separator and the Tab Jump rows read the same glyphs and colours without
+ * going through `tab-bar.ts`, the component that owns the chips, and the repaint
+ * loop sits next to the cadence it uses.
  */
-import type { TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
+import { isWorkingStatus, type TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
+import { theme } from "../../../theme/theme.ts";
 import { tabLoadingFrame } from "./tab-loading.ts";
 
 /**
@@ -29,6 +30,18 @@ export function tabStatusGlyph(status: TabStatus, unread: boolean): string {
 	if (status === "loading") return tabLoadingFrame();
 	if (unread && status !== "error") return TAB_STATUS_GLYPHS.done;
 	return TAB_STATUS_GLYPHS[status];
+}
+
+/**
+ * Painter for a tab's status text, so a chip's glyph and a Tab Jump row's glyph and
+ * title read in the same colour. `undefined` leaves the text as the surface paints it.
+ */
+export function tabStatusPaint(status: TabStatus, unread: boolean): ((text: string) => string) | undefined {
+	if (status === "loading") return (text) => theme.fg("dim", text);
+	if (status === "error") return (text) => theme.fg("error", text);
+	if (unread) return (text) => theme.fg("success", text);
+	if (isWorkingStatus(status)) return (text) => theme.fg("accent", text);
+	return undefined;
 }
 
 /**

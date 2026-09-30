@@ -16,6 +16,7 @@ commit that causes it.
 | `/fork` message selection | replaces the active session | opens a new independent tab after the source, with a unique `-fork` title and the selected message in its editor | the original conversation remains available beside the alternative |
 | Session deletion | deletes the selected session file | refuses while the owning tab has a turn in progress | another tab may still be writing that file |
 | `app.model.cycleForward` default key | `ctrl+p` | no default key | `ctrl+p` opens the command palette |
+| `app.tab.jump` default key | no such action; `ctrl+t` toggles thinking-block visibility | `ctrl+t` opens the Tab Jump switcher, and `app.thinking.toggle` keeps its `ctrl+t` default but loses the chord to the composer's registration order | jumping to one of several agents should not mean cycling past the others; see [Agent Tabs](tabs.md#tab-jump) |
 | Quit | `ctrl+d` exits, no confirmation | `ctrl+q` (`ctrl+shift+q` on Windows and WSL) asks first; `ctrl+d` unchanged | [Command Palette and Quit Confirmation](command-palette.md) |
 | Fullscreen transcript rendering | renders every message component each frame, then clips to the viewport | renders only the visible window (20 rows of overscan) and estimates unmeasured blocks at 4 rows | frame cost otherwise grows with the whole conversation |
 | Transcript scrolling keys | `tui.altScreen.*` only | plus a modal surface (`/vim`, `j`/`k`/`gg`/`G`, prompt jumps with a `User Messages` preview panel) in fullscreen mode | mouse-free reading of long conversations |
@@ -69,8 +70,11 @@ Deliberately left unpatched:
 | `packages/coding-agent/docs/compaction.md:41` | "trigger manually with `/compact [instructions]`" | same: the summary model can be named before the instructions |
 | `packages/coding-agent/docs/environment-variables.md:85` | `PI_SKIP_VERSION_CHECK` disables the `pi.dev` latest-version request | the variable and the startup check that read it are removed |
 | `packages/coding-agent/src/utils/version-check.ts` (source copy) | exports `checkForNewPiVersion`, the startup check that reads `PI_SKIP_VERSION_CHECK` | removed; `getLatestPiRelease` and `isNewerPackageVersion` stay for `pi update --self` |
+| `packages/coding-agent/docs/usage.md:23` | "Press `Ctrl+T` to show or hide thinking blocks" | `ctrl+t` opens Tab Jump; `app.thinking.toggle` keeps the same default but the composer declines it behind the jump handler |
+| `packages/coding-agent/docs/keybindings.md:157` | `app.thinking.toggle` defaults to `ctrl+t` | the same key belongs to `app.tab.jump`, which the composer registers first; the toggle is reachable only after a rebind |
 
-Those pages also never list the tab keybindings and tab slash commands; [Agent Tabs](tabs.md) is the source of truth for those.
+Those pages also never list the tab keybindings and tab slash commands — `/jump` and its `ctrl+t`
+chord included; [Agent Tabs](tabs.md) is the source of truth for those.
 
 ## Upstream files modified by this fork
 
@@ -138,7 +142,8 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `AGENTS.md`, `.gitignore`
 
 The fork also adds keys to upstream's `keybindings.ts` — the `app.workdir.*` bindings the workdir
-picker answers and the `app.queueEdit.*` ones the queued-message editor answers — while
+picker answers, the `app.queueEdit.*` ones the queued-message editor answers, and the `app.tab.jump`
+/ `app.tabJump.toggleNonIdle` pair the Tab Jump overlay answers — while
 `core/mixcode/multi-tab/tab-manager.ts` and `tab-state.ts` are fork-owned.
 
 ## Paths that exist only in this fork

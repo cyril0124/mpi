@@ -22,6 +22,7 @@ import {
 import { getSelectListTheme, theme } from "../../../theme/theme.ts";
 import { type HoverTarget, PointerHover } from "../hover/pointer-hover.ts";
 import { panel, panelContentWidth } from "../panel.ts";
+import { highlightMatches } from "../search-highlight.ts";
 
 /** One runnable entry, addressed by its command name without the leading slash. */
 export interface CommandPaletteEntry {
@@ -50,69 +51,6 @@ const PALETTE_FRAME_ROWS = 7;
 /** Display label for a command row, e.g. `model` -> `/model`. */
 function commandLabel(name: string): string {
 	return `/${name}`;
-}
-
-/** Indices where `token` appears in `text` in order, or undefined when it does not. */
-function subsequenceIndices(token: string, text: string): number[] | undefined {
-	const indices: number[] = [];
-	let cursor = 0;
-	for (const character of token) {
-		const index = text.indexOf(character, cursor);
-		if (index === -1) return undefined;
-		indices.push(index);
-		cursor = index + 1;
-	}
-	return indices;
-}
-
-/** The letters/digits transposition pi-tui's `fuzzyFilter` also accepts, e.g. `4gpt` for `gpt-4`. */
-function transposedToken(token: string): string | undefined {
-	const lettersFirst = token.match(/^([a-z]+)([0-9]+)$/);
-	if (lettersFirst) return `${lettersFirst[2]}${lettersFirst[1]}`;
-	const digitsFirst = token.match(/^([0-9]+)([a-z]+)$/);
-	if (digitsFirst) return `${digitsFirst[2]}${digitsFirst[1]}`;
-	return undefined;
-}
-
-/**
- * Indices in `text` where the query matched, tokenising exactly as pi-tui's `fuzzyFilter`
- * does (`packages/tui/src/fuzzy.ts`): tokens split on whitespace and slashes, every
- * token must appear in order, and a token of letters and digits may match transposed.
- * `FuzzyMatch` exposes only `{matches, score}` and no match positions, so this copy
- * exists to know which characters to highlight; a change to the library's matching
- * rules must be mirrored here.
- */
-function matchedIndices(query: string, text: string): Set<number> {
-	const haystack = text.toLowerCase();
-	const indices = new Set<number>();
-	for (const token of query
-		.trim()
-		.toLowerCase()
-		.split(/[\s/]+/)) {
-		if (!token) continue;
-		const direct = subsequenceIndices(token, haystack);
-		if (direct) {
-			for (const index of direct) indices.add(index);
-			continue;
-		}
-		const transposed = transposedToken(token);
-		const swapped = transposed ? subsequenceIndices(transposed, haystack) : undefined;
-		if (!swapped) return new Set();
-		for (const index of swapped) indices.add(index);
-	}
-	return indices;
-}
-
-/** Paint the characters the query matched, the way the rest of the UI marks search hits. */
-function highlightMatches(text: string, query: string): string {
-	const indices = matchedIndices(query, text);
-	if (indices.size === 0) return text;
-	let painted = "";
-	for (let index = 0; index < text.length; index++) {
-		const character = text[index]!;
-		painted += indices.has(index) ? theme.bg("searchMatchBg", theme.fg("searchMatchText", character)) : character;
-	}
-	return painted;
 }
 
 /**

@@ -12,8 +12,11 @@
 | 上一个标签页 | `shift+tab`、`ctrl+shift+left`（同样例外） |
 | 新建标签页 | 无 —— 用 `/new-session` |
 | 关闭标签页 | 无 —— 用 `/close-session` |
+| 标签页跳转 | `ctrl+t`，也可用 `/jump` |
 
 `app.tab.previous` 占用了 `shift+tab`，而上游把 `shift+tab` 绑给 `app.thinking.cycle`，因此本 fork 把思考等级循环改到 `alt+t`。见 [上游漂移](upstream-drift.zh.md)。
+
+`app.tab.jump` 占用 `ctrl+t`，上游把该键绑给 `app.thinking.toggle`。后者保留 `ctrl+t` 默认值，但 composer 先注册的是跳转处理器，因此这个键打开 Tab Jump；thinking 开关在 composer 里没有可用按键，除非在 `keybindings.json` 里重新绑定。启动提示不再列出该开关，`/hotkeys` 仍会列出它并注明这个键已被占用。见 [标签页跳转](#标签页跳转) 与 [上游漂移](upstream-drift.zh.md)。
 
 ## 命令
 
@@ -27,6 +30,7 @@
 | `/rename <title>` | 重命名当前标签页及其会话。 |
 | `/tabs` | 列出已打开的标签页。 |
 | `/tab <index\|title>` | 聚焦指定标签页。 |
+| `/jump` | 打开 Tab Jump 切换浮层。带参数时报 `Usage: /jump`。 |
 | `/workdir [path]` | 把当前标签页切到另一个工作目录。带路径时立即切换，不带路径时打开目录选择器。见 [工作目录](#工作目录)。 |
 | `/color [name\|clear]` | 设置当前标签页底色；不带参数或传 `clear` 则清除。 |
 | `/group-colored-tabs` | 重排标签页：有颜色的排前面，按调色板顺序聚合。 |
@@ -38,6 +42,26 @@
 
 会话确认框（`/close-session`、`/delete-session` 以及两个 all-sessions 变体）除方向键选择器外，
 也可以按 `y` 确认、按 `n` 或 `esc` 取消。
+
+## 标签页跳转
+
+`ctrl+t` 或 `/jump` 会在 composer 上方打开一个可搜索的浮层：MixCode Home 一行，每个打开的标签页一行，按标签页顺序排列，打开时高亮当前聚焦的那个。首行标注查询词并报告命中数（`命中/总数`，过滤器开启时多一个 `non-idle`）。每行带标签栏同款状态字形（Home 留空，它的 chip 也没有字形）、标题（标出过滤词命中的字符）和右对齐的标签 id；尚未就绪的标签页在这里也保持 spinner。
+
+| 按键 | 行为 |
+| --- | --- |
+| `up` / `ctrl+k` / `shift+tab`（`app.tabJump.selectPrevious`） | 高亮上移，到顶后回到最后一行。 |
+| `down` / `ctrl+j` / `tab`（`app.tabJump.selectNext`） | 高亮下移，到底后回到第一行。 |
+| 任意可打印字符 | 按标签页标题过滤。 |
+| `ctrl+f`（`app.tabJump.toggleNonIdle`） | 只保留有状态需要汇报的标签页 —— 运行中、出错、已完成未读。Home 永不被保留，尚未就绪的标签页还没有可汇报的内容。 |
+| `enter`（`tui.select.confirm`） | 跳到高亮项并关闭；若已无可选项，仅关闭浮层。 |
+| `esc`（`tui.select.cancel`） | 关闭，不切换。 |
+| 指针 | 滚轮移动高亮，指针悬停的行加下划线，左键点击即跳到该行对应的标签页。 |
+
+列表长于面板可显示的行数时围绕高亮截取，并用 `... (N more above)` / `... (N more below)` 标出；id 列在行内容得下时显示完整 id，否则显示前几个字符；超出行宽的行一律以 `...` 结尾。
+
+不启用扩展按键协议的终端会把 `ctrl+j` 和换行符形式的 Enter 报成同一个字节。此浮层把这个字节当作 `ctrl+j`，因此它会移动高亮；回车符形式的 Enter 仍会正常跳转。
+
+编辑器自带的 `/` 命令弹窗打开时该键无效；只要已有其他界面占着键盘 —— 浮层，或占用编辑器位置的 selector（会话树、模型选择、Resume）—— 也不会打开，因此不会出现两层界面叠加。点击已聚焦标签页的 chip 打开的正是这个浮层，规则相同。[zen 专注模式](zen-mode.zh.md) 下这个浮层就是切换器：`tab` 与 `shift+tab` 不再切换，但 `ctrl+t` 仍能打开它。
 
 ## 工作目录
 
@@ -67,7 +91,7 @@
 
 ## 标签栏
 
-编辑器上方的标签栏最前面固定一个 `MixCode Home` chip，其后每个 agent 标签页一个 chip：状态字形、标题、颜色。Home chip 没有状态字形；`tab` 与 `shift+tab` 会把它纳入循环，点击它打开 [MixCode Home](home.zh.md)。状态与字形：
+编辑器上方的标签栏最前面固定一个 `MixCode Home` chip，其后每个 agent 标签页一个 chip：状态字形、标题、颜色。Home chip 没有状态字形；`tab` 与 `shift+tab` 会把它纳入循环，点击它打开 [MixCode Home](home.zh.md)。点击已聚焦标签页的 chip 会打开 [标签页跳转](#标签页跳转)，而不是重复激活它；当其他界面占着键盘时（浮层，或占用编辑器位置的 selector，如会话树），chip 点击会被丢弃，而不会在它背后切换标签页。状态与字形：
 
 | 状态 | 字形 | 含义 |
 | --- | --- | --- |

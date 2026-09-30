@@ -18,12 +18,27 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- `ctrl+t` (or `/jump`) opens Tab Jump, a searchable overlay listing MixCode Home and every open
+  agent tab: a status glyph, the title and the tab id per row, with the focused tab highlighted
+  first. The header row labels the query and reports `matched/total tabs`. `up`/`ctrl+k`/`shift+tab`
+  (`app.tabJump.selectPrevious`) and `down`/`ctrl+j`/`tab` (`app.tabJump.selectNext`) move the
+  highlight and wrap, typing filters by title, `ctrl+f` (`app.tabJump.toggleNonIdle`) keeps only the
+  tabs with something to report, `enter` jumps to the highlighted entry and `esc` closes (with nothing
+  left to select, `enter` just closes); the wheel moves the highlight, pointer motion underlines a row
+  and a left click jumps to it. A list longer than the panel shows is cut around the highlight and
+  marked `... (N more above/below)`; the id column shows the whole id while the row has room for it.
+  The rows reuse the tab bar's own projection, so a tab still coming up keeps its spinner, and the
+  glyph is the one its chip paints. Clicking the chip of the tab that is already focused opens
+  the same overlay instead of re-activating it. `/jump` with an argument reports `Usage: /jump`, and
+  the chord and the chip are both ignored while the editor's `/` popup, a floating overlay, or a
+  selector in the editor slot (tree, model, resume) owns the keyboard. In zen mode the overlay is the
+  switcher (`tab`/`shift+tab` stay swallowed), and in vim mode `ctrl+t` keeps passing through. See
+  [Agent Tabs](docs/tabs.md#tab-jump).
 - `ctrl+c` with text in the composer now clears it and parks that text at the front of the prompt
   history, so `up` recalls it (a stash). The stash is kept per tab and rebuilt into the composer on
   each activation, so it survives a tab switch and a revisited tab does not repeat it. Home's
   ephemeral composer parks nothing, a new session keeps parked drafts, and a second `ctrl+c`
   within 500 ms still quits.
-
 - `/compact` accepts an optional `provider/modelId` before its instructions, including model IDs containing `/`. Only the summary request uses that model; the session model and thinking level stay unchanged. Model references are offered by slash-command completion until the instruction separator is entered.
 - Compaction status names a requested summary model and colors its message by reason: accent for manual, warning for threshold, and error for context overflow.
 - Startup lists the previous run's tabs before building any of them: the tab bar carries a chip per
@@ -258,10 +273,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Changed
 
+- Tab Jump takes `ctrl+t`, so the composer no longer reaches `app.thinking.toggle` on that key: the
+  toggle keeps its `ctrl+t` default but the jump handler is registered first, the compact start-up tips
+  no longer name it, and `/hotkeys` reports it with a note that its chord is taken. Rebind
+  `app.thinking.toggle` in `keybindings.json` to give it a chord again, or use the `Hide thinking` row
+  in `/settings`. See [Upstream Drift](docs/upstream-drift.md).
 - Prompt-history recall puts the caret at the end of the recalled entry instead of its start, and
   `up`/`down` keep stepping between entries while one is browsed rather than moving the caret
   inside a multi-line entry. See [Upstream Drift](docs/upstream-drift.md).
-
 - The session confirmations take the keys directly: `/close-session`, `/delete-session` and the
   two all-sessions variants confirm on `y` and cancel on `n` next to the arrow-key selector, so the
   question is answered without stepping onto the `Yes`/`No` row first. `esc` still cancels and the

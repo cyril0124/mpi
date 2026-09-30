@@ -11,7 +11,8 @@ merge. Every place where this fork's behavior and upstream's documentation disag
 ## Features
 
 - **[Agent Tabs](tabs.md)**: several agents running side by side in one terminal — keybindings,
-  commands, tab bar status, colors, persistence, and startup restore.
+  commands, the Tab Jump switcher (`ctrl+t` / `/jump`), tab bar status, colors, persistence, and
+  startup restore.
 - **[Command Palette and Quit Confirmation](command-palette.md)**: `ctrl+p` lists every runnable
   command with fuzzy search, and `ctrl+q` asks before ending the session.
 - **[Vim Mode](vim-mode.md)**: modal transcript navigation for the fullscreen transcript (entry,

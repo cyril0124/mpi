@@ -41,6 +41,10 @@ export interface AppKeybindings {
 	"app.tab.previous": true;
 	"app.tab.new": true;
 	"app.tab.close": true;
+	"app.tab.jump": true;
+	"app.tabJump.selectPrevious": true;
+	"app.tabJump.selectNext": true;
+	"app.tabJump.toggleNonIdle": true;
 	"app.home.returnHome": true;
 	"app.widgets.panel": true;
 	"app.workdir.parent": true;
@@ -207,6 +211,23 @@ export const KEYBINDINGS = {
 	"app.tab.previous": { defaultKeys: ["shift+tab", "ctrl+shift+left"], description: "Previous agent tab" },
 	"app.tab.new": { defaultKeys: [], description: "Open a new agent tab" },
 	"app.tab.close": { defaultKeys: [], description: "Close the current agent tab" },
+	// Ctrl+T opens Tab Jump; `app.thinking.toggle` keeps its own ctrl+t default, and the
+	// composer registers this handler first, so the chord reaches Tab Jump.
+	"app.tab.jump": { defaultKeys: "ctrl+t", description: "Open tab jump overlay" },
+	// The terminal sends ctrl+j as the byte Enter carries, so the movement chords are answered
+	// before confirm and ctrl+j moves the highlight instead of jumping.
+	"app.tabJump.selectPrevious": {
+		defaultKeys: ["up", "ctrl+k", "shift+tab"],
+		description: "Tab jump: move the highlight up",
+	},
+	"app.tabJump.selectNext": {
+		defaultKeys: ["down", "ctrl+j", "tab"],
+		description: "Tab jump: move the highlight down",
+	},
+	"app.tabJump.toggleNonIdle": {
+		defaultKeys: "ctrl+f",
+		description: "Tab jump: show only tabs with something to report",
+	},
 	"app.home.returnHome": {
 		defaultKeys: "left",
 		description: "Return to MixCode Home when the composer is empty",

@@ -2,8 +2,9 @@
 
 [中文文档](thinking-tail-preview.zh.md)
 
-With thinking hidden (the `Hide thinking` row in `/settings`, `ctrl+t`, or `hideThinkingBlock` in
-pi's settings), each thinking block would normally collapse to a single italic `Thinking...` line.
+With thinking hidden (the `Hide thinking` row in `/settings`, or `hideThinkingBlock` in pi's
+settings; `ctrl+t` opens [Tab Jump](tabs.md#tab-jump) instead), each thinking block would normally
+collapse to a single italic `Thinking...` line.
 The thinking tail preview replaces that line with a three-row tail that follows the stream, so you
 can see what the model is working through without giving the block the whole transcript. The
 preview is on by default.

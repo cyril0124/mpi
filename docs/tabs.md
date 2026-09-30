@@ -14,9 +14,16 @@ single runtime host, so watching N agents there means N terminals.
 | Previous tab | `shift+tab`, `ctrl+shift+left` (same exception) |
 | New tab | none — use `/new-session` |
 | Close tab | none — use `/close-session` |
+| Tab Jump | `ctrl+t`, also `/jump` |
 
 `app.tab.previous` takes `shift+tab`, which upstream binds to `app.thinking.cycle`; this fork
 moved the thinking cycle to `alt+t`. See [Upstream Drift](upstream-drift.md).
+
+`app.tab.jump` takes `ctrl+t`, which upstream binds to `app.thinking.toggle`. That action keeps its
+`ctrl+t` default, but the composer registers the jump handler first, so the chord opens Tab Jump and
+the thinking toggle has no working key there unless it is rebound in `keybindings.json`. The compact
+start-up tips do not name the toggle, and `/hotkeys` reports it with a note that its chord is taken. See
+[Tab Jump](#tab-jump) and [Upstream Drift](upstream-drift.md).
 
 ## Commands
 
@@ -30,6 +37,7 @@ moved the thinking cycle to `alt+t`. See [Upstream Drift](upstream-drift.md).
 | `/rename <title>` | Rename the current tab and its session. |
 | `/tabs` | List the open tabs. |
 | `/tab <index\|title>` | Focus an open tab. |
+| `/jump` | Open the Tab Jump switcher. An argument reports `Usage: /jump`. |
 | `/workdir [path]` | Move the current tab onto another working directory. With a path the move happens at once; without one a directory picker opens. See [Workdir](#workdir). |
 | `/color [name\|clear]` | Set the current tab's chip color; without an argument or with `clear` the color is removed. |
 | `/group-colored-tabs` | Sort tabs so colored ones lead, aggregated by color in palette order. |
@@ -41,6 +49,39 @@ moved the thinking cycle to `alt+t`. See [Upstream Drift](upstream-drift.md).
 
 The session confirmations (`/close-session`, `/delete-session` and the two all-sessions variants)
 take `y` to confirm and `n` or `esc` to cancel, in addition to the arrow-key selector.
+
+## Tab Jump
+
+`ctrl+t`, or `/jump`, opens a searchable overlay over the composer: one row for MixCode Home and
+one for every open tab, in tab order, opening with the focused tab highlighted. The header row labels
+the query and reports the match count (`matched/total tabs`, plus `non-idle` while the filter is on).
+A row carries the same status glyph the tab bar paints (blank for Home, whose chip carries none), the
+title with the query's characters marked, and the tab's id against the right edge. A tab that is still
+coming up keeps its spinner here too.
+
+| Key | Behavior |
+| --- | --- |
+| `up` / `ctrl+k` / `shift+tab` (`app.tabJump.selectPrevious`) | Move the highlight up, wrapping to the last row. |
+| `down` / `ctrl+j` / `tab` (`app.tabJump.selectNext`) | Move the highlight down, wrapping to the first row. |
+| any printable key | Filter the rows by tab title. |
+| `ctrl+f` (`app.tabJump.toggleNonIdle`) | Keep only the tabs with something to report — working, failed, or finished-unread. Home never survives the filter, and a tab that is still coming up is not attention yet. |
+| `enter` (`tui.select.confirm`) | Jump to the highlighted entry and close; with nothing left to select it just closes. |
+| `esc` (`tui.select.cancel`) | Close without switching. |
+| pointer | The wheel moves the highlight, motion underlines the row it is over, and a left click jumps to that row's tab. |
+
+A list longer than the panel shows is cut around the highlight and marked with
+`... (N more above)` / `... (N more below)`; the id column shows the whole id while the row has room
+for it and its first characters when it does not, and any line the panel cannot hold ends in `...`.
+
+A terminal that reports keys without the extended protocol sends `ctrl+j` and an Enter written as a
+line feed as the same byte. This overlay reads that byte as `ctrl+j`, so it moves the highlight; an
+Enter delivered as a carriage return jumps as usual.
+
+The chord is ignored while the editor's `/` command popup is up, and whenever another surface already
+owns the keyboard — a floating overlay, or a selector in the editor slot such as the session tree,
+the model picker or Resume — so two of them never stack. Clicking the chip of the focused tab opens
+the same overlay and follows the same rule. In [zen mode](zen-mode.md) this overlay is the switcher:
+`tab` and `shift+tab` no longer switch tabs, but `ctrl+t` still opens this list.
 
 ## Workdir
 
@@ -75,7 +116,10 @@ keep theirs.
 
 The bar above the editor leads with a pinned `MixCode Home` chip and then shows one chip per
 agent tab: status glyph, title, color. The Home chip carries no status glyph; `tab` and
-`shift+tab` include it in the cycle, and clicking it opens [MixCode Home](home.md). Statuses and
+`shift+tab` include it in the cycle, and clicking it opens [MixCode Home](home.md). Clicking the chip
+of the tab that is already focused opens [Tab Jump](#tab-jump) instead of re-activating it. A chip
+click while another surface owns the keyboard — a floating overlay, or an editor-slot selector such as
+the session tree — is dropped rather than switching tabs behind it. Statuses and
 their glyphs:
 
 | Status | Glyph | Meaning |

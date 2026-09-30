@@ -15,12 +15,12 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
-import { isWorkingStatus, type TabColorName, type TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
+import type { TabColorName, TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
 import { theme } from "../../../theme/theme.ts";
 import { type HoverTarget, PointerHover } from "../hover/pointer-hover.ts";
 import { applyActiveTabShimmer, COLORED_SHIMMER_STYLES, THEME_SHIMMER_STYLES } from "../tab-shimmer.ts";
 import { reopenAfterSgr } from "../terminal-text.ts";
-import { RULE_CHAR, TAB_STATUS_GLYPHS, tabStatusGlyph } from "./tab-glyphs.ts";
+import { RULE_CHAR, TAB_STATUS_GLYPHS, tabStatusGlyph, tabStatusPaint } from "./tab-glyphs.ts";
 import { renderZenStatusSeparator, type ZenStatusMarker } from "./zen-status.ts";
 
 export interface TabBarItem {
@@ -121,11 +121,7 @@ export function tabColorPaint(color: TabColorName): (text: string) => string {
 }
 
 function glyphPainter(item: TabBarItem): ((text: string) => string) | undefined {
-	if (item.status === "loading") return (text) => theme.fg("dim", text);
-	if (item.status === "error") return (text) => theme.fg("error", text);
-	if (item.unread) return (text) => theme.fg("success", text);
-	if (isWorkingStatus(item.status)) return (text) => theme.fg("accent", text);
-	return undefined;
+	return tabStatusPaint(item.status, item.unread);
 }
 
 /** Paint a chip body, keeping a status color on the leading glyph. */
@@ -285,6 +281,8 @@ export class TabBar implements Component {
 	private readonly onSelect: (id: string) => void;
 	private hitRegions: ChipRect[] = [];
 	private readonly hover = new PointerHover();
+	/** True once a press acted on a chip, so the release of the same gesture cannot act again. */
+	private pressHandled = false;
 	/** Active tab of the last render; a switch cancels a highlight on the chip that lost focus. */
 	private hoverRevision: string | undefined;
 
@@ -501,6 +499,20 @@ export class TabBar implements Component {
 		const repaintIfCleared = (): TuiMouseEventResult | undefined =>
 			cleared ? { handled: true, render: true } : undefined;
 		if (event.button !== "left" || (event.type !== "click" && event.type !== "press")) return repaintIfCleared();
+		// The terminal reports a press and a click for one gesture, and the bar can re-window
+		// between them, so the press decides and the click only acts when no press did.
+		if (event.type === "press") {
+			const region = this.chipAt(event.x, event.y);
+			this.pressHandled = region !== undefined;
+			if (!region) return repaintIfCleared();
+			this.onSelect(region.id);
+			return { handled: true };
+		}
+		const actedOnPress = this.pressHandled;
+		this.pressHandled = false;
+		// The release of a gesture the press already handled still belongs to the bar, so it never
+		// falls through to the transcript behind the chips.
+		if (actedOnPress) return repaintIfCleared() ?? { handled: true };
 		const region = this.chipAt(event.x, event.y);
 		if (!region) return repaintIfCleared();
 		this.onSelect(region.id);
