@@ -2,7 +2,7 @@
 
 [English Documentation](vim-mode.md)
 
-Vim 模式把全屏对话区变成一块模态的免鼠标阅读界面：主行滚动、翻页，以及按用户提问跳跃。
+Vim 模式把全屏对话区变成一块模态的免鼠标阅读界面：主行滚动、翻页，以及按用户提问跳跃并弹出预览面板。
 
 ## 前提
 
@@ -37,8 +37,8 @@ Vim 模式开启期间输入框被锁定：边框改用强调色、忽略键入�
 | `app.vim.top` | `home` | 跳到最早一行 |
 | `app.vim.topPrefix` | `g` | 按两次（`gg`）跳到最早一行 |
 | `app.vim.bottom` | `end`、`shift+g` | 跳到最新一行并跟随新输出 |
-| `app.vim.nextUserMessage` | `right` | 跳到下一条用户消息；已是最后一条时跳到最新输出 |
-| `app.vim.previousUserMessage` | `shift+right` | 跳到上一条用户消息 |
+| `app.vim.nextUserMessage` | `right` | 跳到下一条用户消息；已是最后一条时跳到最新输出；同时弹出用户消息面板 |
+| `app.vim.previousUserMessage` | `shift+right` | 跳到上一条用户消息；同时弹出用户消息面板 |
 | `app.vim.exit` | `q` | 退出 Vim 模式 |
 | `app.vim.enter` | `ctrl+u` | 空输入框下预备进入 |
 | `app.vim.enterConfirm` | `u` | 确认预备进入 |
@@ -46,6 +46,17 @@ Vim 模式开启期间输入框被锁定：边框改用强调色、忽略键入�
 Vim 模式是模态的：上表之外的键一律被吞掉，不会进入编辑器。`tab` / `shift+tab`（切换标签页）、
 `ctrl+o`（展开工具输出）、`ctrl+t`（thinking 块）、`ctrl+q`（退出应用）仍然有效。Vim 模式下双击
 `Esc` 不再打开会话树或 fork；离开模态界面只能按 `q`。
+
+## 用户消息导航
+
+`right` 与 `shift+right` 按标签页各自的光标在提问之间行走，光标初始位于最新消息之后：第一次
+`shift+right` 落在最后一条用户消息上，此后 `right` 走到最新输出。手动滚动不会移动光标；离开模态
+界面时光标复位。
+
+每次跳跃都会在右下角、输入框正上方弹出 `User Messages` 面板：每条用户消息一行（取其正文首行，
+截断到 28 列），末尾一行 `<NEWEST>` 代表最新输出，视口落在的那条高亮显示。列表超出面板行数预算
+（按对话区高度取 3 到 7 行）时，用 `↑ N older above` 与 `↓ N newer below` 标出被裁掉的部分。面板
+存活 1.8 秒，再次跳跃会替换它；退出 Vim 模式时随模式一起收起。
 
 ## 多标签页行为
 
@@ -57,5 +68,6 @@ agent，继续留在模态界面会吞掉它的按键。
 
 ## 反馈
 
-进入提示、跳跃与拒绝都会以短暂的 flash 行显示在对话区。目标不在当前对话中时会提示
-`No older user message` 或 `Newest output`，而不是静默失败。
+进入提示、跳跃与拒绝都会以短暂的 flash 行显示在对话区，跳跃还会在输入框上方弹出
+[用户消息面板](#用户消息导航)。目标不在当前对话中时会提示 `No older user message` 或
+`Newest output`，而不是静默失败。

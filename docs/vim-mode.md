@@ -3,7 +3,7 @@
 [中文文档](vim-mode.zh.md)
 
 Vim mode turns the fullscreen transcript into a modal, mouse-free reading surface: home-row
-scrolling, page jumps, and jumping between user messages.
+scrolling, page jumps, and jumping between user messages with a preview panel.
 
 ## Requirements
 
@@ -41,8 +41,8 @@ Every key below is a configurable action: override it in `keybindings.json` unde
 | `app.vim.top` | `home` | Jump to the oldest row |
 | `app.vim.topPrefix` | `g` | Press twice (`gg`) to jump to the oldest row |
 | `app.vim.bottom` | `end`, `shift+g` | Jump to the newest row and follow new output |
-| `app.vim.nextUserMessage` | `right` | Jump to the next user message; past the last one, to the newest output |
-| `app.vim.previousUserMessage` | `shift+right` | Jump to the previous user message |
+| `app.vim.nextUserMessage` | `right` | Jump to the next user message, or past the last one to the newest output; paints the user-message panel |
+| `app.vim.previousUserMessage` | `shift+right` | Jump to the previous user message; paints the user-message panel |
 | `app.vim.exit` | `q` | Leave vim mode |
 | `app.vim.enter` | `ctrl+u` | Arm keyboard entry from an empty editor |
 | `app.vim.enterConfirm` | `u` | Confirm the armed keyboard entry |
@@ -51,6 +51,19 @@ Vim mode is modal: any key that is not one of the above is swallowed so it canno
 `tab` / `shift+tab` (tab switching), `ctrl+o` (tool expansion), `ctrl+t` (thinking blocks) and
 `ctrl+q` (quit) keep working. Double-`Esc` does not open the session tree or fork while vim mode is
 on; `q` is the only way to leave the modal surface.
+
+## User-message navigation
+
+`right` and `shift+right` walk the chat with a per-tab cursor that starts past the newest message:
+the first `shift+right` lands on the last user message, and `right` from there goes to the newest
+output. The cursor survives manual scrolling and resets when the modal surface is left.
+
+Every jump paints a `User Messages` panel at the bottom right, directly above the composer. It lists
+one row per user message, taken from the first line of its text and clipped to 28 columns, followed
+by a `<NEWEST>` row that stands for the newest output; the message the viewport landed on is
+highlighted. A list longer than the panel's row budget (3 to 7 rows, taken from the transcript
+height) reports `↑ N older above` and `↓ N newer below`. The panel lives for 1.8 seconds and another
+jump replaces it; leaving vim mode takes it down with the mode.
 
 ## Multi-tab behaviour
 
@@ -62,6 +75,7 @@ belongs to the roster's selection, and leaving the modal surface on would swallo
 
 ## Feedback
 
-The arm prompt, jumps and refusals appear as a transient flash line in the transcript. A message that is not
-found in the current transcript reports `No older user message` or `Newest output` rather than
+The arm prompt, jumps and refusals appear as a transient flash line in the transcript, and a jump
+also paints the [user-message panel](#user-message-navigation) above the composer. A message that is
+not found in the current transcript reports `No older user message` or `Newest output` rather than
 failing silently.

@@ -174,6 +174,14 @@ import {
 	type ToastType,
 } from "../../core/mixcode/toast/toast.ts";
 import {
+	USER_MESSAGE_PREVIEW_MIN_WIDTH,
+	USER_MESSAGE_PREVIEW_TTL_MS,
+	USER_MESSAGE_PREVIEW_WIDTH,
+	userMessagePreviewLabel,
+	userMessagePreviewRows,
+	userMessagePreviewWindow,
+} from "../../core/mixcode/vim/user-message-preview.ts";
+import {
 	createVimTabState,
 	enterVimMode,
 	handleVimEnterArmKey,
@@ -280,6 +288,7 @@ import {
 	toastBoxWidth,
 	toastCardRows,
 } from "./components/mixcode/toast/toast-card.ts";
+import { UserMessagePreviewPanel } from "./components/mixcode/vim-user-messages/user-message-preview-panel.ts";
 import {
 	createWidgetPanelTabState,
 	WIDGET_PANEL_MIN_TERMINAL_WIDTH,
@@ -590,6 +599,31 @@ const QUEUE_EDIT_ARM_WINDOW_MS = 1000;
 /** Prompt of the armed queue-edit choice; cleared when the window ends. */
 const QUEUE_EDIT_ARM_MESSAGE = "S: Steer · F: Follow-up · Esc: cancel";
 
+/** Columns the vim user-message preview keeps clear on the right, for the transcript scrollbar. */
+const USER_MESSAGE_PREVIEW_RIGHT_MARGIN = 2;
+/** Rows the preview leaves between itself and the dock below the transcript. */
+const USER_MESSAGE_PREVIEW_BOTTOM_GAP_ROWS = 1;
+/** Rows the preview's own frame spends on its borders. */
+const USER_MESSAGE_PREVIEW_FRAME_ROWS = 2;
+
+/**
+ * True for the transcript blocks that render a user message. The alternate
+ * screen's own prompt jump matches OSC 133 markers, which assistant replies
+ * carry too; the block's type is the only place that tells a user message apart.
+ */
+function isUserMessageBlock(block: Component): block is UserMessageComponent {
+	return block instanceof UserMessageComponent;
+}
+
+/** Flattened blocks for the windowed transcript, with the child lists they were built from. */
+interface TranscriptBlocksCache {
+	documentChildren: readonly Component[];
+	chatChildren: readonly Component[];
+	documentLength: number;
+	chatLength: number;
+	blocks: Component[];
+}
+
 export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;
 	private tabManager: TabManager | undefined;
@@ -629,6 +663,11 @@ export class InteractiveMode {
 	private toastTimer: NodeJS.Timeout | undefined;
 	/** Bumped on every toast, so a replaced toast's timer cannot hide its successor. */
 	private toastGeneration = 0;
+	/** Vim user-message preview overlay, and the timer that takes it down. */
+	private userMessagePreviewHandle: OverlayHandle | undefined;
+	private userMessagePreviewTimer: NodeJS.Timeout | undefined;
+	/** Bumped on every preview, so a replaced preview's timer cannot hide its successor. */
+	private userMessagePreviewGeneration = 0;
 	/** Most tabs reopened at startup; the remainder is reported, not restored. */
 	private static readonly RESTORE_TAB_LIMIT = 12;
 
@@ -646,6 +685,7 @@ export class InteractiveMode {
 	/** Fullscreen transcript: renders only the visible blocks of the chat. */
 	private windowedTranscript: WindowedTranscript;
 	private transcriptScrollView: TuiLayouts.ScrollView | undefined;
+	private transcriptBlocksCache: TranscriptBlocksCache | undefined;
 	private fullscreenLayoutRoot: Component | undefined;
 	private pendingMessagesContainer: Container;
 	private statusContainer: Container;
@@ -893,10 +933,8 @@ export class InteractiveMode {
 		// The fullscreen transcript is the same document, but the scroll view's child
 		// is windowed: only visible message blocks render, the rest contribute an
 		// estimated height so the scroll range still spans the whole conversation.
-		// Its blocks are the document's own children, so a surface that swaps them
-		// (MixCode Home) shows up in both the windowed and the plain renderer.
 		this.windowedTranscript = new WindowedTranscript({
-			blocks: () => this.documentContainer.children,
+			blocks: () => this.transcriptBlocks(),
 		});
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
@@ -1202,7 +1240,7 @@ export class InteractiveMode {
 			widgetsBelow: this.dockWidgets.below,
 			footer: this.footerContainer,
 			// Vim mode is a reading surface: its rows go to the transcript instead.
-			widgetsVisible: () => !this.vimTabState().active,
+			widgetsVisible: () => this.dockWidgetsVisible(),
 			// The side panel splits the transcript rows while it is visible; the
 			// composer dock below keeps the full width either way.
 			panel: { component: this.widgetPanel, visible: (width) => this.widgetPanel.isOpen(width) },
@@ -2514,6 +2552,42 @@ export class InteractiveMode {
 		this.documentContainer.addChild(this.inlineWidgets);
 	}
 
+	/**
+	 * Messages the windowed transcript renders, in paint order. The chat's own
+	 * children are the windowed units, so a block is one message rather than the
+	 * whole conversation: matching a message (vim mode's user-message jump) and
+	 * measuring one block stay cheap however long the chat is. A surface that
+	 * swaps the whole document (MixCode Home) still shows up as its own block.
+	 *
+	 * The flattened list is cached against the two child arrays. One frame reads it
+	 * several times, and rebuilding it each time would make frame cost grow with the
+	 * conversation. `Container.addChild` grows the same array and `clear` replaces
+	 * it, so the array reference plus its length notices every change the app makes.
+	 */
+	private transcriptBlocks(): Component[] {
+		const documentChildren = this.documentContainer.children;
+		const chatChildren = this.chatContainer.children;
+		const cache = this.transcriptBlocksCache;
+		if (
+			cache &&
+			cache.documentChildren === documentChildren &&
+			cache.chatChildren === chatChildren &&
+			cache.documentLength === documentChildren.length &&
+			cache.chatLength === chatChildren.length
+		) {
+			return cache.blocks;
+		}
+		const blocks = documentChildren.flatMap((child) => (child === this.chatContainer ? [...chatChildren] : [child]));
+		this.transcriptBlocksCache = {
+			documentChildren,
+			chatChildren,
+			documentLength: documentChildren.length,
+			chatLength: chatChildren.length,
+			blocks,
+		};
+		return blocks;
+	}
+
 	/** Home shows no footer: cwd, usage, and extension statuses are per-agent chrome. */
 	private parkFooterForHome(replace = false): void {
 		if (this.homeParkedFooter && !replace) return;
@@ -2976,6 +3050,7 @@ export class InteractiveMode {
 		this.updateTerminalTitle();
 		// The incoming tab owns its own transient message, if it still has one.
 		this.syncToast();
+		this.hideUserMessagePreview();
 		this.ui.requestRender();
 		await this.ensureSessionBound();
 	}
@@ -5098,6 +5173,79 @@ export class InteractiveMode {
 		this.toastHandle = undefined;
 	}
 
+	/**
+	 * Show the vim user-message preview: the chat's user messages around the one the
+	 * viewport landed on, painted above the dock for a moment after the jump.
+	 */
+	private showUserMessagePreview(labels: readonly string[], selectedIndex: number): void {
+		this.hideUserMessagePreview();
+		const terminalWidth = this.ui.terminal.columns;
+		const rowBudget = userMessagePreviewRows(this.transcriptScrollView?.viewportHeight);
+		const { lines, highlightedIndex } = userMessagePreviewWindow(labels, selectedIndex, rowBudget);
+		const boxRows = lines.length + USER_MESSAGE_PREVIEW_FRAME_ROWS;
+		const boxWidth = Math.min(USER_MESSAGE_PREVIEW_WIDTH, terminalWidth - USER_MESSAGE_PREVIEW_RIGHT_MARGIN);
+		if (boxWidth < USER_MESSAGE_PREVIEW_MIN_WIDTH) return;
+		// The preview sits in the transcript region, directly above the dock: the rows
+		// the layout keeps below the transcript are the margin it must clear.
+		const bottomGap = this.rowsBelowTranscript() + USER_MESSAGE_PREVIEW_BOTTOM_GAP_ROWS;
+		const generation = ++this.userMessagePreviewGeneration;
+		this.userMessagePreviewHandle = this.ui.showOverlay(new UserMessagePreviewPanel(lines, highlightedIndex), {
+			anchor: "bottom-right",
+			width: boxWidth,
+			// The right margin keeps the transcript's scrollbar column visible.
+			margin: { top: 0, right: USER_MESSAGE_PREVIEW_RIGHT_MARGIN, bottom: bottomGap, left: 0 },
+			nonCapturing: true,
+			// A panel that does not fit above the transcript is dropped rather than clamped
+			// over the conversation: the overlay layout would otherwise pin it to the top row
+			// of the screen and paint it there.
+			visible: (width, height) =>
+				width >= boxWidth + USER_MESSAGE_PREVIEW_RIGHT_MARGIN &&
+				height - bottomGap - boxRows >= this.rowsAboveTranscript(),
+		});
+		const timer = setTimeout(() => {
+			if (generation !== this.userMessagePreviewGeneration) return;
+			this.hideUserMessagePreview();
+			this.ui.requestRender();
+		}, USER_MESSAGE_PREVIEW_TTL_MS);
+		timer.unref();
+		this.userMessagePreviewTimer = timer;
+		this.ui.requestRender();
+	}
+
+	/** Take the preview down and drop its timer. */
+	private hideUserMessagePreview(): void {
+		if (this.userMessagePreviewTimer !== undefined) {
+			clearTimeout(this.userMessagePreviewTimer);
+			this.userMessagePreviewTimer = undefined;
+		}
+		this.userMessagePreviewHandle?.hide();
+		this.userMessagePreviewHandle = undefined;
+	}
+
+	/** Rows the layout keeps below the transcript, which the preview has to clear. */
+	private rowsBelowTranscript(): number {
+		const width = this.ui.terminal.columns;
+		// The dock stacks the pending rows, the status line, the widget slots, the editor
+		// and the footer, in that order.
+		const containers = [
+			this.pendingMessagesContainer,
+			this.statusContainer,
+			...(this.dockWidgetsVisible() ? [this.dockWidgets.above, this.dockWidgets.below] : []),
+			this.editorContainer,
+			this.footerContainer,
+		];
+		return containers.reduce((rows, container) => rows + container.render(width).length, 0);
+	}
+
+	/**
+	 * Whether the dock draws the extension widget slots. Vim mode is a reading surface,
+	 * so its rows go to the transcript; the dock layout and the preview's geometry share
+	 * this one rule.
+	 */
+	private dockWidgetsVisible(): boolean {
+		return !this.vimTabState().active;
+	}
+
 	// =========================================================================
 	// Vim mode (modal transcript navigation)
 	// =========================================================================
@@ -5132,15 +5280,23 @@ export class InteractiveMode {
 				jumpUserMessage: (direction) => {
 					const view = this.transcriptScrollView;
 					if (!view) return false;
-					// The alternate screen's prompt jump matches OSC 133 markers, which
-					// assistant replies carry too; the transcript's own block list is the
-					// only place that tells a user message apart.
-					const from = direction === 1 ? view.scrollTop + 1 : view.scrollTop;
-					const row = this.windowedTranscript.findBlockRow(
-						from,
-						direction,
-						(block) => block instanceof UserMessageComponent,
-					);
+					const blocks = this.windowedTranscript.matchingBlocks(isUserMessageBlock);
+					if (blocks.length === 0) return false;
+					const labels = blocks.map((block) => userMessagePreviewLabel(block.block.getText()));
+					const state = this.vimTabState();
+					// No cursor yet means the viewport sits past the newest message, which is where
+					// a jump starts and where `right` runs out of messages.
+					const current = state.userMessageIndex ?? blocks.length;
+					const target =
+						direction === 1
+							? Math.min(current + 1, blocks.length)
+							: Math.max(0, Math.min(current, blocks.length) - 1);
+					state.userMessageIndex = target;
+					// The panel follows the cursor, whether the viewport moved or ran into an end.
+					this.showUserMessagePreview(labels, target);
+					// Running into an end leaves the cursor where it was; the caller then paints the
+					// newest output, which is where that end already is.
+					const row = target === current ? undefined : blocks[target]?.row;
 					if (row === undefined) return false;
 					view.scrollTo(row);
 					return true;
@@ -5174,8 +5330,9 @@ export class InteractiveMode {
 		const state = this.vimTabState();
 		if (!state.active) return false;
 		const handled = handleVimKey(state, data, this.createVimHost());
-		// The only transition this path can make is leaving the modal surface.
-		if (!state.active) this.refreshVimChrome();
+		// The only transition this path can make is leaving the modal surface, and the
+		// module leaves it on its own (the exit key), so the teardown runs here too.
+		if (!state.active) this.afterVimExit();
 		return handled;
 	}
 
@@ -5193,6 +5350,12 @@ export class InteractiveMode {
 		const state = this.vimTabState();
 		if (!state.active) return;
 		resetVimTabState(state);
+		this.afterVimExit();
+	}
+
+	/** Drop what belongs to the modal surface and repaint the editor frame. */
+	private afterVimExit(): void {
+		this.hideUserMessagePreview();
 		this.refreshVimChrome();
 	}
 

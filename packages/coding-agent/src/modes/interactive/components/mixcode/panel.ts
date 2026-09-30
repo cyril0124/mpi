@@ -8,6 +8,11 @@ import { type ThemeBg, type ThemeColor, theme } from "../../theme/theme.ts";
 
 const PANEL_PADDING_X = 1;
 
+/** A full SGR reset, a bold/fg/bg-only reset: every sequence a painted row may carry. */
+const RESET_ANY = /\x1b\[(?:0|22|27|39|49)m/g;
+/** The reset `theme.bg` closes with. */
+const BACKGROUND_RESET = "\x1b[49m";
+
 /** Columns the frame spends on chrome when it keeps its default padding. */
 export const PANEL_CHROME_COLUMNS = 2 + PANEL_PADDING_X * 2;
 
@@ -30,6 +35,11 @@ export interface PanelOptions {
 	backgroundScope?: "frame" | "content";
 	/** Cells of padding between the border and the body; 1 unless the caller wants the body flush. */
 	paddingX?: number;
+	/**
+	 * Background for one body row, overriding `backgroundColor` for that row, so a
+	 * list can paint its selected row differently from the rest.
+	 */
+	rowBackground?: (rowIndex: number) => ThemeBg | undefined;
 }
 
 interface PanelCorners {
@@ -41,6 +51,22 @@ interface PanelCorners {
 
 const SQUARE_CORNERS: PanelCorners = { topLeft: "┌", topRight: "┐", bottomLeft: "└", bottomRight: "┘" };
 const ROUND_CORNERS: PanelCorners = { topLeft: "╭", topRight: "╮", bottomLeft: "╰", bottomRight: "╯" };
+
+/** The SGR that turns `background` on, without the reset `theme.bg` appends. */
+function backgroundOpenAnsi(background: ThemeBg): string {
+	return theme.bg(background, "").replace(BACKGROUND_RESET, "");
+}
+
+/**
+ * Paint `text` with `background`, re-opening the fill after every reset the text
+ * carries. A clipped line ends with a reset, and `truncateToWidth` also puts one
+ * before its ellipsis, so a plain `theme.bg` wrap would leave that tail and the
+ * padding after it on the terminal's own background.
+ */
+export function paintBackground(background: ThemeBg, text: string): string {
+	const open = backgroundOpenAnsi(background);
+	return `${open}${text.replace(RESET_ANY, (reset) => `${reset}${open}`)}${BACKGROUND_RESET}`;
+}
 
 /** Frame `body` in a box `width` columns wide, with `title` set into the top border. */
 export function panel(title: string, body: string[], width: number, options: PanelOptions = {}): string[] {
@@ -54,15 +80,16 @@ export function panel(title: string, body: string[], width: number, options: Pan
 	const fill = "─".repeat(Math.max(0, innerWidth - visibleWidth(label)));
 
 	const backgroundColor = options.backgroundColor;
-	const contentBackground = options.backgroundScope === "content" ? backgroundColor : undefined;
-	const lines = body.map((line) => {
+	const rowBackgrounds = body.map((_, rowIndex) => options.rowBackground?.(rowIndex) ?? backgroundColor);
+	const lines = body.map((line, rowIndex) => {
+		const contentBackground = options.backgroundScope === "content" ? rowBackgrounds[rowIndex] : undefined;
 		const content = truncateToWidth(line, contentWidth, "");
 		const padding = " ".repeat(paddingX + Math.max(0, contentWidth - visibleWidth(content)));
 		const cells = `${content}${padding}`;
 		const paintedCells =
 			contentBackground === undefined
 				? `${" ".repeat(paddingX)}${cells}`
-				: theme.bg(contentBackground, `${" ".repeat(paddingX)}${cells}`);
+				: paintBackground(contentBackground, `${" ".repeat(paddingX)}${cells}`);
 		return border("│") + paintedCells + border("│");
 	});
 
@@ -72,6 +99,13 @@ export function panel(title: string, body: string[], width: number, options: Pan
 
 	const framed = [topBorder, ...lines, border(`${corners.bottomLeft}${"─".repeat(innerWidth)}${corners.bottomRight}`)];
 
-	if (backgroundColor === undefined || options.backgroundScope === "content") return framed;
-	return framed.map((line) => theme.bg(backgroundColor, line));
+	if (options.backgroundScope === "content") return framed;
+	// The first and last framed lines are borders; the body rows follow, offset by one.
+	return framed.map((line, index) => {
+		if (index === 0 || index === framed.length - 1) {
+			return backgroundColor === undefined ? line : paintBackground(backgroundColor, line);
+		}
+		const rowBackground = rowBackgrounds[index - 1];
+		return rowBackground === undefined ? line : paintBackground(rowBackground, line);
+	});
 }

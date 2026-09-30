@@ -21,6 +21,12 @@ export interface VimTabState {
 	topArmed: boolean;
 	/** `Date.now()` when an empty-editor `ctrl+u` armed entry. */
 	enterArmedAt: number | undefined;
+	/**
+	 * Index of the user message the viewport last jumped to. `undefined` is the
+	 * position past the newest message, where a jump starts and where `right`
+	 * lands once it runs out of messages.
+	 */
+	userMessageIndex?: number;
 }
 
 /** Fresh per-tab vim state: inactive, with nothing armed. */
@@ -28,11 +34,12 @@ export function createVimTabState(): VimTabState {
 	return { active: false, topArmed: false, enterArmedAt: undefined };
 }
 
-/** Clear every modal flag, including the armed jump and the entry timer. */
+/** Clear every modal flag, including the armed jump, the entry timer and the message cursor. */
 export function resetVimTabState(state: VimTabState): void {
 	state.active = false;
 	state.topArmed = false;
 	state.enterArmedAt = undefined;
+	state.userMessageIndex = undefined;
 }
 
 /** Transcript navigation the modal surface drives. Positive values move towards older output. */
@@ -239,5 +246,6 @@ export function transferVimMode(from: VimTabState, to: VimTabState): void {
 	to.active = true;
 	to.topArmed = false;
 	to.enterArmedAt = undefined;
+	to.userMessageIndex = undefined;
 	resetVimTabState(from);
 }

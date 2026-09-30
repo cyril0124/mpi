@@ -43,7 +43,11 @@ type VimWiringContext = {
 	enterActiveTabVimMode: () => void;
 	leaveVimModeIfUnavailable: () => void;
 	leaveVimMode: () => void;
+	afterVimExit: () => void;
 	handleVimKeyInput: (data: string) => boolean;
+	showUserMessagePreview: (labels: readonly string[], selected: number) => void;
+	hideUserMessagePreview: () => void;
+	rowsBelowTranscript: () => number;
 };
 
 type VimWiringPrototype = {
@@ -55,6 +59,7 @@ type VimWiringPrototype = {
 	enterActiveTabVimMode(this: VimWiringContext): void;
 	leaveVimModeIfUnavailable(this: VimWiringContext): void;
 	leaveVimMode(this: VimWiringContext): void;
+	afterVimExit(this: VimWiringContext): void;
 	handleVimKeyInput(this: VimWiringContext, data: string): boolean;
 };
 
@@ -84,6 +89,7 @@ function makeWiringContext(options: {
 	windowedTranscript: WindowedTranscript;
 	tab: { vim: VimTabState };
 	notices: string[];
+	previews: Array<{ labels: readonly string[]; selected: number }>;
 	requestRender: () => void;
 }): VimWiringContext {
 	const context: VimWiringContext = {
@@ -107,7 +113,15 @@ function makeWiringContext(options: {
 		enterActiveTabVimMode: () => proto.enterActiveTabVimMode.call(context),
 		leaveVimModeIfUnavailable: () => proto.leaveVimModeIfUnavailable.call(context),
 		leaveVimMode: () => proto.leaveVimMode.call(context),
+		afterVimExit: () => proto.afterVimExit.call(context),
 		handleVimKeyInput: (data) => proto.handleVimKeyInput.call(context, data),
+		// The panel is an overlay on the real renderer; the wiring test records what it
+		// would show instead of painting it.
+		showUserMessagePreview: (labels, selected) => {
+			options.previews.push({ labels, selected });
+		},
+		hideUserMessagePreview: () => {},
+		rowsBelowTranscript: () => 0,
 	};
 	return context;
 }
@@ -136,12 +150,14 @@ async function bootFullscreen(columns = 40, rows = 12) {
 
 	const tab = { vim: createVimTabState() };
 	const notices: string[] = [];
+	const previews: Array<{ labels: readonly string[]; selected: number }> = [];
 	const context = makeWiringContext({
 		renderer: tui,
 		transcript,
 		windowedTranscript,
 		tab,
 		notices,
+		previews,
 		requestRender: () => tui.requestRender(),
 	});
 
@@ -160,6 +176,7 @@ async function bootFullscreen(columns = 40, rows = 12) {
 		context,
 		tab,
 		notices,
+		previews,
 		painted,
 		chatRows,
 		stop: () => tui.stop(),
@@ -224,30 +241,27 @@ describe("vim mode against the real transcript viewport", () => {
 			app.context.enterActiveTabVimMode();
 			const host = app.context.createVimHost();
 
-			handleVimKey(app.tab.vim, "g", host);
-			handleVimKey(app.tab.vim, "g", host);
-			await app.painted();
-			expect(app.transcript.scrollTop).toBe(0);
-
-			// A user block is three rows (blank, text, blank) and a reply one row, so the
-			// user blocks start at rows 0, 4, 8, ... and the replies sit at 3, 7, 11, ...
-			// Each jump paints its window, which measures the blocks it touches.
-			handleVimKey(app.tab.vim, "\x1b[C", host);
-			await app.painted();
-			expect(app.transcript.scrollTop).toBe(4);
-			handleVimKey(app.tab.vim, "\x1b[C", host);
-			await app.painted();
-			expect(app.transcript.scrollTop).toBe(8);
+			// A fresh modal surface sits past the newest message, so the first jump back
+			// lands on the last user message and the panel names it.
 			handleVimKey(app.tab.vim, "\x1b[1;2C", host);
 			await app.painted();
-			expect(app.transcript.scrollTop).toBe(4);
-			handleVimKey(app.tab.vim, "\x1b[1;2C", host);
-			await app.painted();
-			expect(app.transcript.scrollTop).toBe(0);
+			expect(app.previews.at(-1)?.selected).toBe(19);
+			// The transcript is taller than the viewport, so the jump scrolls the row range
+			// that carries the message instead of pinning it to the top. A user block pads
+			// its text row, so the check trims before matching.
+			const painted = await app.painted();
+			expect(painted.some((row) => row.trim().startsWith("user-20"))).toBe(true);
 
-			// Past the last user message the view goes to the newest output instead.
-			handleVimKey(app.tab.vim, "G", host);
+			handleVimKey(app.tab.vim, "\x1b[1;2C", host);
+			expect(app.previews.at(-1)?.selected).toBe(18);
+
 			handleVimKey(app.tab.vim, "\x1b[C", host);
+			expect(app.previews.at(-1)?.selected).toBe(19);
+
+			// Past the last user message the view goes to the newest output instead, and the
+			// panel selects the row that stands for it.
+			handleVimKey(app.tab.vim, "\x1b[C", host);
+			expect(app.previews.at(-1)?.selected).toBe(20);
 			expect(app.transcript.isFollowingEnd).toBe(true);
 		} finally {
 			app.stop();
@@ -270,6 +284,7 @@ describe("vim mode against the real transcript viewport", () => {
 			windowedTranscript: new WindowedTranscript({ blocks: () => [] }),
 			tab,
 			notices,
+			previews: [],
 			requestRender: vi.fn(),
 		});
 

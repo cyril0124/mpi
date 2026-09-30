@@ -202,6 +202,11 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   the first row when earlier content was dropped. A `setHiddenThinkingLabel` override still
   replaces the whole block. The `Thinking tail preview` row in `/settings` (`ui.boxedHiddenThinking`
   in `mixcode_settings.json`) turns it off, and it defaults to on.
+- Vim mode paints a `User Messages` panel at the bottom right while `right` / `shift+right` walk the
+  chat's user messages: one row per message (its first text line) plus a `<NEWEST>` row for the newest
+  output, the row the viewport landed on highlighted, `↑ N older above` / `↓ N newer below` hints when
+  the list is longer than its row budget, and a 1.8 s lifetime. The panel sits above the dock with the
+  scrollbar column left clear. See [Vim Mode](docs/vim-mode.md).
 
 ### Changed
 
@@ -290,6 +295,24 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
 
 ### Fixed
 
+- A clipped row lost its background fill from the ellipsis on. `truncateToWidth` ends a cut line with
+  a full SGR reset and puts one before its ellipsis, so a row painted with `theme.bg` fell back to
+  the terminal's own background for the ellipsis, the padding after it and anything else on the row.
+  A shared `paintBackground` re-opens the fill after every reset the row carries; the panels, the
+  `/settings` selected row and the Home roster's selected card use it, so a truncated row stays
+  filled edge to edge.
+- Vim mode's user-message jump never moved: the fullscreen transcript took its windowed blocks from
+  `documentContainer.children`, where the chat is nested one level down, so the jump matched no
+  `UserMessageComponent` and every key reported `Newest output` or `No older user message`. The same
+  nesting made one block hold the whole conversation, so a painted window rendered every message
+  instead of the visible ones (12-18x the flat shape's frame cost on a 400-message chat across runs,
+  growing with the conversation). The chat's own blocks are the windowed units again, with the
+  flattened list cached, so a frame no longer grows with the conversation.
+- The vim user-message jump was relative to the viewport's top row, so a message the transcript could
+  not scroll to the top was unreachable and the jump could land on an earlier message than the one it
+  came from. It follows a per-tab cursor now, and the cursor's row is measured before the scroll, so
+  the target is the row the scroll view reports rather than a height estimate. See
+  [Vim Mode](docs/vim-mode.md).
 - Vim mode swallowed `ctrl+q` (`app.quit`), so the quit confirmation could not be opened while the modal
   surface was active. Quit now passes through, like tab switching and tool expansion. See
   [Vim Mode](docs/vim-mode.md).

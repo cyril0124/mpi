@@ -17,6 +17,7 @@ import { visibleRosterIndices } from "../../../../../core/mixcode/home/home-stat
 import { isWorkingStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
 import { theme } from "../../../theme/theme.ts";
 import { tabColorPaint, tabStatusGlyph } from "../multi-tab/tab-bar.ts";
+import { paintBackground } from "../panel.ts";
 import {
 	AGENT_CARD_HEIGHT,
 	cachedOutputPreview,
@@ -526,7 +527,7 @@ function renderAgentCard(agent: HomeAgentEntry, width: number, selected: boolean
 		padLine(`  ${cardMeta(card, now)}`, width),
 		theme.fg("dim", padLine(`${CARD_TEXT_PREFIX}${preview}`, width)),
 	];
-	return [...rows.map((line) => (selected ? theme.bg("selectedBg", line) : line)), ""];
+	return [...rows.map((line) => (selected ? paintBackground("selectedBg", line) : line)), ""];
 }
 
 /** Conversation rows for the stacked layout, under a full-width rule. */

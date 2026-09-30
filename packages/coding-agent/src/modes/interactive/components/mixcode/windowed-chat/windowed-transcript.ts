@@ -153,25 +153,17 @@ export class WindowedTranscript extends Container {
 
 	/**
 	 * Content row of a block matching `matches`, at or after `from` (or the last one
-	 * before it when `direction` is -1). Rows come from the same height table the
-	 * window uses, so a caller can scroll straight to the result.
+	 * before it when `direction` is -1). Reads its rows from {@link matchingBlocks},
+	 * so they are exact; the whole document is measured on the way.
 	 */
 	findBlockRow(from: number, direction: -1 | 1, matches: (block: Component) => boolean): number | undefined {
-		const width = this.measuredWidth;
-		if (width <= 0) return undefined;
-		this.ensureWidth(width);
 		const target = Math.max(0, Math.floor(from));
-		let offset = 0;
 		let previous: number | undefined;
-		for (const block of this.blockList()) {
-			const height = this.heightOf(block);
-			const blockRow = offset;
-			offset += height;
-			if (height <= 0 || !matches(block)) continue;
+		for (const entry of this.matchingBlocks(matches)) {
 			if (direction === 1) {
-				if (blockRow >= target) return blockRow;
-			} else if (blockRow < target) {
-				previous = blockRow;
+				if (entry.row >= target) return entry.row;
+			} else if (entry.row < target) {
+				previous = entry.row;
 			}
 		}
 		return direction === -1 ? previous : undefined;
@@ -198,6 +190,34 @@ export class WindowedTranscript extends Container {
 			path.push(entry);
 		}
 		return path;
+	}
+
+	/**
+	 * Blocks matching `matches`, in paint order, with their exact top content row.
+	 *
+	 * The row comes from measuring every block on the way, not from the window's
+	 * height table: that table only covers the blocks a frame has painted, and an
+	 * estimate drifts from the rows the scroll view reports. One call measures the
+	 * whole document, so use it for a one-off jump or a list of results, never for a
+	 * frame; the measurement is cached, which keeps the next jump cheap.
+	 */
+	matchingBlocks<T extends Component>(matches: (block: Component) => block is T): Array<{ block: T; row: number }>;
+	matchingBlocks(matches: (block: Component) => boolean): Array<{ block: Component; row: number }>;
+	matchingBlocks(matches: (block: Component) => boolean): Array<{ block: Component; row: number }> {
+		const width = this.measuredWidth;
+		if (width <= 0) return [];
+		this.ensureWidth(width);
+		this.passLines.clear();
+		const found: Array<{ block: Component; row: number }> = [];
+		let offset = 0;
+		for (const block of this.blockList()) {
+			const height = this.linesOf(block, width).length;
+			const blockRow = offset;
+			offset += height;
+			if (height <= 0 || !matches(block)) continue;
+			found.push({ block, row: blockRow });
+		}
+		return found;
 	}
 
 	/**

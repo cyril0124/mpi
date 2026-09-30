@@ -25,7 +25,7 @@ import { mixcodeSettingsFilePath } from "../../../../../core/mixcode/mixcode-set
 import { shortenPath } from "../../../../../core/tools/render-utils.ts";
 import { theme } from "../../../theme/theme.ts";
 import { padLine, windowStart } from "../home/home-model.ts";
-import { panel, panelContentWidth } from "../panel.ts";
+import { paintBackground, panel, panelContentWidth } from "../panel.ts";
 
 /** Rows the framed panel spends on its two border rows. */
 const FRAME_ROWS = 2;
@@ -255,7 +255,7 @@ export class SettingsPanelBody implements Component {
 		const label = padLine(truncateToWidth(item.label, labelColumn, "…"), labelColumn);
 		const value = this.paintValue(item, truncateToWidth(this.displayValue(item), valueColumn, "…"));
 		const line = padLine(`${marker}${label}${" ".repeat(COLUMN_GAP)}${value}`, width);
-		return selected ? theme.bg("selectedBg", line) : line;
+		return selected ? paintBackground("selectedBg", line) : line;
 	}
 
 	private filterLine(visibleCount: number, total: number): string {
