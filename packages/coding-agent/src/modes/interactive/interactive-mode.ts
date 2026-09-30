@@ -263,20 +263,21 @@ import {
 	mapHomeMessages,
 } from "./components/mixcode/home/home-model.ts";
 import { type HomeAction, HomeView, type HomeViewModel } from "./components/mixcode/home/home-view.ts";
-import { carriesPointerCue } from "./components/mixcode/hover/hover-block.ts";
+import { hasPointerCueAt } from "./components/mixcode/hover/hover-block.ts";
 import {
 	createInlineWidgetTabState,
 	InlineWidgetsComponent,
 	type InlineWidgetTabState,
 } from "./components/mixcode/inline-widgets/inline-widgets.ts";
-import { MixcodeDockFooter } from "./components/mixcode/input-dock/dock-footer.ts";
 import {
-	exactContextUsageText,
-	type InputMetaData,
-	type MetaAction,
-} from "./components/mixcode/input-dock/input-meta.ts";
-import { type EditorCardChrome, MixcodePromptEditor } from "./components/mixcode/input-dock/prompt-editor.ts";
-import { keyGlyphText, primaryKeyGlyphText } from "./components/mixcode/key-hints.ts";
+	type ComposerContext,
+	composerPlaceholder,
+	editorCardChrome,
+} from "./components/mixcode/input-dock/composer-state.ts";
+import { MixcodeDockFooter } from "./components/mixcode/input-dock/dock-footer.ts";
+import type { InputMetaData, MetaAction } from "./components/mixcode/input-dock/input-meta.ts";
+import { MixcodePromptEditor } from "./components/mixcode/input-dock/prompt-editor.ts";
+import { primaryKeyGlyphText } from "./components/mixcode/key-hints.ts";
 import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
 import { bindWorkingIndicatorRedraw } from "./components/mixcode/multi-tab/tab-glyphs.ts";
 import { zenStatusMarkers } from "./components/mixcode/multi-tab/zen-status.ts";
@@ -607,12 +608,6 @@ function queueEditArmMessage(): string {
 	const cancel = primaryKeyGlyphText("app.queueEdit.cancel");
 	return `${steer}: Steer · ${followUp}: Follow-up · ${cancel}: cancel`;
 }
-
-/** Share of the context window at which the input card flags a near-full context. */
-const CONTEXT_WARNING_RATIO = 0.85;
-
-/** Composer hint naming the two keys that open a picker. */
-const FILES_COMMANDS_HINT = "  @ files  / commands";
 
 /** Columns the vim user-message preview keeps clear on the right, for the transcript scrollbar. */
 const USER_MESSAGE_PREVIEW_RIGHT_MARGIN = 2;
@@ -1030,8 +1025,8 @@ export class InteractiveMode {
 			autocompleteMaxVisible,
 			embedWorkingStatus: true,
 		});
-		this.defaultEditor.getPlaceholder = () => this.composerPlaceholder();
-		this.defaultEditor.setCardChrome(() => this.editorCardChrome());
+		this.defaultEditor.getPlaceholder = () => composerPlaceholder(this.composerContext());
+		this.defaultEditor.setCardChrome(() => editorCardChrome(this.composerContext()));
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
@@ -1193,7 +1188,7 @@ export class InteractiveMode {
 			cueRow: (row) =>
 				this.windowedTranscript
 					.componentPathAtRow(row)
-					.some((entry) => carriesPointerCue(entry.component, entry.row)),
+					.some((entry) => hasPointerCueAt(entry.component, entry.row)),
 		});
 	}
 
@@ -2746,36 +2741,26 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Hint for the empty composer: on Home it names the agent the next message
-	 * goes to, the way the roster makes the target explicit.
+	 * Everything the composer chrome reads, gathered from the live tab set. The
+	 * rendering lives in `composer-state.ts`; this resolves the inputs.
+	 *
+	 * `readUsage` stays a callback because `contextUsage()` rebuilds the session
+	 * projection on a cache miss, and the placeholder never reads it.
 	 */
-	private composerPlaceholder(): string | undefined {
-		if (this.homeSelection.active) {
-			const tabs = this.tabManager?.list();
-			const selected = tabs ? homeSelectedTab(this.homeSelection, tabs) : undefined;
-			return theme.fg(
-				"dim",
-				`${selected ? `Send to ${selected.title}...` : "Select an agent..."}${FILES_COMMANDS_HINT}`,
-			);
-		}
-		if (this.vimTabState().active) {
-			return theme.fg("dim", "Vim: → newer · Shift+→ older · j/k scroll · q exit");
-		}
-		return theme.fg("dim", `Describe your next change...${FILES_COMMANDS_HINT}${this.composerKeyHints()}`);
-	}
-
-	/**
-	 * The two keys that act on an empty composer besides `@` and `/`: leaving for
-	 * Home and toggling the widget side panel. Read from the keybindings, so a
-	 * rebound key still names the key the user has, and an unbound one drops its
-	 * half. The panel half is left out where the key does nothing, which is every
-	 * TUI mode that does not split the chat.
-	 */
-	private composerKeyHints(): string {
-		const home = keyGlyphText("app.home.returnHome");
-		const widgets = this.ui.mode === "fullscreen" ? keyGlyphText("app.widgets.panel") : "";
-		const parts = [home && `${home} Home`, widgets && `${widgets} widgets`].filter(Boolean);
-		return parts.length > 0 ? `  ${parts.join(" · ")}` : "";
+	private composerContext(): ComposerContext {
+		const state = this.session.state;
+		return {
+			homeSelection: this.homeSelection,
+			tabs: this.tabManager?.list(),
+			activeTabTitle: this.tabManager?.activeTab()?.title,
+			vimActive: this.vimTabState().active,
+			zenMode: this.zenHidesTabBar(),
+			shellMode: this.isBashMode,
+			uiMode: this.ui.mode,
+			// Home composes for a tab it is not attached to, so it shows no context reading.
+			readUsage: () => (this.homeSelection.active ? undefined : this.contextUsage()),
+			fallbackContextWindow: state.model?.contextWindow ?? 0,
+		};
 	}
 
 	/**
@@ -2796,35 +2781,6 @@ export class InteractiveMode {
 			return;
 		}
 		this.showThinkingSelector();
-	}
-
-	/**
-	 * Labels for the input card: the active tab's name and its exact context
-	 * usage. Home composes for the agent its roster selects, so the card names
-	 * that agent instead of the tab that is not in front.
-	 */
-	private editorCardChrome(): EditorCardChrome {
-		const home = this.homeSelection.active;
-		const tabs = this.tabManager?.list();
-		const title = home
-			? tabs
-				? homeSelectedTab(this.homeSelection, tabs)?.title
-				: undefined
-			: this.tabManager?.activeTab()?.title;
-		// Home composes for a tab it is not attached to, so the composer shows no
-		// live context reading there.
-		const usage = home ? undefined : this.contextUsage();
-		const tokens = usage?.tokens ?? undefined;
-		const contextWindow = usage?.contextWindow ?? this.session.state.model?.contextWindow ?? 0;
-		return {
-			title: title ?? "New message",
-			contextText: home ? "" : exactContextUsageText(tokens, contextWindow),
-			contextWarning: tokens !== undefined && contextWindow > 0 && tokens >= contextWindow * CONTEXT_WARNING_RATIO,
-			vimMode: this.vimTabState().active,
-			// The badge belongs to the agent surface: Home shows the tab bar again.
-			zenMode: this.zenHidesTabBar(),
-			shellMode: this.isBashMode,
-		};
 	}
 
 	/** Session data for the dock meta row under the input card. */
@@ -3474,6 +3430,7 @@ export class InteractiveMode {
 				tabs: manager.list().map((tab) => ({
 					sessionId: tab.runtime.session.sessionManager.getSessionId(),
 					title: tab.title,
+					autoTitle: tab.autoTitle,
 					workdir: tab.runtime.cwd,
 					color: tab.color,
 					unread: tab.unread,
@@ -3609,7 +3566,7 @@ export class InteractiveMode {
 		for (const tab of manager.list()) {
 			const explicit = explicitTitles.get(tab.id);
 			if (explicit) used.add(explicit);
-			else if (!/^Agent-\d+$/.test(tab.title)) used.add(tab.title);
+			else if (!tab.autoTitle) used.add(tab.title);
 		}
 		for (const tab of manager.list()) {
 			const explicit = explicitTitles.get(tab.id);
@@ -3617,10 +3574,12 @@ export class InteractiveMode {
 				manager.restoreTitle(tab.id, explicit);
 				continue;
 			}
-			if (/^Agent-\d+$/.test(tab.title)) {
+			// Only generated names renumber; a title the user typed as `Agent-03`
+			// keeps its text.
+			if (tab.autoTitle) {
 				const next = nextAvailableAgentTitle(used);
 				used.add(next);
-				manager.restoreTitle(tab.id, next);
+				manager.restoreTitle(tab.id, next, { autoTitle: true });
 			}
 		}
 	}

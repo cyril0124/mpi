@@ -14,7 +14,13 @@ import { type TuiMouseEvent, type TuiMouseEventResult, truncateToWidth, visibleW
 import { theme } from "../../../theme/theme.ts";
 import { CustomEditor } from "../../custom-editor.ts";
 import type { StatusIndicator } from "../../status-indicator.ts";
-import { LABEL_ROOM_MAX, renderBottomEdge, renderTopEdge } from "./editor-card.ts";
+import {
+	CARD_EDGE_CHROME_COLUMNS,
+	cardInnerWidth,
+	LABEL_ROOM_MAX,
+	renderBottomEdge,
+	renderTopEdge,
+} from "./editor-card.ts";
 
 /**
  * Narrowest width that keeps the card readable. The card needs two corners, two
@@ -82,7 +88,7 @@ export class MixcodePromptEditor extends CustomEditor {
 	override render(width: number): string[] {
 		if (width < MIN_CARD_WIDTH) return super.render(width).map(withoutSentinel);
 
-		const innerWidth = width - 2 - BODY_INSET;
+		const innerWidth = cardInnerWidth(width, BODY_INSET);
 		this.cardRendering = true;
 		let lines: string[];
 		try {
@@ -126,7 +132,11 @@ export class MixcodePromptEditor extends CustomEditor {
 	 */
 	override handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.width < MIN_CARD_WIDTH) return super.handleMouse(event);
-		return super.handleMouse({ ...event, x: event.x - 1 - BODY_INSET, width: event.width - 2 - BODY_INSET });
+		return super.handleMouse({
+			...event,
+			x: event.x - 1 - BODY_INSET,
+			width: cardInnerWidth(event.width, BODY_INSET),
+		});
 	}
 
 	/**
@@ -141,9 +151,11 @@ export class MixcodePromptEditor extends CustomEditor {
 	private topLabel(width: number, chrome: EditorCardChrome): { label: string; asTitle: boolean } {
 		const badges = this.badgeText(chrome);
 		if (!this.embedWorkingStatus || !this.status) return { label: badges, asTitle: false };
-		const available = Math.max(0, width - 6);
-		const full = this.status.renderInBorder(Math.max(1, width - 5));
-		const spinner = this.status.renderSpinnerInBorder(Math.max(1, width - 5));
+		const available = Math.max(0, width - CARD_EDGE_CHROME_COLUMNS);
+		// One column more is left to the edge's own spacing around the status text.
+		const statusWidth = Math.max(1, width - CARD_EDGE_CHROME_COLUMNS - 1);
+		const full = this.status.renderInBorder(statusWidth);
+		const spinner = this.status.renderSpinnerInBorder(statusWidth);
 		// Richest layout first: badges beside the message, the message, badges beside
 		// the spinner, then the spinner alone.
 		const candidates: string[] = [];

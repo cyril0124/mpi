@@ -83,3 +83,18 @@ function isPrintableOrWhitespace(char: string): boolean {
 	if (code === 0x7f) return false;
 	return code >= 0x20 || char === "\n" || char === "\r" || char === "\t";
 }
+
+/**
+ * Matches any SGR sequence, including the resets that end a paint (`0`, `22`,
+ * `27`, `39`, `49`) and 256-color or truecolor selections.
+ */
+export const SGR_SEQUENCE = /\x1b\[[0-9;:]*m/g;
+
+/**
+ * Wrap `text` in `open`, re-opening `open` after every SGR sequence the text
+ * carries: an inner reset would otherwise end the paint early, leaving a
+ * background, underline, or chip color covering only the text before it.
+ */
+export function reopenAfterSgr(open: string, text: string): string {
+	return `${open}${text.replace(SGR_SEQUENCE, (sequence) => `${sequence}${open}`)}`;
+}

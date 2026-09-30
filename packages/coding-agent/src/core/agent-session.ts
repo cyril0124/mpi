@@ -898,18 +898,16 @@ export class AgentSession {
 			this._overflowRecoveryAttempted = false;
 			const messageText = contentText(event.message.content, "");
 			if (messageText) {
-				// Check steering queue first
-				const steeringIndex = this._steeringMessages.indexOf(messageText);
-				if (steeringIndex !== -1) {
-					this._steeringMessages.splice(steeringIndex, 1);
+				// A user message that started a turn came from the steering queue or the
+				// follow-up queue; drop its mirror entry so the UI shows it as consumed.
+				const kind: "steering" | "followUp" = this._steeringMessages.includes(messageText)
+					? "steering"
+					: "followUp";
+				const tracked = this._queueTexts(kind);
+				const trackedIndex = tracked.indexOf(messageText);
+				if (trackedIndex !== -1) {
+					tracked.splice(trackedIndex, 1);
 					this._emitQueueUpdate();
-				} else {
-					// Check follow-up queue
-					const followUpIndex = this._followUpMessages.indexOf(messageText);
-					if (followUpIndex !== -1) {
-						this._followUpMessages.splice(followUpIndex, 1);
-						this._emitQueueUpdate();
-					}
 				}
 			}
 		}
@@ -2055,6 +2053,23 @@ export class AgentSession {
 		return this._steeringMessages.length + this._followUpMessages.length;
 	}
 
+	/** The text mirror `kind` names; kept in step with the agent's own pending queue. */
+	private _queueTexts(kind: "steering" | "followUp"): string[] {
+		return kind === "steering" ? this._steeringMessages : this._followUpMessages;
+	}
+
+	/**
+	 * Drop one tracked text per requested entry, matching from the end so the
+	 * mirror removes the same occurrences the agent queue does. Returns nothing;
+	 * callers read the entries they removed from the agent.
+	 */
+	private _dropTrackedTexts(tracked: string[], texts: readonly string[]): void {
+		for (let requestedIndex = texts.length - 1; requestedIndex >= 0; requestedIndex -= 1) {
+			const trackedIndex = tracked.lastIndexOf(texts[requestedIndex]!);
+			if (trackedIndex !== -1) tracked.splice(trackedIndex, 1);
+		}
+	}
+
 	/**
 	 * Remove specific queued messages, matched by exact text (last occurrence
 	 * first), from both the session text mirror and the agent pending queue.
@@ -2065,11 +2080,7 @@ export class AgentSession {
 		texts: readonly string[],
 	): Array<{ message: AgentMessage; text: string }> {
 		if (texts.length === 0) return [];
-		const tracked = kind === "steering" ? this._steeringMessages : this._followUpMessages;
-		for (let requestedIndex = texts.length - 1; requestedIndex >= 0; requestedIndex -= 1) {
-			const trackedIndex = tracked.lastIndexOf(texts[requestedIndex]!);
-			if (trackedIndex !== -1) tracked.splice(trackedIndex, 1);
-		}
+		this._dropTrackedTexts(this._queueTexts(kind), texts);
 		const removed = this.agent.removeQueuedMessages(kind, texts);
 		if (removed.length > 0) this._emitQueueUpdate();
 		return removed;
@@ -2081,7 +2092,7 @@ export class AgentSession {
 		removed: ReadonlyArray<{ message: AgentMessage; text: string }>,
 	): void {
 		if (removed.length === 0) return;
-		const tracked = kind === "steering" ? this._steeringMessages : this._followUpMessages;
+		const tracked = this._queueTexts(kind);
 		for (const item of removed) {
 			tracked.push(item.text);
 		}

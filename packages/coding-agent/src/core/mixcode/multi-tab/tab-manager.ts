@@ -37,6 +37,8 @@ const RECENT_TAB_MEMORY = 3;
 export interface AgentTab {
 	readonly id: string;
 	title: string;
+	/** True while `title` is a generated `Agent-NN`; cleared once a caller picks a name. */
+	autoTitle?: boolean;
 	color?: TabColorName;
 	status: TabStatus;
 	/** True when a background tab finished a turn the user has not viewed yet. */
@@ -52,8 +54,9 @@ export interface AgentTab {
 	/** Vim-mode modal state; at most one tab is active at a time. */
 	vim: VimTabState;
 	/**
-	 * Zen focus mode: the tab bar hides and only its separator stays. Per-tab but
-	 * at most one tab owns it, and it follows focus like vim; never persisted.
+	 * Zen focus mode: the tab bar hides and only its separator stays, and it
+	 * follows focus like vim. Feature note: at most one tab owns it and it is
+	 * never persisted, so it never reaches the tab layout on disk.
 	 */
 	zenMode: boolean;
 	/** Transient toast shown over this tab's transcript; at most one at a time. */
@@ -284,6 +287,7 @@ export class TabManager {
 			throw new Error(`Tab title already in use: ${clean}`);
 		}
 		tab.title = clean;
+		tab.autoTitle = false;
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
 	}
@@ -319,8 +323,7 @@ export class TabManager {
 		const tab = this.get(id);
 		if (!tab) throw new Error(`Unknown tab: ${id}`);
 		const enabled = !tab.zenMode;
-		// Zen owns the whole chrome, so the mutator keeps the at-most-one-holder
-		// invariant itself rather than trusting every caller to pass the focused tab.
+		// At most one tab holds zen, whatever tab the caller names.
 		for (const other of this.tabs) other.zenMode = false;
 		tab.zenMode = enabled;
 		this.onTabsChanged();
@@ -334,21 +337,24 @@ export class TabManager {
 		if (isWorkingStatus(tab.status)) {
 			throw new Error("Agent is still working; /mark-done is only allowed when idle");
 		}
-		tab.status = "done";
+		setTabStatus(tab, "done");
 		tab.unread = true;
 		this.onTabsChanged();
 	}
 
 	/**
 	 * Force a tab's exact title, bypassing the duplicate check (restore
-	 * normalization). An unknown id is ignored: the restore pass also names tabs
+	 * normalization). Passing `autoTitle` re-marks the title as generated rather
+	 * than chosen. An unknown id is ignored: the restore pass also names tabs
 	 * that have since closed.
 	 */
-	restoreTitle(id: string, title: string): void {
+	restoreTitle(id: string, title: string, options: { autoTitle?: boolean } = {}): void {
 		const tab = this.get(id);
 		if (!tab) return;
 		const clean = title.trim();
-		if (!clean || clean === tab.title) return;
+		if (!clean) return;
+		tab.autoTitle = options.autoTitle ?? false;
+		if (clean === tab.title) return;
 		tab.title = clean;
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
@@ -387,10 +393,9 @@ export class TabManager {
 	}
 
 	/**
-	 * Zen owns the whole chrome rather than the tab, so it follows focus: the tab
-	 * being left drops it and the tab now in front takes it. `activate`, `createTab`
-	 * and `openSessionTab` call it; `closeTab` deliberately does not, so closing the
-	 * holder ends zen instead of handing it to the successor.
+	 * Move zen from the tab being left to the tab now in front. `activate`,
+	 * `createTab` and `openSessionTab` call it; `closeTab` deliberately does not,
+	 * so closing the holder ends zen instead of handing it to the successor.
 	 */
 	private transferZenMode(previous: AgentTab, next: AgentTab): void {
 		if (previous === next || !previous.zenMode) return;
@@ -426,6 +431,7 @@ export class TabManager {
 		const tab: AgentTab = {
 			id: crypto.randomUUID(),
 			title: resolved,
+			autoTitle: !sessionName,
 			status: "idle",
 			unread: false,
 			draftInput: "",
@@ -459,6 +465,7 @@ export class TabManager {
 	private applySessionTitle(tab: AgentTab, name: string): void {
 		const others = this.tabs.filter((item) => item.id !== tab.id).map((item) => item.title);
 		tab.title = uniquifyTitle(name, others);
+		tab.autoTitle = false;
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
 	}

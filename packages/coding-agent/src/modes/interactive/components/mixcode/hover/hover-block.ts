@@ -8,7 +8,7 @@
  *
  * Owning a hover cue also means the card's rows already wear the cue's background, so the
  * constructor records the owner and the first row that carries the card: a text selection over
- * those rows has to add an underline to stay visible, and `carriesPointerCue` is what says which
+ * those rows has to add an underline to stay visible, and `hasPointerCueAt` is what says which
  * rows those are.
  */
 import {
@@ -28,7 +28,7 @@ const pointerCueCards = new WeakMap<Component, number>();
  * The cue fills those rows, so a selection over them also underlines; the gap rows above a card
  * keep the plain selection background like any other row.
  */
-export function carriesPointerCue(component: Component, row: number): boolean {
+export function hasPointerCueAt(component: Component, row: number): boolean {
 	const cardFirstRow = pointerCueCards.get(component);
 	return cardFirstRow !== undefined && row >= cardFirstRow;
 }
@@ -39,9 +39,11 @@ export class BlockHover implements Component {
 	private readonly cardFirstRow: number;
 
 	/**
-	 * `owner` is the block that paints the cue. `cardFirstRow` is that block's first row carrying
-	 * its own card: rows above it are the blank gap a block may render to the message before it,
-	 * which holds no card for the cue to fill and no target for a click.
+	 * `owner` is the block that paints the cue; it owns one hover, so a second
+	 * instance registered for the same owner replaces its card row here.
+	 * `cardFirstRow` is that block's first row carrying its own card: rows above it
+	 * are the blank gap a block may render to the message before it, which holds no
+	 * card for the cue to fill and no target for a click.
 	 */
 	constructor(
 		owner: Component,

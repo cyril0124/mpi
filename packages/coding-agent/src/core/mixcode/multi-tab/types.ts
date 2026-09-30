@@ -29,9 +29,17 @@ export function isTabColorName(value: unknown): value is TabColorName {
 
 /** The next free `Agent-NN` title, skipping titles already in use. */
 export function nextAvailableAgentTitle(usedTitles: Iterable<string>): string {
+	return firstFree(defaultAgentTitle, usedTitles);
+}
+
+/**
+ * First candidate `candidate(index)` that `usedTitles` does not contain. Both
+ * scans terminate: `usedTitles` is finite, so the candidate generator outruns it.
+ */
+function firstFree(candidate: (index: number) => string, usedTitles: Iterable<string>): string {
 	const used = new Set(usedTitles);
 	for (let index = 1; ; index += 1) {
-		const title = defaultAgentTitle(index);
+		const title = candidate(index);
 		if (!used.has(title)) return title;
 	}
 }
@@ -42,8 +50,5 @@ export function nextAvailableAgentTitle(usedTitles: Iterable<string>): string {
 export function uniquifyTitle(base: string, usedTitles: Iterable<string>): string {
 	const used = new Set(usedTitles);
 	if (!used.has(base)) return base;
-	for (let suffix = 1; ; suffix += 1) {
-		const candidate = `${base}-${suffix}`;
-		if (!used.has(candidate)) return candidate;
-	}
+	return firstFree((index) => `${base}-${index}`, used);
 }

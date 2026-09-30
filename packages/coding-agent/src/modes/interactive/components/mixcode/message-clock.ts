@@ -24,6 +24,19 @@ export function formatMessageClock(timestamp?: number): string {
 }
 
 /**
+ * `left` clipped to make room for `right` at the end of a `width`-column row,
+ * with the gap filled in between and `right` painted dim. `right` arrives with
+ * its own leading space; an empty one still leaves that space in place.
+ */
+export function rightAlignDim(left: string, right: string, width: number): string {
+	const clock = truncateToWidth(` ${right}`, Math.max(0, width));
+	const clockCells = visibleWidth(clock);
+	const clippedLeft = truncateToWidth(left.replace(/\s+$/u, ""), Math.max(0, width - clockCells));
+	const fill = " ".repeat(Math.max(0, width - visibleWidth(clippedLeft) - clockCells));
+	return `${clippedLeft}${fill}${theme.fg("dim", clock)}`;
+}
+
+/**
  * A message body whose first row ends with `clock` at the right edge.
  *
  * The body renders the clock's own cells narrower, so nothing it draws can reach them, and
@@ -50,13 +63,6 @@ export class ClockedMessageBody implements Component {
 		const clockCells = visibleWidth(clockText);
 		const lines = this.body.render(Math.max(1, width - clockCells));
 		if (clockCells === 0 || lines.length === 0) return lines;
-		return [stampFirstRow(lines[0] ?? "", clockText, clockCells, width), ...lines.slice(1)];
+		return [rightAlignDim(lines[0] ?? "", this.clock, width), ...lines.slice(1)];
 	}
-}
-
-/** First row with the clock right-aligned: the body is clipped to make room, then the gap filled. */
-function stampFirstRow(text: string, clockText: string, clockCells: number, width: number): string {
-	const bodyText = truncateToWidth(text.replace(/\s+$/u, ""), Math.max(0, width - clockCells));
-	const gap = " ".repeat(Math.max(0, width - visibleWidth(bodyText) - clockCells));
-	return `${bodyText}${gap}${theme.fg("dim", clockText)}`;
 }

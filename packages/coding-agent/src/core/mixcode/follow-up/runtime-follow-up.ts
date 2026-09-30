@@ -300,7 +300,15 @@ export async function flushSteerQueue(state: FollowUpQueueState, host: FollowUpH
 			await session.waitForIdle();
 		}
 		const text = items.filter((item) => item.trim()).join("\n\n");
-		if (!text) return;
+		if (!text) {
+			// Nothing deliverable: put the drained texts back so a flush of only
+			// blank entries does not silently drop them from the queue.
+			state.pendingSteer.splice(start, 0, ...items);
+			state.queuedSteerCount += removedSteering.length;
+			session.restoreQueuedMessages("steering", removedSteering);
+			host.onQueueChanged();
+			return;
+		}
 		await dispatchTurn(state, async (signalRegistered) => {
 			await host.promptTurn(text, signalRegistered);
 		});

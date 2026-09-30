@@ -5,11 +5,10 @@
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type ThemeBg, type ThemeColor, theme } from "../../theme/theme.ts";
+import { reopenAfterSgr } from "./terminal-text.ts";
 
 const PANEL_PADDING_X = 1;
 
-/** A full SGR reset, a bold/fg/bg-only reset: every sequence a painted row may carry. */
-const RESET_ANY = /\x1b\[(?:0|22|27|39|49)m/g;
 /** The reset `theme.bg` closes with. */
 const BACKGROUND_RESET = "\x1b[49m";
 
@@ -60,7 +59,7 @@ const ROUND_CORNERS: PanelCorners = { topLeft: "╭", topRight: "╮", bottomLef
  */
 export function paintBackground(background: ThemeBg, text: string): string {
 	const open = theme.getBgAnsi(background);
-	return `${open}${text.replace(RESET_ANY, (reset) => `${reset}${open}`)}${BACKGROUND_RESET}`;
+	return `${reopenAfterSgr(open, text)}${BACKGROUND_RESET}`;
 }
 
 /** Frame `body` in a box `width` columns wide, with `title` set into the top border. */

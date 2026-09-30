@@ -93,11 +93,11 @@ describe("open_tabs.json", () => {
 });
 
 describe("mixcode_state.json", () => {
-	it("writes the six shared keys and leaves a default position title out", () => {
+	it("writes the six shared keys and leaves a generated position title out", () => {
 		saveTabLayout(workdir, {
 			activeSessionId: "s2",
 			tabs: [
-				{ sessionId: "s1", title: "Agent-01", workdir },
+				{ sessionId: "s1", title: "Agent-01", autoTitle: true, workdir },
 				{ sessionId: "s2", title: "chosen", workdir, color: "red", unread: true },
 			],
 		});
@@ -115,6 +115,14 @@ describe("mixcode_state.json", () => {
 		expect(state.tab_colors).toEqual({ s2: "red" });
 		expect(state.unseen_done).toEqual(["s2"]);
 		expect(state.workdirs).toEqual({ s1: workdir, s2: workdir });
+	});
+
+	it("keeps a title the user typed that looks like a generated one", () => {
+		saveTabLayout(workdir, {
+			tabs: [{ sessionId: "s1", title: "Agent-01", workdir }],
+		});
+		const state = JSON.parse(readFileSync(stateFilePath(workdir), "utf-8"));
+		expect(state.tab_titles).toEqual({ s1: "Agent-01" });
 	});
 
 	it("drops a color outside the palette and ignores ids that are not open", () => {

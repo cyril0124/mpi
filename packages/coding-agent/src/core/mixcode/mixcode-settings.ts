@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { dirname, join } from "node:path";
 import { stripJsonComments } from "../../utils/json.ts";
 import { stripBom } from "../../utils/text.ts";
-import { mixcodeRootStateDir } from "./multi-tab/mixcode-state.ts";
+import { asRecord, mixcodeRootStateDir } from "./multi-tab/mixcode-state.ts";
 
 export const MIXCODE_SETTINGS_FILENAME = "mixcode_settings.json";
 
@@ -50,7 +50,7 @@ export function writeBoxedHiddenThinkingSetting(settingsFile: string, enabled: b
 
 function writeUiBooleanSetting(settingsFile: string, key: string, enabled: boolean): void {
 	const next: Record<string, unknown> = { ...readSettingsSource(settingsFile) };
-	const ui = objectRecord(next.ui);
+	const ui = asRecord(next.ui);
 	next.ui = { ...ui, [key]: enabled };
 	writeSettingsFile(settingsFile, next);
 }
@@ -64,7 +64,7 @@ function writeUiBooleanSetting(settingsFile: string, key: string, enabled: boole
 export function loadMixCodeSettings(settingsFile: string): MixCodeSettings {
 	const source = readSettingsSource(settingsFile);
 	if (!source) return defaultMixCodeSettings();
-	const ui = objectRecord(source.ui);
+	const ui = asRecord(source.ui);
 	return {
 		ui: {
 			inlineWidgets: parseBoolean(ui.inlineWidgets, "inlineWidgets", DEFAULT_INLINE_WIDGETS, settingsFile),
@@ -95,7 +95,7 @@ function readSettingsSource(settingsFile: string): Record<string, unknown> | und
 	if (!existsSync(settingsFile)) return undefined;
 	const text = stripBom(readFileSync(settingsFile, "utf-8"));
 	try {
-		return objectRecord(JSON.parse(stripJsonComments(text)));
+		return asRecord(JSON.parse(stripJsonComments(text)));
 	} catch (error) {
 		throw new Error(`${settingsFile}: ${error instanceof Error ? error.message : String(error)}`);
 	}
@@ -111,8 +111,4 @@ function writeSettingsFile(settingsFile: string, contents: Record<string, unknow
 		rmSync(temp, { force: true });
 		throw error;
 	}
-}
-
-function objectRecord(value: unknown): Record<string, unknown> {
-	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

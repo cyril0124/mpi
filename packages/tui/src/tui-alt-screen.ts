@@ -1000,8 +1000,9 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	 */
 	private releaseSelectionScrollPin(action: "keep" | "resume" | "resume-silently"): void {
 		const pinned = this.selectionPinnedScrollView;
-		// A gesture scroll and content that grew past the viewport both leave the user somewhere
-		// other than the end; anything else resumes following.
+		// Read before the suspension drops: `setFollowSuspended(false)` also clears the
+		// gesture flags these two getters report, and the answer is "did it move while
+		// suspended".
 		const staysPut = pinned?.wasScrolledWhileSuspended === true || pinned?.grewPastViewportWhileSuspended === true;
 		pinned?.setFollowSuspended(false);
 		if (action !== "keep" && !staysPut && this.selectionResumeFollow) {
@@ -1044,6 +1045,10 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		if (result && this.applyMouseDispatchResult(leave, result)) this.requestRender();
 	}
 
+	/**
+	 * Point the pointer-hover cue at the component a move landed on. Every other event, and every
+	 * move a handled branch consumed or that reached no component, drops the cue instead.
+	 */
 	/**
 	 * Point the pointer-hover cue at the component a move landed on. Every other event, and every
 	 * move a handled branch consumed or that reached no component, drops the cue instead.

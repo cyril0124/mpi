@@ -1,6 +1,6 @@
 import type { TuiMouseEvent, TuiMouseEventType } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
-import { BlockHover, carriesPointerCue } from "../../src/modes/interactive/components/mixcode/hover/hover-block.ts";
+import { BlockHover, hasPointerCueAt } from "../../src/modes/interactive/components/mixcode/hover/hover-block.ts";
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
 import { hoverBackgroundOpen } from "./test-utils.ts";
 
@@ -35,13 +35,13 @@ describe("block hover", () => {
 	it("records the card rows of the block that owns the cue, and no other component", () => {
 		const cued = { render: () => [], invalidate: () => {} };
 		const other = { render: () => [], invalidate: () => {} };
-		expect(carriesPointerCue(cued, 0)).toBe(false);
+		expect(hasPointerCueAt(cued, 0)).toBe(false);
 		new BlockHover(cued, undefined, 1);
 		// The gap row above the card is not a card row, so a selection there keeps the plain wrap.
-		expect(carriesPointerCue(cued, 0)).toBe(false);
-		expect(carriesPointerCue(cued, 1)).toBe(true);
-		expect(carriesPointerCue(cued, 9)).toBe(true);
-		expect(carriesPointerCue(other, 1)).toBe(false);
+		expect(hasPointerCueAt(cued, 0)).toBe(false);
+		expect(hasPointerCueAt(cued, 1)).toBe(true);
+		expect(hasPointerCueAt(cued, 9)).toBe(true);
+		expect(hasPointerCueAt(other, 1)).toBe(false);
 	});
 
 	it("answers moves inside the block and paints every row while hovered", () => {

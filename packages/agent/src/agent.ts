@@ -340,19 +340,21 @@ export class Agent {
 		this.clearFollowUpQueue();
 	}
 
+	/** The pending queue `kind` names; callers pass the kind as a runtime value. */
+	private queueFor(kind: "steering" | "followUp"): PendingMessageQueue {
+		return kind === "steering" ? this.steeringQueue : this.followUpQueue;
+	}
+
 	/**
 	 * Remove specific queued messages, matched by exact text (last occurrence
 	 * first), from one queue. Returns removed entries in queue order so they can
 	 * be restored with restoreQueuedMessages().
-	 *
-	 * The queue is named by a discriminator rather than a per-queue pair because
-	 * AgentSession carries the queue kind as a runtime value and forwards it here.
 	 */
 	removeQueuedMessages(
 		kind: "steering" | "followUp",
 		texts: readonly string[],
 	): Array<{ message: AgentMessage; text: string }> {
-		const queue = kind === "steering" ? this.steeringQueue : this.followUpQueue;
+		const queue = this.queueFor(kind);
 		const removed: Array<{ index: number; message: AgentMessage; text: string }> = [];
 		for (let requestedIndex = texts.length - 1; requestedIndex >= 0; requestedIndex -= 1) {
 			const text = texts[requestedIndex]!;
@@ -369,7 +371,7 @@ export class Agent {
 		removed: ReadonlyArray<{ message: AgentMessage; text: string }>,
 	): void {
 		if (removed.length === 0) return;
-		const queue = kind === "steering" ? this.steeringQueue : this.followUpQueue;
+		const queue = this.queueFor(kind);
 		for (const item of removed) {
 			queue.enqueue(item.message);
 		}

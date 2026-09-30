@@ -24,12 +24,20 @@ export const TOAST_MARGIN = 1;
 /** Rows of text the wrap reads: the message rows plus one, past which nothing reaches the card. */
 const WRAP_BUDGET_ROWS = TOAST_MAX_MESSAGE_ROWS + 1;
 
+/** Icon and theme color of each toast type, in the order the type table lists them. */
+const TOAST_STYLES: Record<ToastType, { icon: string; color: ThemeColor }> = {
+	success: { icon: "✓", color: "success" },
+	warning: { icon: "⚠", color: "warning" },
+	error: { icon: "✖", color: "error" },
+	info: { icon: "•", color: "accent" },
+};
+
 /**
  * Width of the card for `type` and `message` in a terminal `termWidth` columns
  * wide, or undefined when the card cannot fit and must not be painted.
  */
 export function toastBoxWidth(type: ToastType, message: string, termWidth: number): number | undefined {
-	const preferred = visibleWidth(`${toastIcon(type)} ${message}`) + PANEL_CHROME_COLUMNS;
+	const preferred = visibleWidth(`${TOAST_STYLES[type].icon} ${message}`) + PANEL_CHROME_COLUMNS;
 	const maxBoxWidth = Math.min(
 		termWidth - TOAST_MARGIN,
 		Math.max(TOAST_MIN_BOX_WIDTH, Math.min(TOAST_MAX_BOX_WIDTH, Math.floor(termWidth * TOAST_MAX_WIDTH_RATIO))),
@@ -50,7 +58,7 @@ export function toastCardRows(type: ToastType, message: string, boxWidth: number
  * does.
  */
 export function toastMessageRows(type: ToastType, message: string, contentWidth: number): string[] {
-	const text = `${toastIcon(type)} ${message}`;
+	const text = `${TOAST_STYLES[type].icon} ${message}`;
 	const clipped = truncateToWidth(text, contentWidth * WRAP_BUDGET_ROWS, "");
 	const wrapped = wrapTextWithAnsi(clipped, contentWidth);
 	if (clipped === text && wrapped.length <= TOAST_MAX_MESSAGE_ROWS) return wrapped;
@@ -83,7 +91,7 @@ export class ToastCardComponent implements Component {
 		);
 		return panel("", rows, boxWidth, {
 			rounded: true,
-			borderColor: toastColor(this.type),
+			borderColor: TOAST_STYLES[this.type].color,
 			backgroundColor: "panelBg",
 		});
 	}
@@ -92,21 +100,7 @@ export class ToastCardComponent implements Component {
 /** Paint the leading icon of the first row in the type color, the rest of that row in the text color. */
 function styleToastRow(row: string, type: ToastType | undefined): string {
 	if (type === undefined) return theme.fg("text", row);
-	const icon = toastIcon(type);
+	const { icon, color } = TOAST_STYLES[type];
 	if (!row.startsWith(icon)) return theme.fg("text", row);
-	return `${theme.fg(toastColor(type), icon)}${theme.fg("text", row.slice(icon.length))}`;
-}
-
-function toastIcon(type: ToastType): string {
-	if (type === "success") return "✓";
-	if (type === "warning") return "⚠";
-	if (type === "error") return "✖";
-	return "•";
-}
-
-function toastColor(type: ToastType): ThemeColor {
-	if (type === "success") return "success";
-	if (type === "warning") return "warning";
-	if (type === "error") return "error";
-	return "accent";
+	return `${theme.fg(color, icon)}${theme.fg("text", row.slice(icon.length))}`;
 }

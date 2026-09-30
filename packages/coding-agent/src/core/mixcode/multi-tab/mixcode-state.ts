@@ -17,7 +17,7 @@ import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync,
 import { dirname, join } from "node:path";
 import { getAgentDir } from "../../../config.ts";
 import { stripBom } from "../../../utils/text.ts";
-import { defaultAgentTitle, isTabColorName, type TabColorName } from "./types.ts";
+import { isTabColorName, type TabColorName } from "./types.ts";
 
 export const OPEN_TABS_VERSION = 1;
 
@@ -162,7 +162,8 @@ function readStateJson(workdir: string): Record<string, unknown> {
 	}
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
+/** `value` as a plain object, or `{}` for anything else (null, arrays, primitives). */
+export function asRecord(value: unknown): Record<string, unknown> {
 	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
@@ -194,12 +195,15 @@ export function readTabMeta(workdir: string): Map<string, MixcodeTabMeta> {
 }
 
 /**
- * A tab layout to persist: the workdir is always known there, and the badge only
- * when the tab has one. Every other field matches {@link MixcodeTabMeta}.
+ * A tab layout to persist: the workdir is always known there, the badge only
+ * when the tab has one, and `autoTitle` reports whether `title` is a generated
+ * `Agent-NN` rather than a name the user or the agent chose. Every other field
+ * matches {@link MixcodeTabMeta}.
  */
 export type TabLayoutEntry = Omit<MixcodeTabMeta, "workdir" | "unread"> & {
 	workdir: string;
 	unread?: boolean;
+	autoTitle?: boolean;
 };
 
 /**
@@ -220,10 +224,12 @@ export function saveTabLayout(
 	);
 
 	const existing = readStateJson(workdir);
-	// A default `Agent-NN` title is derived from the tab's position, so it is not
-	// recorded as a custom title; only names the user or the agent chose are.
+	// Only a chosen title is recorded: a generated `Agent-NN` is re-derived from
+	// the tab's position on the next start, and storing it would freeze a stale
+	// number. The entry says which kind it holds, so a user-typed `Agent-03` is
+	// kept rather than mistaken for a default.
 	const customTitles = layout.tabs
-		.filter((tab, index) => tab.title?.trim() && tab.title.trim() !== defaultAgentTitle(index + 1))
+		.filter((tab) => tab.title?.trim() && !tab.autoTitle)
 		.map((tab) => [tab.sessionId, tab.title!.trim()]);
 	const next: Record<string, unknown> = {
 		...existing,

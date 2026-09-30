@@ -19,6 +19,7 @@ import { isWorkingStatus, type TabColorName, type TabStatus } from "../../../../
 import { theme } from "../../../theme/theme.ts";
 import { type HoverTarget, PointerHover } from "../hover/pointer-hover.ts";
 import { applyActiveTabShimmer, COLORED_SHIMMER_STYLES, THEME_SHIMMER_STYLES } from "../tab-shimmer.ts";
+import { reopenAfterSgr } from "../terminal-text.ts";
 import { RULE_CHAR, TAB_STATUS_GLYPHS, tabStatusGlyph } from "./tab-glyphs.ts";
 import { renderZenStatusSeparator, type ZenStatusMarker } from "./zen-status.ts";
 
@@ -105,7 +106,7 @@ function paintOpenSeq(paint: (text: string) => string): string {
 function chipPaint(base: (text: string) => string): (text: string) => string {
 	const open = paintOpenSeq(base);
 	if (!open) return base;
-	return (text) => base(text.replace(/\x1b\[(0|22|27|39|49)m/g, (reset) => `${reset}${open}`));
+	return (text) => base(reopenAfterSgr(open, text));
 }
 
 /** Chip painter for a tab color: the color's contrast pair, reset-safe. */

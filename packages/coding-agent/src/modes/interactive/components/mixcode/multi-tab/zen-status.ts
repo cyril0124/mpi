@@ -29,10 +29,10 @@ const MARKER_CAP = 5;
 /** Lead dashes of the marker cluster. */
 const CLUSTER_LEAD = RULE_CHAR.repeat(2);
 /**
- * The marker a chip glyph stands for. Idle has none, so a tab that is simply
- * sitting there contributes nothing to the row.
+ * Chip glyph to marker. Idle has no glyph here, so a tab that is simply sitting
+ * there contributes nothing to the row.
  */
-const GLYPH_MARKERS: ReadonlyMap<string, ZenStatusMarker> = new Map([
+const MARKERS: ReadonlyMap<string, ZenStatusMarker> = new Map([
 	[TAB_STATUS_GLYPHS.running, "working"],
 	[TAB_STATUS_GLYPHS.done, "done"],
 	[TAB_STATUS_GLYPHS.error, "error"],
@@ -57,7 +57,7 @@ export function zenStatusMarkers(tabs: readonly AgentTab[], activeId: string): Z
 	const markers: ZenStatusMarker[] = [];
 	for (const tab of tabs) {
 		if (tab.id === activeId) continue;
-		const marker = GLYPH_MARKERS.get(tabStatusGlyph(tab.status, tab.unread));
+		const marker = MARKERS.get(tabStatusGlyph(tab.status, tab.unread));
 		if (marker) markers.push(marker);
 	}
 	return markers;

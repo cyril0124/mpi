@@ -7,15 +7,22 @@
 import { type Component, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
 import { formatSecondCount, padLine } from "../layout-text.ts";
+import { rightAlignDim } from "../message-clock.ts";
 
 /** Body rows the tail shows under its header. */
 const TAIL_ROWS = 3;
 
-/** Columns a body row spends outside its text: indent, rail, and the padding around it. */
-const TAIL_ROW_OVERHEAD = 5;
-
 /** Marks the first visible row when earlier content was dropped. */
 const OVERFLOW_MARKER = "… ";
+
+/**
+ * Columns a body row spends outside its text: the indent that separates it from
+ * the rail, the rail column itself, and one space on either side of the text.
+ */
+const TAIL_INDENT_COLUMNS = 1;
+const TAIL_RAIL_COLUMNS = 2;
+const TAIL_TEXT_PADDING_COLUMNS = 2;
+const TAIL_ROW_OVERHEAD = TAIL_INDENT_COLUMNS + TAIL_RAIL_COLUMNS + TAIL_TEXT_PADDING_COLUMNS;
 
 /** Label the tail replaces, and the fallback when stripping leaves nothing. */
 export const HIDDEN_THINKING_PLACEHOLDER = "Thinking...";
@@ -98,21 +105,9 @@ export class ThinkingTailComponent implements Component {
 /** Header with the right-aligned clock, then one rail row per body line. */
 function renderThinkingRail(body: string[], width: number, duration: string): string[] {
 	const title = `  ${theme.fg("text", "Thinking")}`;
-	const header = withRightClock(title, duration, Math.max(0, width - 1));
+	const header = rightAlignDim(title, duration, Math.max(0, width - 1));
 	const railRows = body.map((line) => `  ${theme.fg("borderMuted", "│")}${line}`);
 	return [header, ...railRows].map((line) => padLine(line, width));
-}
-
-/**
- * Pack `left` and a right-aligned clock into `width`; the clock keeps one leading
- * space and stays dim. An empty clock leaves the space in place.
- */
-function withRightClock(left: string, clock: string, width: number): string {
-	const right = truncateToWidth(` ${clock}`, Math.max(0, width));
-	const rightWidth = visibleWidth(right);
-	const clippedLeft = truncateToWidth(left, Math.max(0, width - rightWidth));
-	const fill = Math.max(0, width - visibleWidth(clippedLeft) - rightWidth);
-	return `${clippedLeft}${" ".repeat(fill)}${theme.fg("dim", right)}`;
 }
 
 /**

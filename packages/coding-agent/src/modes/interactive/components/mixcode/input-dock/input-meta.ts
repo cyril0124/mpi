@@ -22,12 +22,10 @@ import { sanitizeTerminalText } from "../terminal-text.ts";
 const CONTEXT_BAR_WIDTH = 8;
 
 /**
- * Icons for the meta row. The glyph slots are empty on purpose: the fork has no
- * Nerd Font detection, and a private-use glyph without the font paints a box.
+ * Icons for the meta row. The model and thinking fields carry no glyph: the fork
+ * has no Nerd Font detection, and a private-use glyph without the font paints a box.
  */
 const GLYPHS = {
-	model: "",
-	thinking: "",
 	context: "#",
 	git: "*",
 	barFilled: "█",
@@ -177,12 +175,8 @@ function renderInputMetaLeft(workdirPath: string, model: string, thinking: strin
 	if (width <= 0) return { text: "", regions: [], fits: false, workdirIntact: false };
 	const moduleName = shortModelName(model);
 	const modes: MetaMode[] = [
-		{ model: labeled(GLYPHS.model, model), thinking: labeled(GLYPHS.thinking, thinking), gap: "  " },
-		{
-			model: labeled(GLYPHS.model, moduleName),
-			thinking: labeled(GLYPHS.thinking, thinking),
-			gap: "  ",
-		},
+		{ model, thinking, gap: "  " },
+		{ model: moduleName, thinking, gap: "  " },
 		{ model: moduleName, thinking, gap: " " },
 	];
 	// Strict modes need model, thinking and workdir all visible at natural width.
@@ -191,10 +185,6 @@ function renderInputMetaLeft(workdirPath: string, model: string, thinking: strin
 		if (candidate.fits) return candidate;
 	}
 	return layoutInputMetaLeft(modes[modes.length - 1]!, workdirPath, width, false);
-}
-
-function labeled(glyph: string, text: string): string {
-	return glyph ? ` ${glyph} ${text} ` : ` ${text} `;
 }
 
 function layoutInputMetaLeft(mode: MetaMode, workdirPath: string, width: number, strict: boolean): LeftBlock {

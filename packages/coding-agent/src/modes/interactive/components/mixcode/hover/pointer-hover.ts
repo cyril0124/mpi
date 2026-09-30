@@ -8,6 +8,7 @@
  */
 import { compositeTuiLine, isImageLine, sliceByColumn, visibleWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
+import { reopenAfterSgr, SGR_SEQUENCE } from "../terminal-text.ts";
 
 /** One rendered rectangle matching a clickable target's visible cells. */
 export interface HoverTarget {
@@ -21,7 +22,6 @@ export interface HoverTarget {
 	height?: number;
 }
 
-const SGR_SEQUENCE = /\x1b\[[0-9;:]*m/g;
 /** Placeholder the theme wraps so one of its open sequences can be read back. */
 const MARKER = "\u0001";
 /** Plain underline the terminal understands, kept for a theme whose underline is a no-op. */
@@ -62,10 +62,7 @@ export function paintRowBackground(line: string, width: number): string {
 	const open = theme.getBgAnsi("selectedBg");
 	if (!open || isImageLine(line)) return line;
 	const filled = visibleWidth(line) < width ? line + " ".repeat(width - visibleWidth(line)) : line;
-	return theme.bg(
-		"selectedBg",
-		filled.replace(SGR_SEQUENCE, (sequence) => `${sequence}${open}`),
-	);
+	return theme.bg("selectedBg", reopenAfterSgr(open, filled));
 }
 
 /**
@@ -77,10 +74,11 @@ export function paintRowBackground(line: string, width: number): string {
 function paintHoverCells(text: string): string {
 	const open = theme.getBgAnsi("selectedBg");
 	const underline = hoverUnderlineOpen();
-	return theme.bg(
-		"selectedBg",
-		`${underline}${text.replace(SGR_SEQUENCE, (sequence) => `${sequence}${open}${underline}`)}\x1b[24m`,
-	);
+	// Every inner SGR ends both the background and the underline, so each one
+	// re-opens with `open` then `underline`. The leading underline stands before
+	// the first cell; the trailing one turns it off before the background closes.
+	const body = `${underline}${text.replace(SGR_SEQUENCE, (sequence) => `${sequence}${open}${underline}`)}\x1b[24m`;
+	return theme.bg("selectedBg", body);
 }
 
 /**

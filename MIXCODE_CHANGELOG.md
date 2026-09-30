@@ -318,8 +318,33 @@ point `## [Unreleased]` at the new tag.
   longer fails the editor probe and skips the fallback, and the workdir picker counts directories
   instead of rows in its `N dirs` line. The session workdir writer names its temp file with a
   UUID, so two writers of one session file no longer collide.
+- Another readability pass over the fork's MixCode code. Duplicated helpers collapsed to one
+  implementation each: the SGR re-open that three surfaces had written three ways, the input card's
+  frame arithmetic, the tab-title scan, the right-aligned dim clock the message row and the thinking
+  tail each computed, and the toast icon/color tables. A generated tab title is now flagged rather
+  than re-derived from the tab's position, `markDone` goes through the tab-status seam, and the zen
+  separator's glyph map is the tab bar's table. `interactive-mode.ts` sheds the composer's frame-time
+  reads: `composer-state.ts` renders the placeholder and the input-card chrome from a
+  `ComposerContext` the interactive mode gathers.
 
 ### Fixed
+
+- A steer flush whose batch turned out to hold nothing deliverable dropped the texts it had already
+  taken out of the queue: `flushSteerQueue` spliced them out, removed the mirrored copies from the
+  session queue, then returned before the block that restores both on failure. A flush of only blank
+  entries now puts them back.
+- A tab title the user typed as `Agent-NN` was lost on save. `saveTabLayout` decided whether a title
+  was worth persisting by comparing it against the default title for the tab's position, so a hand-typed
+  `Agent-03` read as generated and was left out of `mixcode_state.json`; on the next start the title came
+  back renumbered. The tab now carries `autoTitle`, set where a title is chosen and cleared where one is
+  picked by hand, and the restore pass renumbers only the flagged tabs.
+- The queue-text mirror in `AgentSession` removed a different occurrence than the agent's own pending
+  queue when the same text sat in the queue twice: `removeQueuedMessages` dropped the last match while
+  the `message_start` handler dropped the first. Both walk from the end now, so the mirror and the
+  queue agree on which copy was consumed.
+- `TabManager.markDone` wrote `status` directly, leaving the timer fields as the last run left them. It
+  now goes through `setTabStatus`, so flagging a tab done records the transition time like every other
+  status change.
 
 - MixCode Home's working indicators only moved when something else repainted the frame: a tab that
   worked without emitting session events (a blocked or long-running tool, a stalled model response)

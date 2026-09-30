@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 // scroll child path the fullscreen transcript uses.
 import { materializeScrollLines, renderLayoutFrame } from "../../../tui/src/layout.ts";
 import type { Component } from "../../../tui/src/tui.ts";
-import { BlockHover, carriesPointerCue } from "../../src/modes/interactive/components/mixcode/hover/hover-block.ts";
+import { BlockHover, hasPointerCueAt } from "../../src/modes/interactive/components/mixcode/hover/hover-block.ts";
 import { WindowedTranscript } from "../../src/modes/interactive/components/mixcode/windowed-chat/windowed-transcript.ts";
 
 /** Message stand-in: a fixed number of rows, counted renders, stable identity. */
@@ -287,7 +287,7 @@ describe("windowed transcript mouse routing", () => {
 		new BlockHover(card, () => undefined, 1);
 
 		const cuedRow = (row: number) =>
-			transcript.componentPathAtRow(row).some((entry) => carriesPointerCue(entry.component, entry.row));
+			transcript.componentPathAtRow(row).some((entry) => hasPointerCueAt(entry.component, entry.row));
 
 		expect(cuedRow(0)).toBe(false);
 		expect(cuedRow(1)).toBe(true);
@@ -306,7 +306,7 @@ describe("windowed transcript mouse routing", () => {
 		new BlockHover(card, () => undefined, 1);
 
 		const cuedRow = (row: number) =>
-			transcript.componentPathAtRow(row).some((entry) => carriesPointerCue(entry.component, entry.row));
+			transcript.componentPathAtRow(row).some((entry) => hasPointerCueAt(entry.component, entry.row));
 
 		// The box pads one row above its child, so the box's row 1 is the child's row 0.
 		expect(transcript.componentPathAtRow(1)).toEqual([
