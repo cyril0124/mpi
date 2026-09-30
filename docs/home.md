@@ -12,7 +12,7 @@ in the tab cycle as a pseudo-tab (`home`) that owns no session and no runtime.
 | --- | --- | --- |
 | An agent tab | `left` with an empty composer | Home opens with that agent selected |
 | Any tab | `tab` / `shift+tab` | Cycles `[Home, ...agents]` and wraps, unless the focused agent is in [zen mode](zen-mode.md) |
-| Any tab | Click the `MixCode Home` chip | Home opens |
+| An agent tab | Click the `MixCode Home` chip | Home opens. With Home already focused the same click opens [Tab Jump](tabs.md#tab-jump) instead |
 
 `left` does nothing while the composer holds text: the key belongs to the editor then, so cursor
 movement keeps working.

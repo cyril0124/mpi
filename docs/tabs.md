@@ -22,7 +22,7 @@ moved the thinking cycle to `alt+t`. See [Upstream Drift](upstream-drift.md).
 `app.tab.jump` takes `ctrl+t`, which upstream binds to `app.thinking.toggle`. That action keeps its
 `ctrl+t` default, but the composer registers the jump handler first, so the chord opens Tab Jump and
 the thinking toggle has no working key there unless it is rebound in `keybindings.json`. The compact
-start-up tips do not name the toggle, and `/hotkeys` reports it with a note that its chord is taken. See
+start-up instructions do not name the toggle, and `/hotkeys` reports it with a note that its chord is taken. See
 [Tab Jump](#tab-jump) and [Upstream Drift](upstream-drift.md).
 
 ## Commands
@@ -77,11 +77,11 @@ A terminal that reports keys without the extended protocol sends `ctrl+j` and an
 line feed as the same byte. This overlay reads that byte as `ctrl+j`, so it moves the highlight; an
 Enter delivered as a carriage return jumps as usual.
 
-The chord is ignored while the editor's `/` command popup is up, and whenever another surface already
-owns the keyboard — a floating overlay, or a selector in the editor slot such as the session tree,
-the model picker or Resume — so two of them never stack. Clicking the chip of the focused tab opens
-the same overlay and follows the same rule. In [zen mode](zen-mode.md) this overlay is the switcher:
-`tab` and `shift+tab` no longer switch tabs, but `ctrl+t` still opens this list.
+The chord is ignored while the editor's `/` command popup is up. Both the chord and a chip click are
+ignored while another surface already owns the keyboard — a floating overlay, or a selector in the
+editor slot such as the session tree, the model picker or Resume — so two of them never stack.
+Clicking the chip of the focused tab opens the same overlay. In [zen mode](zen-mode.md) this overlay is
+the switcher: `tab` and `shift+tab` no longer switch tabs, but `ctrl+t` still opens this list.
 
 ## Workdir
 

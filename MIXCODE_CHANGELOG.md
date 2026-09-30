@@ -29,11 +29,11 @@ point `## [Unreleased]` at the new tag.
   marked `... (N more above/below)`; the id column shows the whole id while the row has room for it.
   The rows reuse the tab bar's own projection, so a tab still coming up keeps its spinner, and the
   glyph is the one its chip paints. Clicking the chip of the tab that is already focused opens
-  the same overlay instead of re-activating it. `/jump` with an argument reports `Usage: /jump`, and
-  the chord and the chip are both ignored while the editor's `/` popup, a floating overlay, or a
-  selector in the editor slot (tree, model, resume) owns the keyboard. In zen mode the overlay is the
-  switcher (`tab`/`shift+tab` stay swallowed), and in vim mode `ctrl+t` keeps passing through. See
-  [Agent Tabs](docs/tabs.md#tab-jump).
+  the same overlay instead of re-activating it. `/jump` with an argument reports `Usage: /jump`. The
+  chord is ignored while the editor's `/` popup is up, and both the chord and a chip click are ignored
+  while a floating overlay or an editor-slot selector (tree, model, resume) owns the keyboard. In zen
+  mode the overlay is the switcher (`tab`/`shift+tab` stay swallowed), and in vim mode `ctrl+t` keeps
+  passing through. See [Agent Tabs](docs/tabs.md#tab-jump).
 - `ctrl+c` with text in the composer now clears it and parks that text at the front of the prompt
   history, so `up` recalls it (a stash). The stash is kept per tab and rebuilt into the composer on
   each activation, so it survives a tab switch and a revisited tab does not repeat it. Home's
@@ -274,7 +274,7 @@ point `## [Unreleased]` at the new tag.
 ### Changed
 
 - Tab Jump takes `ctrl+t`, so the composer no longer reaches `app.thinking.toggle` on that key: the
-  toggle keeps its `ctrl+t` default but the jump handler is registered first, the compact start-up tips
+  toggle keeps its `ctrl+t` default but the jump handler is registered first, the start-up instructions
   no longer name it, and `/hotkeys` reports it with a note that its chord is taken. Rebind
   `app.thinking.toggle` in `keybindings.json` to give it a chord again, or use the `Hide thinking` row
   in `/settings`. See [Upstream Drift](docs/upstream-drift.md).
