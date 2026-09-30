@@ -97,6 +97,7 @@ export interface SettingsConfig {
 	inlineWidgets: boolean;
 	boxedHiddenThinking: boolean;
 	iconMode: IconMode;
+	showResponseModelNotices: boolean;
 }
 
 export interface SettingsCallbacks {
@@ -138,6 +139,7 @@ export interface SettingsCallbacks {
 	onInlineWidgetsChange: (enabled: boolean) => void;
 	onBoxedHiddenThinkingChange: (enabled: boolean) => void;
 	onIconModeChange: (mode: IconMode) => void;
+	onShowResponseModelNoticesChange: (enabled: boolean) => void;
 	onCancel: () => void;
 }
 
@@ -760,6 +762,14 @@ export class SettingsSelectorComponent extends Container {
 				currentValue: config.iconMode,
 				values: [...ICON_MODES],
 			},
+			{
+				id: "response-model-notices",
+				label: "Response model notices",
+				section: "MixCode",
+				description: "Show a transcript notice when a provider answers with a model other than the one requested",
+				currentValue: config.showResponseModelNotices ? "true" : "false",
+				values: ["true", "false"],
+			},
 		];
 
 		// Only show image toggle if terminal supports it
@@ -984,6 +994,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "icon-mode":
 						callbacks.onIconModeChange(newValue as IconMode);
+						break;
+					case "response-model-notices":
+						callbacks.onShowResponseModelNoticesChange(newValue === "true");
 						break;
 				}
 			},

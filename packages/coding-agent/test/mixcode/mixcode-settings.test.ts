@@ -1,7 +1,8 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setKeybindings } from "@earendil-works/pi-tui";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { Container, setKeybindings } from "@earendil-works/pi-tui";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { KeybindingsManager } from "../../src/core/keybindings.ts";
 import type { MixCodeSettings } from "../../src/core/mixcode/mixcode-settings.ts";
@@ -10,6 +11,7 @@ import {
 	mixcodeSettingsFilePath,
 	writeIconModeSetting,
 	writeInlineWidgetsSetting,
+	writeShowResponseModelNoticesSetting,
 } from "../../src/core/mixcode/mixcode-settings.ts";
 import {
 	createInlineWidgetTabState,
@@ -131,6 +133,34 @@ describe("mixcode_settings.json", () => {
 		});
 	});
 
+	it("defaults the response model notice to on", () => {
+		const file = join(tempDir(), "mixcode_settings.json");
+		expect(loadMixCodeSettings(file).ui.showResponseModelNotices).toBe(true);
+	});
+
+	it("reads an explicit off value for the response model notice", () => {
+		const file = join(tempDir(), "mixcode_settings.json");
+		writeFileSync(file, '{\n  "ui": { "showResponseModelNotices": false }\n}\n');
+		expect(loadMixCodeSettings(file).ui.showResponseModelNotices).toBe(false);
+	});
+
+	it("names the file and field when the response model notice flag is not a boolean", () => {
+		const file = join(tempDir(), "mixcode_settings.json");
+		writeFileSync(file, '{\n  "ui": { "showResponseModelNotices": "no" }\n}\n');
+		expect(() => loadMixCodeSettings(file)).toThrow(/ui\.showResponseModelNotices must be a boolean/);
+		expect(() => loadMixCodeSettings(file)).toThrow(file);
+	});
+
+	it("writes the response model notice flag without dropping the ui keys mixcode-pi owns", () => {
+		const file = join(tempDir(), "mixcode_settings.json");
+		writeFileSync(file, '{\n  "ui": { "inlineWidgets": true }\n}\n');
+		writeShowResponseModelNoticesSetting(file, false);
+
+		expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({
+			ui: { inlineWidgets: true, showResponseModelNotices: false },
+		});
+	});
+
 	it("stores the file in the state directory shared with mixcode-pi", () => {
 		const dir = tempDir();
 		vi.stubEnv("PI_CODING_AGENT_DIR", dir);
@@ -142,7 +172,43 @@ describe("mixcode_settings.json", () => {
 	});
 });
 
-describe("/settings inline widgets row", () => {
+/** The MixCode config row values these cases read; pi's own fields take their defaults. */
+function mixcodeRowConfig(): SettingsConfig {
+	return {
+		autoCompact: true,
+		cacheWarmingMode: "off",
+		collapseChangelog: false,
+		defaultModel: "not set",
+		availableDefaultModels: [],
+		modelThinkingLevels: {},
+		currentTheme: "dark",
+		terminalTheme: "dark",
+		availableThemes: [],
+		defaultProjectTrust: "ask",
+		doubleEscapeAction: "tree",
+		enableInstallTelemetry: false,
+		followUpMode: "all",
+		fullscreenCopyOnSelect: true,
+		fullscreenExitOutput: "transcript",
+		fullscreenScrollbar: "auto",
+		hideThinkingBlock: true,
+		httpIdleTimeoutMs: 300_000,
+		mermaidRenderingMode: "off",
+		quietStartup: false,
+		showCacheMissNotices: true,
+		steeringMode: "all",
+		thinkingLevel: "medium",
+		transport: "auto",
+		treeFilterMode: "default",
+		tuiMode: "regular",
+		warnings: {},
+		inlineWidgets: true,
+		iconMode: "nerd",
+		showResponseModelNotices: true,
+	} as unknown as SettingsConfig;
+}
+
+describe("/settings MixCode rows", () => {
 	beforeAll(() => {
 		initTheme("dark");
 		setKeybindings(new KeybindingsManager());
@@ -150,37 +216,7 @@ describe("/settings inline widgets row", () => {
 
 	it("sits in its own Mixcode section and cycles the value", () => {
 		const onInlineWidgetsChange = vi.fn();
-		const config = {
-			autoCompact: true,
-			cacheWarmingMode: "off",
-			collapseChangelog: false,
-			defaultModel: "not set",
-			availableDefaultModels: [],
-			modelThinkingLevels: {},
-			currentTheme: "dark",
-			terminalTheme: "dark",
-			availableThemes: [],
-			defaultProjectTrust: "ask",
-			doubleEscapeAction: "tree",
-			enableInstallTelemetry: false,
-			followUpMode: "all",
-			fullscreenCopyOnSelect: true,
-			fullscreenExitOutput: "transcript",
-			fullscreenScrollbar: "auto",
-			hideThinkingBlock: true,
-			httpIdleTimeoutMs: 300_000,
-			mermaidRenderingMode: "off",
-			quietStartup: false,
-			showCacheMissNotices: true,
-			steeringMode: "all",
-			thinkingLevel: "medium",
-			transport: "auto",
-			treeFilterMode: "default",
-			tuiMode: "regular",
-			warnings: {},
-			inlineWidgets: true,
-			iconMode: "nerd",
-		} as unknown as SettingsConfig;
+		const config = mixcodeRowConfig();
 		const callbacks = { onInlineWidgetsChange } as unknown as SettingsCallbacks;
 		const list = new SettingsSelectorComponent(config, callbacks).getSettingsList();
 
@@ -195,6 +231,21 @@ describe("/settings inline widgets row", () => {
 		expect(onInlineWidgetsChange.mock.calls.flat()).toEqual([false]);
 		list.handleInput("\r");
 		expect(onInlineWidgetsChange.mock.calls.flat()).toEqual([false, true]);
+	});
+
+	it("toggles the response model notice row in the same section", () => {
+		const onShowResponseModelNoticesChange = vi.fn();
+		const list = new SettingsSelectorComponent(mixcodeRowConfig(), {
+			onShowResponseModelNoticesChange,
+		} as unknown as SettingsCallbacks).getSettingsList();
+
+		list.selectItem("response-model-notices");
+		const rendered = stripAnsi(list.render(120).join("\n"));
+		expect(rendered).toContain("Response model notices");
+		expect(rendered.indexOf("MixCode")).toBeLessThan(rendered.indexOf("Response model notices"));
+
+		list.handleInput("\r");
+		expect(onShowResponseModelNoticesChange.mock.calls.flat()).toEqual([false]);
 	});
 
 	it("flips every open tab and writes the global default to disk", () => {
@@ -231,5 +282,74 @@ describe("/settings inline widgets row", () => {
 		} finally {
 			vi.unstubAllEnvs();
 		}
+	});
+
+	it("writes the response model notice default and rebuilds the transcript", () => {
+		const dir = tempDir();
+		vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+		try {
+			let rebuilds = 0;
+			const context = {
+				mixcodeSettings: { ui: { showResponseModelNotices: true } } as MixCodeSettings,
+				rebuildChatFromMessages: () => {
+					rebuilds++;
+				},
+				showWarning: () => {},
+			};
+			const setShowResponseModelNoticesGlobal = (
+				InteractiveMode.prototype as unknown as {
+					setShowResponseModelNoticesGlobal(this: typeof context, enabled: boolean): void;
+				}
+			).setShowResponseModelNoticesGlobal;
+
+			setShowResponseModelNoticesGlobal.call(context, false);
+
+			expect(context.mixcodeSettings.ui.showResponseModelNotices).toBe(false);
+			expect(rebuilds).toBe(1);
+			const file = join(dir, "mixcode-pi", "mixcode_settings.json");
+			expect(loadMixCodeSettings(file).ui.showResponseModelNotices).toBe(false);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+});
+
+describe("response model notice gating", () => {
+	/** The metadata a finished reply carries when the provider answered with another model. */
+	const message = {
+		model: "requested",
+		responseModel: "reported",
+		provider: "fixture",
+		stopReason: "stop",
+	} as unknown as AssistantMessage;
+
+	function noticeRows(showResponseModelNotices: boolean): number {
+		const chatContainer = new Container();
+		// The real renderer appends the notice under a blank row.
+		const addTranscriptNotice = (
+			InteractiveMode.prototype as unknown as {
+				addTranscriptNotice(this: { chatContainer: Container }, text: string): void;
+			}
+		).addTranscriptNotice;
+		const context = {
+			chatContainer,
+			mixcodeSettings: { ui: { showResponseModelNotices } } as MixCodeSettings,
+			addTranscriptNotice,
+		};
+		const maybeShowResponseModelNotice = (
+			InteractiveMode.prototype as unknown as {
+				maybeShowResponseModelNotice(this: typeof context, message: AssistantMessage): void;
+			}
+		).maybeShowResponseModelNotice;
+		maybeShowResponseModelNotice.call(context, message);
+		return chatContainer.children.length;
+	}
+
+	it("adds the notice while the setting is on", () => {
+		expect(noticeRows(true)).toBe(2); // the spacer and the notice text
+	});
+
+	it("adds nothing while the setting is off", () => {
+		expect(noticeRows(false)).toBe(0);
 	});
 });

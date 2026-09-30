@@ -21,6 +21,9 @@ export const DEFAULT_INLINE_WIDGETS = true;
 /** Hidden thinking blocks render as a 3-row tail instead of the placeholder. */
 export const DEFAULT_BOXED_HIDDEN_THINKING = true;
 
+/** The response model mismatch notice shows under a reply unless the user turns it off. */
+export const DEFAULT_SHOW_RESPONSE_MODEL_NOTICES = true;
+
 /** How the meta row picks its glyphs: probe the terminal, or force one alphabet. */
 export const ICON_MODES = ["auto", "nerd", "ascii"] as const;
 export type IconMode = (typeof ICON_MODES)[number];
@@ -34,6 +37,7 @@ export interface MixCodeSettings {
 		inlineWidgets: boolean;
 		boxedHiddenThinking: boolean;
 		icons: { mode: IconMode };
+		showResponseModelNotices: boolean;
 	};
 }
 
@@ -54,6 +58,11 @@ export function writeInlineWidgetsSetting(settingsFile: string, enabled: boolean
 /** Write the hidden-thinking tail default; other keys survive, as above. */
 export function writeBoxedHiddenThinkingSetting(settingsFile: string, enabled: boolean): void {
 	writeUiSettings(settingsFile, (ui) => ({ ...ui, boxedHiddenThinking: enabled }));
+}
+
+/** Write the response model mismatch notice default; other keys survive, as above. */
+export function writeShowResponseModelNoticesSetting(settingsFile: string, enabled: boolean): void {
+	writeUiSettings(settingsFile, (ui) => ({ ...ui, showResponseModelNotices: enabled }));
 }
 
 /**
@@ -91,6 +100,12 @@ export function loadMixCodeSettings(settingsFile: string): MixCodeSettings {
 				settingsFile,
 			),
 			icons: { mode: parseIconMode(asRecord(ui.icons).mode, settingsFile) },
+			showResponseModelNotices: parseBoolean(
+				ui.showResponseModelNotices,
+				"showResponseModelNotices",
+				DEFAULT_SHOW_RESPONSE_MODEL_NOTICES,
+				settingsFile,
+			),
 		},
 	};
 }
@@ -101,6 +116,7 @@ function defaultMixCodeSettings(): MixCodeSettings {
 			inlineWidgets: DEFAULT_INLINE_WIDGETS,
 			boxedHiddenThinking: DEFAULT_BOXED_HIDDEN_THINKING,
 			icons: { mode: DEFAULT_ICON_MODE },
+			showResponseModelNotices: DEFAULT_SHOW_RESPONSE_MODEL_NOTICES,
 		},
 	};
 }

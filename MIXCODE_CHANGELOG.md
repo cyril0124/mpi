@@ -200,7 +200,9 @@ point `## [Unreleased]` at the new tag.
   switching a branch brings them back, because they derive from the `responseModel` metadata
   each assistant message carries. The OpenAI Responses adapters (OpenAI, Azure, Codex) now
   capture that metadata, alongside the existing Anthropic Messages and OpenAI Completions
-  capture. Shown with the `showCacheMissNotices` setting; the message itself keeps its
+  capture. The notice follows its own `ui.showResponseModelNotices` setting in
+  `mixcode_settings.json`, on by default and listed as *Response model notices* in the MixCode
+  section of `/settings`, instead of pi's `showCacheMissNotices`. The message itself keeps its
   requested model and persisted content.
 - Inline widget mode: extension widgets render at the tail of the chat instead of the editor
   dock, behind a viewport-derived row budget that collapses whole widgets to `▸ Inline · <key>`

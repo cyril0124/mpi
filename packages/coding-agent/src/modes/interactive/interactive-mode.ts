@@ -139,6 +139,7 @@ import {
 	DEFAULT_BOXED_HIDDEN_THINKING,
 	DEFAULT_ICON_MODE,
 	DEFAULT_INLINE_WIDGETS,
+	DEFAULT_SHOW_RESPONSE_MODEL_NOTICES,
 	type IconMode,
 	loadMixCodeSettings,
 	type MixCodeSettings,
@@ -146,6 +147,7 @@ import {
 	writeBoxedHiddenThinkingSetting,
 	writeIconModeSetting,
 	writeInlineWidgetsSetting,
+	writeShowResponseModelNoticesSetting,
 } from "../../core/mixcode/mixcode-settings.ts";
 import {
 	deleteWorkspaceRecord,
@@ -921,6 +923,7 @@ export class InteractiveMode {
 			inlineWidgets: DEFAULT_INLINE_WIDGETS,
 			boxedHiddenThinking: DEFAULT_BOXED_HIDDEN_THINKING,
 			icons: { mode: DEFAULT_ICON_MODE },
+			showResponseModelNotices: DEFAULT_SHOW_RESPONSE_MODEL_NOTICES,
 		},
 	};
 	/** Set when the settings file could not be read; reported once the UI is up. */
@@ -5119,6 +5122,25 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Apply the `ui.showResponseModelNotices` setting: write it to MixCode's settings
+	 * file and rebuild the transcript, so notices already rendered follow the switch.
+	 */
+	private setShowResponseModelNoticesGlobal(enabled: boolean): void {
+		this.mixcodeSettings = {
+			...this.mixcodeSettings,
+			ui: { ...this.mixcodeSettings.ui, showResponseModelNotices: enabled },
+		};
+		try {
+			writeShowResponseModelNoticesSetting(mixcodeSettingsFilePath(), enabled);
+		} catch (error) {
+			this.showWarning(
+				`Failed to save mixcode_settings.json: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		this.rebuildChatFromMessages();
+	}
+
+	/**
 	 * Set a custom footer component, or restore the built-in footer.
 	 */
 	private setExtensionFooter(
@@ -7217,7 +7239,7 @@ export class InteractiveMode {
 	 * rebuild derives the notice from the persisted metadata again.
 	 */
 	private maybeShowResponseModelNotice(message: AssistantMessage): void {
-		if (!this.transcriptNoticesEnabled()) return;
+		if (!this.mixcodeSettings.ui.showResponseModelNotices) return;
 		const text = responseModelNoticeText(message);
 		if (text) this.addTranscriptNotice(text);
 	}
@@ -7228,20 +7250,11 @@ export class InteractiveMode {
 	 * a model switch, or an idle gap past the cache TTL.
 	 */
 	private maybeShowCacheMissNotice(message: AssistantMessage): void {
-		if (!this.transcriptNoticesEnabled()) return;
+		if (!this.settingsManager.getShowCacheMissNotices()) return;
 
 		// Entries don't contain `message` yet: message_end fires before persistence.
 		const miss = detectCacheMiss(this.sessionManager.getEntries(), message, this.session.modelRuntime);
 		if (miss) this.addCacheMissNotice(miss);
-	}
-
-	/**
-	 * Whether transcript notices are on. One pi setting governs them all: the
-	 * cache-miss notice and the model-mismatch notice share it, and the fork added
-	 * no second switch.
-	 */
-	private transcriptNoticesEnabled(): boolean {
-		return this.settingsManager.getShowCacheMissNotices();
 	}
 
 	/** Append one warning notice under a blank row of the transcript. */
@@ -8413,6 +8426,7 @@ export class InteractiveMode {
 					inlineWidgets: this.mixcodeSettings.ui.inlineWidgets,
 					boxedHiddenThinking: this.mixcodeSettings.ui.boxedHiddenThinking,
 					iconMode: this.mixcodeSettings.ui.icons.mode,
+					showResponseModelNotices: this.mixcodeSettings.ui.showResponseModelNotices,
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -8609,6 +8623,9 @@ export class InteractiveMode {
 					},
 					onIconModeChange: (mode) => {
 						this.setIconModeGlobal(mode);
+					},
+					onShowResponseModelNoticesChange: (enabled) => {
+						this.setShowResponseModelNoticesGlobal(enabled);
 					},
 					onCancel: () => {
 						done();
