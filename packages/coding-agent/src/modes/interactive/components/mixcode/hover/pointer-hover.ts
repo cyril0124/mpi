@@ -22,11 +22,13 @@ export interface HoverTarget {
 }
 
 const SGR_SEQUENCE = /\x1b\[[0-9;:]*m/g;
-/** Placeholder the theme wraps so its background open sequence can be read back. */
+/** Placeholder the theme wraps so one of its open sequences can be read back. */
 const MARKER = "\u0001";
+/** Plain underline the terminal understands, kept for a theme whose underline is a no-op. */
+const PLAIN_UNDERLINE = "\x1b[4m";
 
 /** Two targets describe the same cells, so a highlight on one still applies to the other. */
-function sameCells(a: HoverTarget, b: HoverTarget): boolean {
+function sameTarget(a: HoverTarget, b: HoverTarget): boolean {
 	return a.id === b.id && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }
 
@@ -36,14 +38,16 @@ function containsPointer(target: HoverTarget, x: number, y: number): boolean {
 }
 
 /**
- * The theme's background open sequence, or "" when the theme has no hover
- * background. `theme.bg` always appends a reset, so the sequence is taken from
- * the text before the marker instead of from the painted result.
+ * The theme's underline open sequence, or the plain one when the theme carries no
+ * underline. `theme.underline` closes with a reset, so the sequence is taken from
+ * the text before the marker instead of from the painted result. The hover cue
+ * falls back rather than disappearing: a monochrome environment still needs the
+ * underline to tell hover from keyboard selection.
  */
-function hoverBackgroundOpen(): string {
-	const painted = theme.bg("selectedBg", MARKER);
+function hoverUnderlineOpen(): string {
+	const painted = theme.underline(MARKER);
 	const markerIndex = painted.indexOf(MARKER);
-	return markerIndex > 0 ? painted.slice(0, markerIndex) : "";
+	return markerIndex > 0 ? painted.slice(0, markerIndex) : PLAIN_UNDERLINE;
 }
 
 /**
@@ -55,7 +59,7 @@ function hoverBackgroundOpen(): string {
  * describe them.
  */
 export function paintRowBackground(line: string, width: number): string {
-	const open = hoverBackgroundOpen();
+	const open = theme.getBgAnsi("selectedBg");
 	if (!open || isImageLine(line)) return line;
 	const filled = visibleWidth(line) < width ? line + " ".repeat(width - visibleWidth(line)) : line;
 	return theme.bg(
@@ -71,10 +75,11 @@ export function paintRowBackground(line: string, width: number): string {
  * nested color can drop it.
  */
 function paintHoverCells(text: string): string {
-	const open = hoverBackgroundOpen();
+	const open = theme.getBgAnsi("selectedBg");
+	const underline = hoverUnderlineOpen();
 	return theme.bg(
 		"selectedBg",
-		`\x1b[4m${text.replace(SGR_SEQUENCE, (sequence) => `${sequence}${open}\x1b[4m`)}\x1b[24m`,
+		`${underline}${text.replace(SGR_SEQUENCE, (sequence) => `${sequence}${open}${underline}`)}\x1b[24m`,
 	);
 }
 
@@ -101,7 +106,7 @@ export class PointerHover {
 		this.revision = revision;
 		if (this.hovered) {
 			const previous = this.hovered;
-			this.hovered = targets.find((target) => sameCells(target, previous));
+			this.hovered = targets.find((target) => sameTarget(target, previous));
 		}
 		this.targets = targets;
 	}

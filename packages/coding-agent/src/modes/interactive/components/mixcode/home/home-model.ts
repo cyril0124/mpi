@@ -10,6 +10,7 @@ import { stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi
 import { bashExecutionToText } from "../../../../../core/messages.ts";
 import type { TabColorName, TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
 import { formatTokens } from "../../../components/footer.ts";
+import { formatSecondCount, padLine } from "../layout-text.ts";
 
 /** Longest transcript text the card summary keeps, in UTF-16 code units. */
 export const HOME_PREVIEW_TEXT_LIMIT = 16_384;
@@ -121,17 +122,6 @@ export function singleLinePreview(text: string | undefined): string {
 // Time formatting
 // ---------------------------------------------------------------------------
 
-/** Coarse run length in whole seconds: `7s`, `2m 05s`, `1h 02m 03s`. */
-export function formatSecondCount(totalSeconds: number): string {
-	const hours = Math.floor(totalSeconds / 3600);
-	const minutes = Math.floor((totalSeconds % 3600) / 60);
-	const seconds = totalSeconds % 60;
-	const pad = (value: number) => String(value).padStart(2, "0");
-	if (hours > 0) return `${hours}h ${pad(minutes)}m ${pad(seconds)}s`;
-	if (minutes === 0) return `${seconds}s`;
-	return `${minutes}m ${pad(seconds)}s`;
-}
-
 /** Coarse run length: `7s`, `2m 05s`, `1h 02m 03s`; an invalid stamp counts as zero elapsed. */
 export function formatElapsed(startedAt: string | undefined, now: number): string {
 	const start = startedAt ? Date.parse(startedAt) : Number.NaN;
@@ -155,27 +145,6 @@ export function formatRelativeAge(at: string | undefined, now: number): string {
 export function formatContextUsage(tokens: number | null, contextWindow: number): string {
 	const limit = contextWindow > 0 ? formatTokens(contextWindow) : "?";
 	return `${tokens === null ? "?" : formatTokens(tokens)}/${limit}`;
-}
-
-// ---------------------------------------------------------------------------
-// Paths
-// ---------------------------------------------------------------------------
-
-/**
- * Shorten a path that does not fit by collapsing leading path components to one
- * character (two for dot-directories), then truncating as a last resort.
- */
-export function compactWorkdir(workdir: string, maxWidth: number): string {
-	if (visibleWidth(workdir) <= maxWidth) return workdir;
-	const segments = workdir.split("/");
-	for (let index = 1; index < segments.length - 1; index++) {
-		const segment = segments[index]!;
-		if (segment.length > 1) {
-			segments[index] = segment.startsWith(".") ? segment.slice(0, 2) : segment.slice(0, 1);
-			if (visibleWidth(segments.join("/")) <= maxWidth) return segments.join("/");
-		}
-	}
-	return truncateToWidth(segments.join("/"), maxWidth, "...");
 }
 
 // ---------------------------------------------------------------------------
@@ -324,21 +293,20 @@ export function wrapPreviewTail(text: string, width: number, rows: number): stri
 // Layout primitives
 // ---------------------------------------------------------------------------
 
-/** Truncate then pad to exactly `width` visible columns. */
-export function padLine(text: string, width: number): string {
-	const clipped = visibleWidth(text) > width ? truncateToWidth(text, width, "") : text;
-	const deficit = width - visibleWidth(clipped);
-	return deficit > 0 ? clipped + " ".repeat(deficit) : clipped;
-}
+/** Gap between the left and right fragments of {@link lineEnds}. */
+const LINE_END_GAP = "  ";
+/** Columns {@link lineEnds} keeps for the left fragment when a right one is shown. */
+const LINE_END_MIN_LEFT = 2;
 
 /**
  * Place a right-aligned fragment after a left one without letting it displace
  * the left text; the fragment is dropped when it cannot fit with a gap.
  */
 export function lineEnds(left: string, right: string, width: number): string {
-	if (!right || visibleWidth(right) + 4 > width) return padLine(left, width);
-	const leftWidth = Math.max(0, width - visibleWidth(right) - 2);
-	return `${padLine(truncateToWidth(left, leftWidth, "…"), leftWidth)}  ${right}`;
+	const gapWidth = visibleWidth(LINE_END_GAP);
+	if (!right || visibleWidth(right) + gapWidth + LINE_END_MIN_LEFT > width) return padLine(left, width);
+	const leftWidth = Math.max(0, width - visibleWidth(right) - gapWidth);
+	return `${padLine(truncateToWidth(left, leftWidth, "…"), leftWidth)}${LINE_END_GAP}${right}`;
 }
 
 /** Two-column join used by the wide layout; the separator is one styled bar. */
@@ -355,10 +323,4 @@ export function joinColumns(
 		lines.push(`${padLine(left[row] ?? "", leftWidth)} ${separator} ${padLine(right[row] ?? "", rightWidth)}`);
 	}
 	return lines;
-}
-
-/** Start index of a window that keeps `selectedIndex` centered when possible. */
-export function windowStart(selectedIndex: number, total: number, windowSize: number): number {
-	if (total <= windowSize) return 0;
-	return Math.max(0, Math.min(selectedIndex - Math.floor(windowSize / 2), total - windowSize));
 }

@@ -89,8 +89,14 @@ describe("AgentSession queue dequeue/restore", () => {
 		expect(updates.at(-1)).toBe(1);
 	});
 
-	it("restore of an empty list is a no-op", () => {
-		expect(() => session.restoreQueuedMessages("steering", [])).not.toThrow();
+	it("restore of an empty list emits no queue update and leaves the queue empty", () => {
+		const updates: number[] = [];
+		session.subscribe(() => updates.push(session.pendingMessageCount));
+
+		session.restoreQueuedMessages("steering", []);
+
+		expect(updates).toEqual([]);
+		expect(session.pendingMessageCount).toBe(0);
 	});
 
 	it("clearQueue still clears both queues after a dequeue/restore cycle", async () => {

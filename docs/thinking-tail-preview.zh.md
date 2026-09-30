@@ -1,6 +1,6 @@
 # Thinking 尾窗预览
 
-[English](thinking-tail-preview.md)
+[English Documentation](thinking-tail-preview.md)
 
 开启隐藏 thinking 时（`/settings` 里的 `Hide thinking`、`ctrl+t`，或 pi 设置里的 `hideThinkingBlock`），每个 thinking 块本会折叠成一行斜体 `Thinking...`。尾窗预览把这一行换成跟随流式输出的 3 行尾窗：既能看到模型正在推演什么，又不会让该块占满整个对话区。该预览默认开启。
 

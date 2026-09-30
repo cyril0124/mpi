@@ -31,11 +31,7 @@ export class CustomEditor extends Editor {
 	private keybindings: KeybindingsManager;
 	private workingStatusIndicator: StatusIndicator | undefined;
 	public readonly embedWorkingStatus: boolean;
-	/**
-	 * Handler for an app action. Returning `false` declines the key so the editor
-	 * keeps it: Home binds the arrow/enter keys, which the composer still needs
-	 * whenever Home is not the active surface.
-	 */
+	/** App-action handlers, keyed by action. */
 	public actionHandlers: Map<AppKeybinding, AppActionHandler> = new Map();
 
 	// Special handlers that can be dynamically replaced
@@ -141,10 +137,7 @@ export class CustomEditor extends Editor {
 		);
 	}
 
-	/**
-	 * Register a handler for an app action. The handler may return `false` to let
-	 * the key fall through to the editor.
-	 */
+	/** Register a handler for an app action. */
 	onAction(action: AppKeybinding, handler: AppActionHandler): void {
 		this.actionHandlers.set(action, handler);
 	}

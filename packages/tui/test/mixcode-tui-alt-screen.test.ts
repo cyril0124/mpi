@@ -11,6 +11,8 @@ import {
 	type TuiSelectionLine,
 	type TuiSelectionOptions,
 } from "../src/tui.ts";
+import { type ClipboardResult, TuiAltScreen } from "../src/tui-alt-screen.ts";
+import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /** Read one cell's background and underline state off the terminal's own screen buffer. */
 function cellAt(terminal: VirtualTerminal, row: number, col: number): { bg: number; underlined: boolean } {
@@ -35,9 +37,6 @@ class RecordingTerminal extends VirtualTerminal {
 		super.write(data);
 	}
 }
-
-import { type ClipboardResult, TuiAltScreen } from "../src/tui-alt-screen.ts";
-import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /**
  * The alternate screen normally flashes its own confirmation. A host that passes
@@ -107,6 +106,9 @@ describe("alternate screen clipboard report", () => {
 function motion(x: number, y: number): string {
 	return `\x1b[<35;${x};${y}M`;
 }
+
+/** Numbered transcript lines `line 1`..`line N`, the content a scroll view renders. */
+const contentLines = (count: number) => Array.from({ length: count }, (_, index) => `line ${index + 1}`);
 
 /** A component that tracks its own hover state the way a real region does. */
 function hoverProbe(state: { hovered: boolean; renders: number }): Component {
@@ -599,10 +601,8 @@ describe("scoped selection while new output arrives", () => {
 		return { terminal, text, tui, copied };
 	}
 
-	const lines = (count: number) => Array.from({ length: count }, (_, index) => `line ${index + 1}`);
-
 	it("copies the rows the drag started on, not the rows that replaced them", async () => {
-		const { terminal, text, tui, copied } = transcript(lines(8));
+		const { terminal, text, tui, copied } = transcript(contentLines(8));
 		tui.start();
 		await terminal.waitForRender();
 		assert.deepStrictEqual(
@@ -614,7 +614,7 @@ describe("scoped selection while new output arrives", () => {
 		terminal.sendInput("\x1b[<32;7;3M");
 		await terminal.waitForRender();
 		// Output arrives while the button is held down.
-		text.setText(lines(12).join("\n"));
+		text.setText(contentLines(12).join("\n"));
 		tui.requestRender();
 		await terminal.waitForRender();
 		terminal.sendInput("\x1b[<0;7;3m");
@@ -651,14 +651,14 @@ describe("scoped selection while new output arrives", () => {
 	});
 
 	it("keeps following when the press never dragged", async () => {
-		const { terminal, text, tui } = transcript(lines(8));
+		const { terminal, text, tui } = transcript(contentLines(8));
 		tui.start();
 		await terminal.waitForRender();
 
 		terminal.sendInput("\x1b[<0;1;2M");
 		terminal.sendInput("\x1b[<0;1;2m");
 		await terminal.waitForRender();
-		text.setText(lines(12).join("\n"));
+		text.setText(contentLines(12).join("\n"));
 		tui.requestRender();
 		await terminal.waitForRender();
 
@@ -773,10 +773,9 @@ describe("scoped selection over a window that measures late", () => {
  * jump-to-latest as the way back.
  */
 describe("what a press leaves behind", () => {
-	const rowLines = (count: number) => Array.from({ length: count }, (_, index) => `line ${index + 1}`);
 	function followingTranscript(lineCount: number, rows = 5) {
 		const terminal = new RecordingTerminal(20, rows);
-		const text = new Text(rowLines(lineCount).join("\n"), 0, 0);
+		const text = new Text(contentLines(lineCount).join("\n"), 0, 0);
 		const transcript = new ScrollView(text, { follow: "end", primary: true });
 		const copied: string[] = [];
 		const tui = new TuiAltScreen(terminal, undefined, undefined, {
@@ -791,7 +790,7 @@ describe("what a press leaves behind", () => {
 	}
 
 	/** Press on the first column of `fromRow`, drag to the last column of `toRow`. */
-	const drag = (terminal: RecordingTerminal, fromRow: number, toRow: number) => {
+	const dragRows = (terminal: RecordingTerminal, fromRow: number, toRow: number) => {
 		terminal.sendInput(`\x1b[<0;1;${fromRow}M`);
 		terminal.sendInput(`\x1b[<32;7;${toRow}M`);
 	};
@@ -800,12 +799,12 @@ describe("what a press leaves behind", () => {
 		const { terminal, text, transcript, tui } = followingTranscript(8);
 		tui.start();
 		await terminal.waitForRender();
-		drag(terminal, 2, 3);
+		dragRows(terminal, 2, 3);
 		terminal.sendInput("\x1b[<0;7;3m");
 		await terminal.waitForRender();
 		assert.strictEqual(transcript.isFollowingEnd, true, "nothing grew, so the view keeps following");
 
-		text.setText(rowLines(12).join("\n"));
+		text.setText(contentLines(12).join("\n"));
 		tui.requestRender();
 		await terminal.waitForRender();
 		assert.deepStrictEqual(
@@ -822,16 +821,16 @@ describe("what a press leaves behind", () => {
 		const { terminal, text, transcript, tui } = followingTranscript(2);
 		tui.start();
 		await terminal.waitForRender();
-		drag(terminal, 1, 2);
+		dragRows(terminal, 1, 2);
 		// Three more rows arrive, but the document still fits the five-row viewport.
-		text.setText(rowLines(5).join("\n"));
+		text.setText(contentLines(5).join("\n"));
 		tui.requestRender();
 		await terminal.waitForRender();
 		terminal.sendInput("\x1b[<0;7;2m");
 		await terminal.waitForRender();
 		assert.strictEqual(transcript.isFollowingEnd, true, "content that still fits was already at its end");
 
-		text.setText(rowLines(9).join("\n"));
+		text.setText(contentLines(9).join("\n"));
 		tui.requestRender();
 		await terminal.waitForRender();
 		assert.deepStrictEqual(
@@ -848,8 +847,8 @@ describe("what a press leaves behind", () => {
 		const { terminal, text, transcript, tui } = followingTranscript(8);
 		tui.start();
 		await terminal.waitForRender();
-		drag(terminal, 2, 3);
-		text.setText(rowLines(14).join("\n"));
+		dragRows(terminal, 2, 3);
+		text.setText(contentLines(14).join("\n"));
 		tui.requestRender();
 		await terminal.waitForRender();
 		terminal.sendInput("\x1b[<0;7;3m");
@@ -898,7 +897,7 @@ describe("what a press leaves behind", () => {
 		await terminal.waitForRender();
 		terminal.sendInput("\x1b[<0;1;2M");
 		// The document gets shorter, which clamps the offset without the user scrolling.
-		text.setText(rowLines(6).join("\n"));
+		text.setText(contentLines(6).join("\n"));
 		tui.requestRender();
 		await terminal.waitForRender();
 		terminal.sendInput("\x1b[<0;7;2m");
@@ -906,7 +905,7 @@ describe("what a press leaves behind", () => {
 		assert.deepStrictEqual(copied, [], "the clamp moved the rows, so the press has no endpoint");
 		assert.strictEqual(transcript.isFollowingEnd, true, "a shrink is not a scroll");
 
-		text.setText(rowLines(24).join("\n"));
+		text.setText(contentLines(24).join("\n"));
 		tui.requestRender();
 		await terminal.waitForRender();
 		assert.deepStrictEqual(

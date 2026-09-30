@@ -63,12 +63,14 @@ function createFuzzyAutocompleteItems<T>(
 
 /**
  * Attach a plain string-list completion to each named command. `values` is read
- * per keystroke, so tab and workspace commands always see current state.
+ * per keystroke, so tab and workspace commands always see current state. Throws
+ * when a name is not a builtin, so a renamed command fails loudly instead of
+ * silently losing its completions.
  */
 function attachValueCompletions(commands: SlashCommand[], names: readonly string[], values: () => string[]): void {
 	for (const name of names) {
 		const command = commands.find((candidate) => candidate.name === name);
-		if (!command) continue;
+		if (!command) throw new Error(`Unknown slash command: ${name}`);
 		command.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null =>
 			createFuzzyAutocompleteItems(
 				values(),
@@ -79,27 +81,42 @@ function attachValueCompletions(commands: SlashCommand[], names: readonly string
 	}
 }
 
+/** `/widgets` actions, in the order the bare argument list offers them. */
+const WIDGET_ACTIONS = ["expand", "collapse", "toggle"] as const;
+
+/** The action names as a regex alternation, so both matchers stay in sync with the list. */
+const WIDGET_ACTION_ALTERNATION = WIDGET_ACTIONS.join("|");
+
+const WIDGET_ACTION_WITH_KEY = new RegExp(`^(${WIDGET_ACTION_ALTERNATION})\\s+(.*)$`, "u");
+const WIDGET_ACTION_ALONE = new RegExp(`^(${WIDGET_ACTION_ALTERNATION})\\s*$`, "u");
+
+const WIDGET_ACTION_DESCRIPTIONS: Record<(typeof WIDGET_ACTIONS)[number], string> = {
+	expand: "Expand widgets",
+	collapse: "Collapse widgets",
+	toggle: "Toggle widgets",
+};
+
 /**
  * `/widgets` arguments: an action, then an exact widget key. A key is offered for
  * every action once one is typed; with no action typed, the actions come first.
  */
 function widgetArgumentCompletions(widgetKeys: readonly string[], prefix: string): AutocompleteItem[] {
 	const normalized = prefix.trimStart();
-	const actionMatch = /^(expand|collapse|toggle)\s+(.*)$/u.exec(normalized);
+	const actionMatch = WIDGET_ACTION_WITH_KEY.exec(normalized);
 	if (actionMatch) {
 		const keyPrefix = actionMatch[2]?.toLowerCase() ?? "";
 		return widgetKeys
 			.filter((key) => key.toLowerCase().startsWith(keyPrefix))
 			.map((key) => ({ value: `${actionMatch[1]} ${key}`, label: key }));
 	}
-	if (/^(expand|collapse|toggle)\s*$/u.test(normalized)) {
+	if (WIDGET_ACTION_ALONE.test(normalized)) {
 		return widgetKeys.map((key) => ({ value: `${normalized.trim()} ${key}`, label: key }));
 	}
-	return [
-		{ value: "expand", label: "expand", description: "Expand widgets" },
-		{ value: "collapse", label: "collapse", description: "Collapse widgets" },
-		{ value: "toggle", label: "toggle", description: "Toggle widgets" },
-	].filter((item) => item.value.startsWith(normalized.toLowerCase()));
+	return WIDGET_ACTIONS.map((action) => ({
+		value: action,
+		label: action,
+		description: WIDGET_ACTION_DESCRIPTIONS[action],
+	})).filter((item) => item.value.startsWith(normalized.toLowerCase()));
 }
 
 function getLoginProviderCompletionOptions(

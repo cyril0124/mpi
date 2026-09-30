@@ -75,7 +75,11 @@ function findStringControlEnd(text: string, start: number): number {
 	return -1;
 }
 
+/** Printable characters start at U+0020; DEL and the C0 controls are not printable. */
 function isPrintableOrWhitespace(char: string): boolean {
 	const code = char.charCodeAt(0);
+	// Newline, carriage return and tab survive for the caller to collapse; every
+	// other control character, DEL included, is dropped.
+	if (code === 0x7f) return false;
 	return code >= 0x20 || char === "\n" || char === "\r" || char === "\t";
 }

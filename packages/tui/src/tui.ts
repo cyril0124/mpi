@@ -512,7 +512,6 @@ export interface TUI extends Component {
 	showOverlay(component: Component, options?: OverlayOptions): OverlayHandle;
 	hideOverlay(): void;
 	hasOverlay(): boolean;
-	/** Whether a visible overlay that takes focus is open. */
 	hasCapturingOverlay(): boolean;
 	start(): void;
 	stop(options?: TuiStopOptions): void;

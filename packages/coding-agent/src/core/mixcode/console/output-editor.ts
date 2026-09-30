@@ -23,8 +23,8 @@ export function resolveOutputEditor(
 	configured: string | undefined,
 	probe: (editor: string) => boolean = isEditorAvailable,
 ): string | undefined {
-	const preferred = configured?.trim() || process.env.VISUAL || process.env.EDITOR;
-	if (preferred?.trim()) return probe(preferred) ? preferred : undefined;
+	const editor = (configured?.trim() || process.env.VISUAL || process.env.EDITOR)?.trim();
+	if (editor) return probe(editor) ? editor : undefined;
 	return FALLBACK_EDITORS.find(probe);
 }
 

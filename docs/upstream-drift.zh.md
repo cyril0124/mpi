@@ -22,6 +22,11 @@
 | 按标签页的设置项 | 无 | `Inline widgets` 读写 `mixcode_settings.json`，在 `/settings` 的 `MixCode` 分组中单独展示 | MixCode 的设置不写进 pi 的 `settings.json`，也不混进它的分组 |
 | 设置列表行 | 单一平铺列表 | `SettingItem` 新增可选 `section`，渲染为分组标题行 | 同上 |
 | `/settings` 面板 | 上游 `SettingsList` 放在带边框的 selector 里并替换编辑器区域：`→` 光标、搜索输入框、原始的 `true`/`false` 取值、平直的分组标题 | 居中浮层面板，标题为 `Settings`：surface 背景的列表配一条暗色 `filter: type to filter  N/N` 行，每个配置文件上方是 `Pi` / `MixCode` 标题加该文件路径，`›` 行分为标签列与取值列，布尔值显示为 `On`/`Off`，选中项下方显示其说明，底部一行按键提示 | 面板因此像浮在工作内容之上的一层表面，并直接说明某项设置存在哪个文件里；打开面板时输入框保留草稿。选择 `TUI mode` 会先收起面板再切换，因为浮层打开时模式切换会被拒绝 |
+| Follow-up 输入（`alt+enter`） | 排入 SDK follow-up 队列，由 agent 在运行结束后投递 | 改为宿主侧的轮次：`/follow-up <message>` 产生独占轮次，`alt+enter` 与 `/follow-up --batch <message>` 产生合并轮次，空闲时每轮投递一次，失败时暂停直到 `/follow-up` 恢复 | follow-up 轮次需要暂停/恢复、批量合并，以及可排队的本地命令 |
+| 排队消息显示 | 对话区下方的平铺 `Steering:`/`Follow-up:` 行 | 带边框的 `Steer (n)`/`Follow-up (n)` 预览，含轮次编号（`Round k · next/command ·`）、`SDK ·` 伴随标记、只显示最近五条、暂停提示，以及 `Esc->send now`/编辑提示 | 队列现在是有序轮次列表，而不是文本堆 |
+| Esc 时有排队的 steer 文本 | 把每一条排队消息还原到输入框并中止 | 中止，然后把 steer 队列作为一次立即轮次发送；follow-up 轮次保持排队（暂停） | `Esc->send now` 不应把 follow-up 轮次一并发出 |
+| `AgentSession`/`Agent` 队列 API | 只有 `clearQueue()`/`clearAllQueues()` | 新增 `removeQueuedMessages(kind, texts)`/`restoreQueuedMessages(kind, removed)`：从镜像与待发队列中按精确文本出队（最后匹配优先），返回按队列顺序排列的条目供还原 | flush 与 pop 需要移除指定文本，而不是整个队列 |
+| 出队键（`app.message.dequeue`） | `alt+up`（Windows 与 WSL 为 `alt+q`）；把每一条排队消息还原到输入框；编辑器保留 `ctrl+u` 做删除到行首 | `ctrl+u`，与空输入框的 vim 入口共用（排队消息先占用该键，队列为空时落入 vim 入口），在 agent 标签页上无论如何都会被消费，因此不再到达编辑器；两个队列都有内容时 `ctrl+u` 后按 `s`/`f` 选一个，单个队列则把最后一条弹入输入框并重建 `/follow-up`（及 `--batch`）形式，镜像文本也会离开 SDK 队列 | 按队列编辑归为一个快捷键，且 `ctrl+u` 与队列工作流相配 |
 | 坞区组件堆叠 | 无上限；空间不够时由布局压缩槽位 | 上方与下方两个槽位共用一个行预算，被裁掉的行用 `… (widgets truncated)` 标出 | 否则很高的组件堆叠会挤掉对话区与坞区其他部分 |
 | 鼠标拖拽选中 | 屏幕上任意格子都可选中，原样复制该格子，用反显上色，拖动期间继续跟随新输出 | 只在对话区、输入卡片与 Notice 面板内生效；复制文本会去掉这些区域自身的边框、内缩与按键提示行；高亮使用主题的 `selectedBg`，开启 copy-on-select（默认）时随松手清除，关闭该设置时保留供复制命令取用，并在带指针悬停提示的块内的卡片行上加下划线（悬停提示用的是同一个背景色）；按下会钉住对话区，使流式输出挪不动选中行，松开时若期间有输出或用户滚动过则停在那里 | [鼠标拖拽选中](mouse-selection.zh.md) |
 | 隐藏的 thinking | 关闭隐藏时显示完整思考文本，开启时只显示斜体 `Thinking...` | 开启隐藏时，每个块渲染为跟随流式输出的 3 行尾窗：`Thinking` 标题的耗时在流式期间实时走动、思考停止增长后冻结，左侧竖线后是最后三行可见内容，丢弃了更早内容时首行加 `…`。扩展的 `setHiddenThinkingLabel` 仍整块替换；`/settings` 的 `Thinking tail preview` 行可关闭，默认开启 | 尾窗让思考在流式期间保持可读，又不让该块占满整个对话区 |
@@ -48,7 +53,7 @@
 | `packages/coding-agent/docs/keybindings.md:155` | `app.thinking.cycle` 默认 `shift+tab` | 默认是 `alt+t` |
 | `packages/coding-agent/src/experimental/micro/README.md:30` | "Shift+Tab: cycle the current model's supported thinking levels" | micro 的状态行读的是实时绑定，只有这行硬编码文本是错的 |
 | `packages/coding-agent/docs/keybindings.md:152` | `app.model.cycleForward` 默认 `ctrl+p` | 无默认键；`ctrl+p` 是 `app.palette` |
-| `packages/coding-agent/docs/models.md:33` | "`Ctrl+P` cycles through available models" | `ctrl+p` 打开命令面板；只有 `shift+ctrl+p` 仍可循环，且只能向后 |
+| `packages/coding-agent/docs/models.md:33` | "`Ctrl+P` cycles through available models" | `ctrl+p` 打开命令面板；只有 `shift+ctrl+p` 仍可循环，且只能回到上一个模型 |
 | `packages/coding-agent/src/cli/args.ts:303`（源码文案） | `--models` 帮助说是 "patterns for Ctrl+P cycling" | `ctrl+p` 打开命令面板；循环键是 `shift+ctrl+p`（Windows 与 WSL 为 `alt+p`） |
 
 上面这些页面也都没有列出标签页键位和标签页斜杠命令；这些以 [Agent 标签页](tabs.zh.md) 为准。
@@ -65,6 +70,9 @@
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
+- `packages/coding-agent/src/core/agent-session.ts`：steering 与 follow-up 队列的摘除
+- `packages/coding-agent/src/core/settings-manager.ts`：fork 的 fullscreen `tuiMode` 默认值
+- `packages/coding-agent/src/core/extensions/loader.ts`：让 bun 发行版的扩展导入走 `virtualModules`
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调与选中选项转发给备用屏幕
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`、`theme/dark.json`、`theme/light.json`、
   `theme/theme-json.ts`、`theme/theme-schema.json`：带框卡片填充用的 `panelBg` 背景色
@@ -73,8 +81,11 @@
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：指针位于跳到底部标签上时加下划线
 - `packages/coding-agent/src/modes/interactive/components/tool-execution.ts`、`assistant-message.ts`、
   `compaction-summary-message.ts`、`branch-summary-message.ts`、`skill-invocation-message.ts`：可点击区域改用 fork 的 `HoverRegion`，框架自带的 `MouseRegion` 不会绘制高亮
+- `packages/coding-agent/src/modes/interactive/components/user-message.ts`：消息首行右端的发送时间
 - `packages/ai/src/api/openai-responses-shared.ts`：把 Responses 流中服务器报告的模型名记录到
   `AssistantMessage.responseModel`
+- `packages/ai/src/api/anthropic-messages.ts`、`packages/ai/src/api/openai-completions.ts`：与 Responses 适配器共用同一个助手记录服务端报告的模型，让覆盖规则只有一处定义
+- `packages/agent/src/agent.ts`：steering 与 follow-up 队列 API
 - `packages/tui/src/layout-node.ts`：窗口化布局节点与滚动行提供者
 - `packages/tui/src/components/settings-list.ts`：`SettingItem` 的可选 `section` 标题行
 - `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`：`MixCode` 分组条目
@@ -91,9 +102,10 @@
 - `packages/tui/src/index.ts`：导出窗口化节点、鼠标派发、grapheme 计数器与图片行判定，以及选中选项
 - `packages/coding-agent/src/cli/args.ts`：`--tui-mode` 帮助行写出 fork 的默认值
 - `packages/coding-agent/test/settings-manager.test.ts`：TUI 模式断言改为 fork 的 fullscreen 默认值
+- `packages/coding-agent/test/keybindings.test.ts`、`packages/coding-agent/test/interactive-mode-compaction.test.ts`：队列绑定与压缩路径
 - `AGENTS.md`、`.gitignore`
 
-本 fork 还给 `keybindings.ts` 加了键位绑定 —— 工作目录选择器响应的 `app.workdir.*`；`core/mixcode/multi-tab/tab-manager.ts` 与 `tab-state.ts` 是 fork 自有文件。
+本 fork 还给 `keybindings.ts` 加了键位绑定 —— 工作目录选择器响应的 `app.workdir.*`，以及排队消息编辑响应的 `app.queueEdit.*`；`core/mixcode/multi-tab/tab-manager.ts` 与 `tab-state.ts` 是 fork 自有文件。
 
 ## 只存在于本 fork 的路径
 
@@ -106,3 +118,4 @@
 - `docs/` —— 本目录
 - `test-all.sh`、`run.sh`、`install.sh` —— fork 测试入口、开发启动脚本与本地安装脚本
 - `packages/*/src/**/mixcode/`、`packages/*/test/mixcode/`、`packages/tui/test/mixcode-*.test.ts` —— fork 代码与其测试
+- `packages/coding-agent/src/modes/interactive/components/clickable-card.ts` —— 位于 `mixcode/` 目录之外的 fork 模块

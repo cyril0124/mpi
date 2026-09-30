@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-tui";
 
 /** Rows one component owns inside the block that painted it. */
-export interface MouseRegion {
+export interface RowHitRegion {
 	component: Component;
 	/** First row of the region, in the painting block's own row space. */
 	start: number;
@@ -19,13 +19,13 @@ export interface MouseRegion {
 }
 
 /** The region covering `event.y`, or undefined when that row belongs to the block itself. */
-export function regionAtRow(regions: readonly MouseRegion[], event: TuiMouseEvent): MouseRegion | undefined {
+export function regionAtRow(regions: readonly RowHitRegion[], event: TuiMouseEvent): RowHitRegion | undefined {
 	const row = Math.floor(event.y);
 	return regions.find((region) => row >= region.start && row < region.start + region.height);
 }
 
 /** Hand `event` to the region's component, rebased into that component's own row space. */
-export function dispatchToRegion(region: MouseRegion, event: TuiMouseEvent): TuiMouseDispatchResult | undefined {
+export function dispatchToRegion(region: RowHitRegion, event: TuiMouseEvent): TuiMouseDispatchResult | undefined {
 	return dispatchMouseEvent(region.component, {
 		...event,
 		y: Math.floor(event.y) - region.start,

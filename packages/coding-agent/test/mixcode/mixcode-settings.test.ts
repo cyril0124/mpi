@@ -66,7 +66,7 @@ describe("mixcode_settings.json", () => {
 		expect(() => loadMixCodeSettings(file)).toThrow(file);
 	});
 
-	it("keeps unset fields absent instead of writing a default", () => {
+	it("defaults inline widgets to on when the file has no ui section", () => {
 		const file = join(tempDir(), "mixcode_settings.json");
 		writeFileSync(file, "{\n}\n");
 		expect(loadMixCodeSettings(file).ui.inlineWidgets).toBe(true);
@@ -104,13 +104,11 @@ describe("mixcode_settings.json", () => {
 
 	it("stores the file in the state directory shared with mixcode-pi", () => {
 		const dir = tempDir();
-		const previous = process.env.PI_CODING_AGENT_DIR;
-		process.env.PI_CODING_AGENT_DIR = dir;
+		vi.stubEnv("PI_CODING_AGENT_DIR", dir);
 		try {
 			expect(mixcodeSettingsFilePath()).toBe(join(dir, "mixcode-pi", "mixcode_settings.json"));
 		} finally {
-			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
-			else process.env.PI_CODING_AGENT_DIR = previous;
+			vi.unstubAllEnvs();
 		}
 	});
 });
@@ -171,8 +169,7 @@ describe("/settings inline widgets row", () => {
 
 	it("flips every open tab and writes the global default to disk", () => {
 		const dir = tempDir();
-		const previous = process.env.PI_CODING_AGENT_DIR;
-		process.env.PI_CODING_AGENT_DIR = dir;
+		vi.stubEnv("PI_CODING_AGENT_DIR", dir);
 		try {
 			const openTab = createInlineWidgetTabState(true);
 			const otherTab = createInlineWidgetTabState(true);
@@ -202,8 +199,7 @@ describe("/settings inline widgets row", () => {
 			expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ ui: { inlineWidgets: false } });
 			expect(loadMixCodeSettings(file).ui.inlineWidgets).toBe(false);
 		} finally {
-			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
-			else process.env.PI_CODING_AGENT_DIR = previous;
+			vi.unstubAllEnvs();
 		}
 	});
 });

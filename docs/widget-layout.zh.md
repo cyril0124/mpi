@@ -1,4 +1,4 @@
-# 扩展组件行预算
+# 组件布局：行预算与侧栏
 
 [English Documentation](widget-layout.md)
 

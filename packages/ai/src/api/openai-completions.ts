@@ -11,6 +11,7 @@ import type {
 	ChatCompletionSystemMessageParam,
 	ChatCompletionToolMessageParam,
 } from "openai/resources/chat/completions.js";
+import { recordResponseModel } from "../mixcode/response-model.ts";
 import { calculateCost, clampThinkingLevel } from "../models.ts";
 import type {
 	AssistantMessage,
@@ -556,9 +557,7 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 				// OpenAI documents ChatCompletionChunk.id as the unique chat completion identifier,
 				// and each chunk in a streamed completion carries the same id.
 				output.responseId ||= chunk.id;
-				if (typeof chunk.model === "string" && chunk.model.length > 0 && chunk.model !== model.id) {
-					output.responseModel ||= chunk.model;
-				}
+				recordResponseModel(output, chunk.model, model.id, { overwrite: false });
 				if (chunk.usage) {
 					output.usage = parseChunkUsage(chunk.usage, model);
 				}

@@ -19,6 +19,7 @@ import {
 import { QuitConfirmComponent } from "../../src/modes/interactive/components/mixcode/quit-confirm/quit-confirm.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { initTheme, theme } from "../../src/modes/interactive/theme/theme.ts";
+import { overlayPanelLine } from "./test-utils.ts";
 
 /**
  * The command palette and the quit confirmation, driven the way the terminal
@@ -107,14 +108,9 @@ describe("command palette", () => {
 			expect(frame[0]).toContain("Command Palette");
 			expect(frame.at(-1)!.startsWith("└")).toBe(true);
 			// What the terminal paints is that panel: 78% of 80 columns, floating.
-			const panelLine = (marker: string) =>
-				screenLines
-					.find((line) => line.includes(marker))!
-					.trimEnd()
-					.replace(/^\s*/, "");
-			expect(panelLine("┌")).toContain("Command Palette");
-			expect(panelLine("┌").length).toBe(62);
-			expect(panelLine("└").length).toBe(62);
+			expect(overlayPanelLine(screenLines, "┌")).toContain("Command Palette");
+			expect(overlayPanelLine(screenLines, "┌").length).toBe(62);
+			expect(overlayPanelLine(screenLines, "└").length).toBe(62);
 			for (const entry of ENTRIES) expect(screen()).toContain(`/${entry.name}`);
 			// The first row carries the selection marker.
 			expect(screen()).toContain("→ /model");
@@ -496,15 +492,10 @@ describe("quit confirmation", () => {
 		const { terminal, ui, screen } = await openQuitPanel({ shutdown: () => shutdowns++ });
 		try {
 			const screenLines = screen().split("\n");
-			const panelLine = (marker: string) =>
-				screenLines
-					.find((line) => line.includes(marker))!
-					.trimEnd()
-					.replace(/^\s*/, "");
-			expect(panelLine("┌")).toContain("Quit");
-			expect(panelLine("┌").length).toBe(72);
-			expect(panelLine("└").length).toBe(72);
-			const question = panelLine("Are you sure");
+			expect(overlayPanelLine(screenLines, "┌")).toContain("Quit");
+			expect(overlayPanelLine(screenLines, "┌").length).toBe(72);
+			expect(overlayPanelLine(screenLines, "└").length).toBe(72);
+			const question = overlayPanelLine(screenLines, "Are you sure");
 			expect(question.startsWith("│")).toBe(true);
 			expect(question.endsWith("│")).toBe(true);
 

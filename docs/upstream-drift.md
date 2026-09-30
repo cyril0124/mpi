@@ -45,6 +45,54 @@ commit that causes it.
 | Extension module resolution | bun loading the built dist keeps jiti's `tryNative` (native TS import), so an extension's bare `@earendil-works/*` imports resolve from ambient `node_modules` | bun loading the built dist resolves through `virtualModules`, so the specifiers that map lists always come from the running host; bun running the TypeScript source is unchanged | a second copy of `@earendil-works/pi-tui` puts `ToolExecutionComponent.prototype` patching on a class the host never rendered, so renderer extensions silently fell back to the built-in tool rows |
 | Hidden thinking | the full reasoning text when hiding is off, the italic `Thinking...` label when it is on | with hiding on, each block renders as a three-row tail that follows the stream: a `Thinking` header whose duration ticks live and freezes when the block stops growing, and the last three visual rows behind a left rail, `…`-marked when earlier content was dropped. An extension `setHiddenThinkingLabel` still replaces the whole block. The `Thinking tail preview` row in `/settings` turns it off, and it defaults to on | the tail keeps the reasoning legible while it streams without giving the block the whole transcript |
 
+## Outdated upstream pages and source copy
+
+Deliberately left unpatched:
+
+| Page | Upstream text | Reality |
+| --- | --- | --- |
+| `packages/coding-agent/docs/usage.md:49` | "Press `Shift+Tab` to cycle through supported levels" | the cycle key is `alt+t` |
+| `packages/coding-agent/docs/keybindings.md:155` | `app.thinking.cycle` defaults to `shift+tab` | it defaults to `alt+t` |
+| `packages/coding-agent/src/experimental/micro/README.md:30` | "Shift+Tab: cycle the current model's supported thinking levels" | micro's status line reads the live binding; only this hardcoded text is wrong |
+| `packages/coding-agent/docs/keybindings.md:152` | `app.model.cycleForward` defaults to `ctrl+p` | no default key; `ctrl+p` is `app.palette` |
+| `packages/coding-agent/docs/models.md:33` | "`Ctrl+P` cycles through available models" | `ctrl+p` opens the command palette; only `shift+ctrl+p` still cycles, and only back to the previous model |
+| `packages/coding-agent/src/cli/args.ts:303` (source copy) | the `--models` help says "patterns for Ctrl+P cycling" | `ctrl+p` opens the command palette; the cycle key is `shift+ctrl+p` (`alt+p` on Windows and WSL) |
+
+Those pages also never list the tab keybindings and tab slash commands; [Agent Tabs](tabs.md) is the source of truth for those.
+
+## Upstream files modified by this fork
+
+Each one is a potential conflict point, so edits are kept down to the wiring that calls into `mixcode/` code:
+
+- `packages/coding-agent/src/modes/interactive/interactive-mode.ts`
+- `packages/coding-agent/src/modes/interactive/components/session-selector.ts`
+- `packages/coding-agent/src/modes/interactive/components/custom-editor.ts`
+- `packages/coding-agent/src/core/keybindings.ts`
+- `packages/coding-agent/src/core/slash-commands.ts`
+- `packages/coding-agent/src/core/extensions/runner.ts`
+- `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
+- `packages/coding-agent/src/main.ts`
+- `packages/coding-agent/src/core/agent-session.ts`: the steering and follow-up queue splice
+- `packages/coding-agent/src/core/settings-manager.ts`: the fork's fullscreen `tuiMode` default
+- `packages/coding-agent/src/core/extensions/loader.ts`: routes bun-dist extension imports through `virtualModules`
+- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: forwards the host's copy callback and selection options to the alternate screen
+- `packages/coding-agent/src/modes/interactive/theme/theme.ts`, `theme/dark.json`, `theme/light.json`,
+  `theme/theme-json.ts`, `theme/theme-schema.json`: the `panelBg` background used to fill framed cards
+- `packages/coding-agent/test/extensions-runner.test.ts`
+- `packages/coding-agent/test/interactive-tui.test.ts`: the copy confirmation now asserts a toast
+- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: underlines the jump-to-end label while the pointer is over it
+- `packages/coding-agent/src/modes/interactive/components/tool-execution.ts`, `assistant-message.ts`,
+  `compaction-summary-message.ts`, `branch-summary-message.ts`, `skill-invocation-message.ts`: clickable regions use the fork's `HoverRegion`, since the bundled `MouseRegion` draws no highlight
+- `packages/coding-agent/src/modes/interactive/components/user-message.ts`: the send time at the right end of a message's first row
+- `packages/ai/src/api/openai-responses-shared.ts`: records the model name the server reports in a
+  Responses stream onto `AssistantMessage.responseModel`
+- `packages/ai/src/api/anthropic-messages.ts`, `packages/ai/src/api/openai-completions.ts`: record the
+  reported model through the same helper as the Responses adapter, so the overwrite rule has one definition
+- `packages/agent/src/agent.ts`: the steering and follow-up queue APIs
+- `packages/tui/src/layout-node.ts`: the windowed layout node and the scroll line provider
+- `packages/tui/src/components/settings-list.ts`: the optional `section` heading row on `SettingItem`
+- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section entries
+- `packages/coding-agent/src/modes/interactive/theme/theme.ts`: the `getSettingsListTheme` section heading style
 - `packages/tui/src/layout.ts`: windowed scroll child, line provider on the scroll box,
   `getComponentBox` for resolving a component to its committed box, and the `honorOffset` argument
   a suspended scroll view passes to its windowed child
@@ -70,10 +118,12 @@ commit that causes it.
 - `packages/coding-agent/src/cli/args.ts`: the `--tui-mode` help line names the fork's default
 - `packages/coding-agent/test/settings-manager.test.ts`: the TUI mode assertions expect the fork's
   fullscreen default
+- `packages/coding-agent/test/keybindings.test.ts`, `packages/coding-agent/test/interactive-mode-compaction.test.ts`: the queue bindings and the compaction paths
 - `AGENTS.md`, `.gitignore`
 
 The fork also adds keys to upstream's `keybindings.ts` — the `app.workdir.*` bindings the workdir
-picker answers — while `core/mixcode/multi-tab/tab-manager.ts` and `tab-state.ts` are fork-owned.
+picker answers and the `app.queueEdit.*` ones the queued-message editor answers — while
+`core/mixcode/multi-tab/tab-manager.ts` and `tab-state.ts` are fork-owned.
 
 ## Paths that exist only in this fork
 
@@ -86,3 +136,4 @@ Nothing upstream references them, so they can never conflict:
 - `docs/` — this directory
 - `test-all.sh`, `run.sh`, `install.sh` — fork test runner, dev launcher, and local installer
 - `packages/*/src/**/mixcode/`, `packages/*/test/mixcode/`, `packages/tui/test/mixcode-*.test.ts` — fork code and its tests
+- `packages/coding-agent/src/modes/interactive/components/clickable-card.ts` — a fork module that sits outside the `mixcode/` folders

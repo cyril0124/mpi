@@ -1,4 +1,4 @@
-# Mixcode fork rules
+# MixCode fork rules
 
 Fork-local rules for this checkout. Upstream's contributor rules stay in `AGENTS.md`; these do
 not come from upstream.

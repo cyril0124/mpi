@@ -14,7 +14,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { getAgentDir } from "../../../config.ts";
 import { stripBom } from "../../../utils/text.ts";
 import { defaultAgentTitle, isTabColorName, type TabColorName } from "./types.ts";
@@ -53,7 +53,7 @@ export function workspacesFilePath(workdir: string): string {
 }
 
 function ensureDir(filePath: string): void {
-	mkdirSync(join(filePath, ".."), { recursive: true });
+	mkdirSync(dirname(filePath), { recursive: true });
 }
 
 function atomicWrite(filePath: string, contents: string): void {
@@ -143,6 +143,13 @@ export interface MixcodeTabMeta {
 	unread: boolean;
 }
 
+/**
+ * The tolerant reader of `mixcode_state.json`: a missing, corrupt, or non-object
+ * file reads as `{}` instead of failing. Everything it holds is cosmetic (titles,
+ * colors, workdirs, unread badges), so a bad file costs a lost label, not the tab.
+ * `readOpenTabs` and `readWorkspaces` guard data the user would notice losing, so
+ * they report corruption instead.
+ */
 function readStateJson(workdir: string): Record<string, unknown> {
 	const filePath = stateFilePath(workdir);
 	if (!existsSync(filePath)) return {};
@@ -197,8 +204,10 @@ export type TabLayoutEntry = Omit<MixcodeTabMeta, "workdir" | "unread"> & {
 
 /**
  * Persist the open-tab layout: `open_tabs.json` holds the set and its order,
- * `mixcode_state.json` holds titles, colors, workdirs, and unread badges. State
- * fields written by another reader are preserved.
+ * `mixcode_state.json` holds titles, colors, workdirs, and unread badges.
+ * Fields another writer left in a readable `mixcode_state.json` are preserved;
+ * when the file is missing or corrupt it reads as `{}`, so those fields are not
+ * known and the write replaces the file.
  */
 export function saveTabLayout(
 	workdir: string,

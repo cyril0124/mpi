@@ -79,6 +79,8 @@ const BEGIN_SYNCHRONIZED_OUTPUT = "\x1b[?2026h";
 const END_SYNCHRONIZED_OUTPUT = "\x1b[?2026l";
 const OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
 const OSC133_PROMPT_START = /^\x1b\]133;A(?:\x07|\x1b\\)/;
+/** Any SGR sequence, including colon-separated parameters. */
+const SGR_SEQUENCE_PATTERN = /\x1b\[[0-9;:]*m/g;
 const PAGE_SCROLL_OVERLAP = 4;
 const ALT_WHEEL_SCROLL_MULTIPLIER = 5;
 /** Button bits SGR reports for motion with no button held; `decodeMouseButton` maps them to "none". */
@@ -767,6 +769,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 				this.selectionFocus = undefined;
 				this.selectionGranularity = "character";
 				this.selectionInitialRange = undefined;
+				this.selectionSurface = undefined;
 				if (hadNonEmptyActiveSelection) this.requestRender();
 			}
 			this.lastClick = undefined;
@@ -1041,6 +1044,19 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		if (result && this.applyMouseDispatchResult(leave, result)) this.requestRender();
 	}
 
+	/**
+	 * Point the pointer-hover cue at the component a move landed on. Every other event, and every
+	 * move a handled branch consumed or that reached no component, drops the cue instead.
+	 */
+	private updateHoverTarget(type: TuiMouseEvent["type"], target?: TuiMouseDispatchTarget): void {
+		if (type !== "move" || target === undefined) {
+			this.clearHoverTarget();
+			return;
+		}
+		if (this.hoverTarget && this.hoverTarget.component !== target.component) this.clearHoverTarget();
+		this.hoverTarget = target;
+	}
+
 	/** Track the pointer over the jump-to-end label; true when the hovered state changed. */
 	private updateScrollToEndIndicatorHover(x: number, y: number): boolean {
 		const rect = this.scrollToEndIndicatorRect;
@@ -1064,7 +1080,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const event = this.createMouseEvent(type, raw.button, raw.x, raw.y);
 
 		// A press, click, drag, wheel or release is not a hover: drop the cue it left behind.
-		if (type !== "move") this.clearHoverTarget();
+		if (type !== "move") this.updateHoverTarget(type);
 
 		if (this.mouseCapture || this.mousePressTarget) {
 			const target = this.mouseCapture ?? this.mousePressTarget!;
@@ -1090,7 +1106,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		}
 
 		if (this.handleSearchMouseEvent(raw)) {
-			this.clearHoverTarget();
+			this.updateHoverTarget(type);
 			return;
 		}
 
@@ -1099,33 +1115,33 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			if (type === "move" && this.hasOverlay()) {
 				// A visible overlay owns the pointer: the chrome beneath it keeps no hover, even
 				// for a move outside the overlay's own rectangle.
-				this.clearHoverTarget();
+				this.updateHoverTarget(type);
 				this.stopScrollbarHover();
 				this.scrollToEndIndicatorHover = false;
 				return;
 			}
 			if (type === "move" && this.updateScrollToEndIndicatorHover(raw.x, raw.y)) this.requestRender();
 			if (this.handleScrollToEndIndicatorMouseEvent(raw)) {
-				this.clearHoverTarget();
+				this.updateHoverTarget(type);
 				return;
 			}
 			if (type === "move" && this.scrollToEndIndicatorHover) {
 				// The label sits over the last transcript row; the block beneath it is not hovered.
-				this.clearHoverTarget();
+				this.updateHoverTarget(type);
 				return;
 			}
 			const scrollbarHandled = this.handleScrollbarMouseEvent(raw);
 			if (!this.scrollbarDrag) this.updateScrollbarHover(raw.x, raw.y);
 			if (scrollbarHandled) {
-				this.clearHoverTarget();
+				this.updateHoverTarget(type);
 				return;
 			}
-			if (this.scrollbarHover) this.clearHoverTarget();
+			if (this.scrollbarHover) this.updateHoverTarget(type);
 		} else {
 			this.stopScrollbarHover();
 			// An overlay takes the pointer from the chrome beneath it, but the overlay's own
 			// hover stays: the pointer is still on the component that tracks it.
-			if (this.hoverTarget && this.hoverTarget.component !== overlay.component) this.clearHoverTarget();
+			if (this.hoverTarget && this.hoverTarget.component !== overlay.component) this.updateHoverTarget(type);
 		}
 
 		// A move that reaches another component ends the previous component's hover, and a
@@ -1134,10 +1150,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const result = overlay.result ?? (overlay.hit ? undefined : this.dispatchMouseToLayout(event));
 		if (result) {
 			const render = this.applyMouseDispatchResult(event, result);
-			if (type === "move") {
-				if (this.hoverTarget && this.hoverTarget.component !== result.target.component) this.clearHoverTarget();
-				this.hoverTarget = result.target;
-			}
+			if (type === "move") this.updateHoverTarget(type, result.target);
 			if (type === "release") this.releaseSelectionScrollPin("resume-silently");
 			if (type === "press") {
 				this.clearTextSelection();
@@ -1150,7 +1163,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		}
 
 		// A move that reached no component leaves nothing hovered.
-		if (type === "move") this.clearHoverTarget();
+		if (type === "move") this.updateHoverTarget(type);
 		if (this.handleRightClickPaste(raw)) return;
 		this.handleSelectionMouseEvent(raw);
 	}
@@ -1308,17 +1321,8 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		if (event.release || (event.button & 32) !== 0 || (event.button & 3) !== 0) return false;
 		const target = this.getScrollbarTargetAt(event.x, event.y);
 		if (!target) return false;
-		this.stopSelectionAutoScroll();
-		this.selectionPressActive = false;
-		this.selectionAnchor = undefined;
-		this.selectionFocus = undefined;
-		this.selectionGranularity = "character";
-		this.selectionInitialRange = undefined;
+		this.clearTextSelection();
 		this.lastClick = undefined;
-		this.pressedUrl = undefined;
-		this.selectionDragged = false;
-		this.selectionSurface = undefined;
-		this.releaseSelectionScrollPin("keep");
 		this.setScrollbarHover(target.scrollView);
 		const onThumb =
 			event.y >= target.geometry.thumbTop && event.y < target.geometry.thumbTop + target.geometry.thumbHeight;
@@ -1832,7 +1836,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			if (!open || !text.includes("\x1b")) return highlight(text, line);
 			// Re-open the host's style after every SGR so an inner reset cannot drop it.
 			return highlight(
-				text.replace(/\x1b\[[0-9;:]*m/g, (sequence) => `${sequence}${open}`),
+				text.replace(SGR_SEQUENCE_PATTERN, (sequence) => `${sequence}${open}`),
 				line,
 			);
 		}

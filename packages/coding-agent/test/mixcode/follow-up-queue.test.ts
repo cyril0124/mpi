@@ -107,6 +107,12 @@ describe("pause and discard", () => {
 		state.followUpQueue = [{ text: "a", kind: "next" }];
 		pauseFollowUps(state);
 		expect(state.followUpsPaused).toBe(true);
+
+		// A drain in flight pauses the rounds even when the visible queue is empty.
+		const draining = createFollowUpQueueState();
+		draining.followUpDrain = Promise.resolve();
+		pauseFollowUps(draining);
+		expect(draining.followUpsPaused).toBe(true);
 	});
 
 	it("discard clears rounds, preview, pause state, and counts", () => {

@@ -8,7 +8,7 @@
  * the keys this module does not own, so a newer mixcode-pi can keep its own.
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { stripJsonComments } from "../../utils/json.ts";
 import { stripBom } from "../../utils/text.ts";
 import { mixcodeRootStateDir } from "./multi-tab/mixcode-state.ts";
@@ -102,7 +102,7 @@ function readSettingsSource(settingsFile: string): Record<string, unknown> | und
 }
 
 function writeSettingsFile(settingsFile: string, contents: Record<string, unknown>): void {
-	mkdirSync(join(settingsFile, ".."), { recursive: true });
+	mkdirSync(dirname(settingsFile), { recursive: true });
 	const temp = `${settingsFile}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
 	writeFileSync(temp, `${JSON.stringify(contents, null, 2)}\n`, "utf-8");
 	try {

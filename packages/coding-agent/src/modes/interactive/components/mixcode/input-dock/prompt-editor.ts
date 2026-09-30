@@ -14,7 +14,7 @@ import { type TuiMouseEvent, type TuiMouseEventResult, truncateToWidth, visibleW
 import { theme } from "../../../theme/theme.ts";
 import { CustomEditor } from "../../custom-editor.ts";
 import type { StatusIndicator } from "../../status-indicator.ts";
-import { renderEditorCardEdge } from "./editor-card.ts";
+import { LABEL_ROOM_MAX, renderBottomEdge, renderTopEdge } from "./editor-card.ts";
 
 /**
  * Narrowest width that keeps the card readable. The card needs two corners, two
@@ -102,10 +102,10 @@ export class MixcodePromptEditor extends CustomEditor {
 		const context = chrome.contextText ? theme.fg(chrome.contextWarning ? "warning" : "dim", chrome.contextText) : "";
 		// A status in the title slot leaves the edge no separate mode label.
 		const { label, asTitle } = this.topLabel(width, chrome);
-		const top = renderEditorCardEdge(width, "top", asTitle ? label : title, context, frame, asTitle ? "" : label);
+		const top = renderTopEdge(width, asTitle ? label : title, context, frame, asTitle ? "" : label);
 
 		const hint = !chrome.vimMode && this.hiddenBelow > 0 ? theme.fg("dim", `↓ ${this.hiddenBelow} more`) : "";
-		const bottom = renderEditorCardEdge(width, "bottom", hint, "", frame);
+		const bottom = renderBottomEdge(width, hint, frame);
 
 		const side = frame("│");
 		return [
@@ -180,6 +180,6 @@ function withoutSentinel(line: string): string {
 /** True when a left label still leaves room for the title and its dashes. */
 function labelFits(label: string, title: string, available: number): boolean {
 	const padded = visibleWidth(label) + 2;
-	const titleRoom = Math.min(visibleWidth(title), 16);
+	const titleRoom = Math.min(visibleWidth(title), LABEL_ROOM_MAX);
 	return padded + titleRoom + 1 <= available;
 }

@@ -7,25 +7,7 @@ import { WindowedTranscript } from "../../src/modes/interactive/components/mixco
 import { createInteractiveTui } from "../../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../../src/utils/ansi.ts";
-
-/** Widget stand-in: a fixed number of keyed body rows plus a render counter. */
-class WidgetBody implements Component {
-	renders = 0;
-	private readonly key: string;
-	private readonly rows: number;
-
-	constructor(key: string, rows: number) {
-		this.key = key;
-		this.rows = rows;
-	}
-
-	render(_width: number): string[] {
-		this.renders += 1;
-		return Array.from({ length: this.rows }, (_, index) => `${this.key}-body-${index}`);
-	}
-
-	invalidate(): void {}
-}
+import { WidgetBody } from "./test-utils.ts";
 
 class Clicks implements Component {
 	clicks = 0;
@@ -88,7 +70,11 @@ function makeBudget(options: {
 
 describe("dock widget budget", () => {
 	it("renders every row when the stack fits the budget", () => {
-		const budget = makeBudget({ above: [new WidgetBody("a", 2)], below: [new WidgetBody("b", 3)], viewport: 24 });
+		const budget = makeBudget({
+			above: [WidgetBody.keyed("a", 2)],
+			below: [WidgetBody.keyed("b", 3)],
+			viewport: 24,
+		});
 		const above = budget.above.render(40).map(stripAnsi);
 		const below = budget.below.render(40).map(stripAnsi);
 
@@ -98,8 +84,8 @@ describe("dock widget budget", () => {
 
 	it("keeps above-editor rows first and marks the cut below them", () => {
 		const budget = makeBudget({
-			above: [new WidgetBody("a", 5)],
-			below: [new WidgetBody("b", 10)],
+			above: [WidgetBody.keyed("a", 5)],
+			below: [WidgetBody.keyed("b", 10)],
 			viewport: 24,
 		});
 		const above = budget.above.render(40).map(stripAnsi);
@@ -113,7 +99,7 @@ describe("dock widget budget", () => {
 	});
 
 	it("marks the cut in the above slot when there are no below rows", () => {
-		const budget = makeBudget({ above: [new WidgetBody("a", 20)], viewport: 24 });
+		const budget = makeBudget({ above: [WidgetBody.keyed("a", 20)], viewport: 24 });
 		const above = budget.above.render(40).map(stripAnsi);
 
 		expect(above[0]).toBe("");
@@ -123,20 +109,20 @@ describe("dock widget budget", () => {
 	});
 
 	it("drops every widget row when the budget is gone", () => {
-		const budget = makeBudget({ above: [new WidgetBody("a", 4)], viewport: 12 });
+		const budget = makeBudget({ above: [WidgetBody.keyed("a", 4)], viewport: 12 });
 		expect(budget.above.render(40).map(stripAnsi)).toEqual([""]);
 		expect(budget.below.render(40)).toEqual([]);
 	});
 
 	it("leaves the widgets uncapped without a terminal size", () => {
-		const budget = makeBudget({ above: [new WidgetBody("a", 30)], viewport: undefined });
+		const budget = makeBudget({ above: [WidgetBody.keyed("a", 30)], viewport: undefined });
 		expect(budget.above.render(40)).toHaveLength(31);
 	});
 
 	it("renders nothing in either slot while the tab is in inline mode", () => {
 		const budget = makeBudget({
-			above: [new WidgetBody("a", 2)],
-			below: [new WidgetBody("b", 2)],
+			above: [WidgetBody.keyed("a", 2)],
+			below: [WidgetBody.keyed("b", 2)],
 			widgetsHidden: true,
 		});
 		expect(budget.above.render(40)).toEqual([]);
@@ -144,7 +130,7 @@ describe("dock widget budget", () => {
 	});
 
 	it("renders each widget once per frame, so an in-place update cannot go stale", () => {
-		const widget = new WidgetBody("a", 2);
+		const widget = WidgetBody.keyed("a", 2);
 		const budget = makeBudget({ above: [widget], viewport: 24 });
 
 		budget.above.render(40);
@@ -194,8 +180,8 @@ describe("dock widget budget in a real frame", () => {
 			terminal,
 		}) as TuiAltScreen;
 
-		const aboveWidget = new WidgetBody("tall", 14);
-		const belowWidget = new WidgetBody("short", 6);
+		const aboveWidget = WidgetBody.keyed("tall", 14);
+		const belowWidget = WidgetBody.keyed("short", 6);
 		const budget = new DockWidgetBudget({
 			widgets: () => ({
 				above: new Map([["tall", aboveWidget]]),

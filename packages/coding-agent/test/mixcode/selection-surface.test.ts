@@ -65,10 +65,6 @@ describe("selection surfaces", () => {
 		expect(normalizeSelectionText("│ body │", "input")).toBe("body");
 	});
 
-	it("clears the highlight on release", () => {
-		expect(options({ chat }).clearOnRelease).toBe(true);
-	});
-
 	it("underlines a selected chat row only inside a block that carries the cue", () => {
 		const { highlight } = options({ chat, cueRows: [7] });
 		expect(highlight?.("body", { kind: "chat", row: 7 })).toBe(theme.bg("selectedBg", "\x1b[4mbody\x1b[24m"));

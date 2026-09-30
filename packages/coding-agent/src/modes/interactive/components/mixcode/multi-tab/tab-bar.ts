@@ -208,6 +208,19 @@ interface Chip {
 	text: string;
 }
 
+/** Resolved chip layout for one frame: the rows to paint and the labels that frame them. */
+interface ChipLayout {
+	rows: Chip[][];
+	/** Leading Home chip text, or undefined when Home is not pinned. */
+	homeText: string | undefined;
+	/** Columns before the first agent chip: the Home chip, its gutter and any left hint. */
+	prefix: number;
+	hiddenLeft: number;
+	hiddenRight: number;
+	/** Id of the pinned Home chip, or undefined. */
+	homeId: string | undefined;
+}
+
 /** A chip window that fits, with the counts that ranked it against other windows. */
 interface WindowFit {
 	rows: Chip[][];
@@ -313,33 +326,38 @@ export class TabBar implements Component {
 		this.hoverRevision = model.activeId;
 		if (model.tabs.length === 0 && !model.home) return [];
 		const markPainter = model.rulePainter ?? ((text: string) => theme.fg("borderMuted", text));
-
 		const chips: Chip[] = model.tabs.map((item) => ({
 			id: item.id,
 			text: renderChip(item, item.id === model.activeId, markPainter),
 		}));
+		if (chips.length === 0) return this.renderHomeOnly(width, model, markPainter);
 		const maxRows = Math.max(1, model.maxRows ?? Number.POSITIVE_INFINITY);
+		const layout = this.resolveChipWindow(chips, model, width, maxRows);
+		return this.assembleChipLines(width, model, layout, markPainter);
+	}
+
+	/** The Home chip when no agent tab is open: its full label, or just the rule when it does not fit. */
+	private renderHomeOnly(width: number, model: TabBarModel, markPainter: (text: string) => string): string[] {
+		const home = model.home!;
+		const homeText = ` ${home.label} `;
+		if (visibleWidth(homeText) > width) return [markPainter(RULE_CHAR.repeat(width))];
+		const chip = this.renderHomeChip(homeText, model.activeId === home.id, markPainter);
+		this.hitRegions.push({ id: home.id, row: 0, start: 0, end: Math.max(0, visibleWidth(homeText) - 1) });
+		return [truncateToWidth(chip, width, ""), markPainter(RULE_CHAR.repeat(width))];
+	}
+
+	/**
+	 * Cheapest chip layout that fits `width`: the packed rows when every chip fits, otherwise
+	 * the window {@link findWindow} prefers, and the active chip alone when nothing fits. Home
+	 * abbreviates before the window search gives chips up.
+	 */
+	private resolveChipWindow(chips: readonly Chip[], model: TabBarModel, width: number, maxRows: number): ChipLayout {
 		const home = model.home;
 		const homeActive = home !== undefined && model.activeId === home.id;
 		const fullHomeText = home ? ` ${home.label} ` : undefined;
-		if (chips.length === 0) {
-			// Nothing to clip: the Home chip stands alone with its full label.
-			if (fullHomeText === undefined || visibleWidth(fullHomeText) > width) {
-				return [markPainter(RULE_CHAR.repeat(width))];
-			}
-			const chip = this.renderHomeChip(fullHomeText!, homeActive, markPainter);
-			this.hitRegions.push({
-				id: home!.id,
-				row: 0,
-				start: 0,
-				end: Math.max(0, visibleWidth(fullHomeText!) - 1),
-			});
-			return [truncateToWidth(chip, width, ""), markPainter(RULE_CHAR.repeat(width))];
-		}
-
 		/** Pack the agent chips with the given leading Home chip; undefined when they do not fit. */
 		const packWithHome = (homeText: string | undefined): { rows: Chip[][]; prefix: number } | undefined => {
-			const prefix = homeText === undefined ? 0 : visibleWidth(homeText) + (chips.length > 0 ? 1 : 0);
+			const prefix = homeText === undefined ? 0 : visibleWidth(homeText) + 1;
 			const rows = packRows(chips, () => width - prefix, maxRows);
 			return rows ? { rows, prefix } : undefined;
 		};
@@ -350,43 +368,42 @@ export class TabBar implements Component {
 			homeText = HOME_COMPACT_LABEL;
 			packed = packWithHome(homeText);
 		}
-		const prefix =
-			packed?.prefix ?? (homeText === undefined ? 0 : visibleWidth(homeText) + (chips.length > 0 ? 1 : 0));
+		const prefix = packed?.prefix ?? (homeText === undefined ? 0 : visibleWidth(homeText) + 1);
+		const activeIndex = chips.findIndex((chip) => chip.id === model.activeId);
 
-		// Fast path: everything fits without hiding chips.
 		let rows = packed?.rows;
 		let hiddenLeft = 0;
 		let hiddenRight = 0;
-
 		if (!rows) {
-			const activeIndex = chips.findIndex((chip) => chip.id === model.activeId);
-			const preferred = activeIndex >= 0 ? activeIndex : 0;
-			const candidate = this.findWindow(chips, preferred, width, maxRows, prefix);
+			const candidate = this.findWindow(chips, activeIndex >= 0 ? activeIndex : 0, width, maxRows, prefix);
 			rows = candidate?.rows;
 			hiddenLeft = candidate?.hiddenLeft ?? 0;
 			hiddenRight = candidate?.hiddenRight ?? 0;
 		}
-
-		// Wrapped rows indent to the column where the first agent chip starts: past
-		// the Home chip, its gutter, and any left-overflow hint.
-		const indent = Math.max(0, Math.min(prefix + overflowHintWidth("left", hiddenLeft), width - 1));
-
 		if (!rows) {
 			// Nothing fits: keep the active chip alone, truncated if needed.
-			const activeIndex = chips.findIndex((chip) => chip.id === model.activeId);
 			const chip = chips[activeIndex >= 0 ? activeIndex : 0]!;
 			const text =
 				visibleWidth(chip.text) > Math.max(1, width - prefix)
 					? truncateToWidth(chip.text, Math.max(1, width - prefix), ELLIPSIS)
 					: chip.text;
-			this.hitRegions.push({
-				id: chip.id,
-				row: 0,
-				start: prefix,
-				end: prefix + Math.max(0, visibleWidth(text) - 1),
-			});
 			rows = [[{ id: chip.id, text }]];
 		}
+		return { rows, homeText, prefix, hiddenLeft, hiddenRight, homeId: home?.id };
+	}
+
+	/** Paint the resolved rows, recording the hit region each chip covers. */
+	private assembleChipLines(
+		width: number,
+		model: TabBarModel,
+		layout: ChipLayout,
+		markPainter: (text: string) => string,
+	): string[] {
+		const { rows, homeText, prefix, hiddenLeft, hiddenRight, homeId } = layout;
+		const homeActive = homeId !== undefined && model.activeId === homeId;
+		// Wrapped rows indent to the column where the first agent chip starts: past
+		// the Home chip, its gutter, and any left-overflow hint.
+		const indent = Math.max(0, Math.min(prefix + overflowHintWidth("left", hiddenLeft), width - 1));
 
 		const lines: string[] = [];
 		for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
@@ -398,7 +415,7 @@ export class TabBar implements Component {
 			if (isFirst && homeText !== undefined) {
 				const homeChip = this.renderHomeChip(homeText, homeActive, markPainter);
 				line += homeChip;
-				this.hitRegions.push({ id: home!.id, row: 0, start: 0, end: Math.max(0, visibleWidth(homeText) - 1) });
+				this.hitRegions.push({ id: homeId!, row: 0, start: 0, end: Math.max(0, visibleWidth(homeText) - 1) });
 				x += visibleWidth(homeText);
 			}
 			const leftHint = overflowHint("left", hiddenLeft);

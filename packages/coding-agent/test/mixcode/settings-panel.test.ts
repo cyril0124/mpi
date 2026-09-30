@@ -23,6 +23,7 @@ import {
 } from "../../src/modes/interactive/components/settings-selector.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
+import { overlayPanelLine } from "./test-utils.ts";
 
 /**
  * `/settings` as the app shows it: the framed surface, the dim filter line, the
@@ -274,12 +275,15 @@ describe("/settings panel", () => {
 	});
 
 	it("drops decoration before the filter, the selected row and the hints", () => {
-		for (const rowBudget of [7, 8, 9, 10]) {
-			const panel = new SettingsPanel(syntheticItems(12), { rowBudget, onChange: () => {}, onCancel: () => {} });
+		// Terminal heights that leave a budget of 7, 8, 9 and 10 rows.
+		for (const rows of [9, 10, 12, 13]) {
+			setStdoutRows(rows);
+			const panel = new SettingsPanel(syntheticItems(12), { onChange: () => {}, onCancel: () => {} });
 			const lines = plain(panel.render(60)).split("\n");
 			const text = lines.join("\n");
+			const budget = Math.floor((rows * SETTINGS_PANEL_HEIGHT_PERCENT) / 100);
 
-			expect(lines.length).toBeLessThanOrEqual(rowBudget);
+			expect(lines.length).toBeLessThanOrEqual(budget);
 			expect(lines[0]).toContain("┌");
 			expect(lines[lines.length - 1]!.startsWith("└")).toBe(true);
 			expect(text).toContain("filter: type to filter");
@@ -289,13 +293,16 @@ describe("/settings panel", () => {
 	});
 
 	it("keeps the hints when nothing matches on a short panel", () => {
-		for (const rowBudget of [6, 7, 8]) {
-			const panel = new SettingsPanel(syntheticItems(3), { rowBudget, onChange: () => {}, onCancel: () => {} });
+		// Terminal heights that leave a budget of 6, 7 and 8 rows.
+		for (const rows of [8, 9, 10]) {
+			setStdoutRows(rows);
+			const panel = new SettingsPanel(syntheticItems(3), { onChange: () => {}, onCancel: () => {} });
 			panel.handleInput("z");
 			const lines = plain(panel.render(60)).split("\n");
 			const text = lines.join("\n");
+			const budget = Math.floor((rows * SETTINGS_PANEL_HEIGHT_PERCENT) / 100);
 
-			expect(lines.length).toBeLessThanOrEqual(rowBudget);
+			expect(lines.length).toBeLessThanOrEqual(budget);
 			expect(text).toContain("No matching settings");
 			expect(text).toContain("↑↓ select");
 			expect(lines[lines.length - 1]!.startsWith("└")).toBe(true);
@@ -422,15 +429,10 @@ describe("/settings overlay", () => {
 			await terminal.waitForRender();
 
 			const screenLines = terminal.getViewport().map((line) => stripTerminalSequences(line));
-			const panelLine = (marker: string) =>
-				screenLines
-					.find((line) => line.includes(marker))!
-					.trimEnd()
-					.replace(/^\s*/, "");
 			// 78% of 80 columns, centred: the same share the command palette takes.
-			expect(panelLine("┌")).toContain("Settings");
-			expect(panelLine("┌").length).toBe(62);
-			expect(panelLine("└").length).toBe(62);
+			expect(overlayPanelLine(screenLines, "┌")).toContain("Settings");
+			expect(overlayPanelLine(screenLines, "┌").length).toBe(62);
+			expect(overlayPanelLine(screenLines, "└").length).toBe(62);
 			expect(screenLines.findIndex((line) => line.includes("┌"))).toBeGreaterThan(0);
 			expect(screenLines.join("\n")).toContain("filter: type to filter");
 			expect(screenLines.join("\n")).toContain("Auto-compact");

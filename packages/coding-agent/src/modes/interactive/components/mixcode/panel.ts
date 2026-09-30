@@ -52,11 +52,6 @@ interface PanelCorners {
 const SQUARE_CORNERS: PanelCorners = { topLeft: "┌", topRight: "┐", bottomLeft: "└", bottomRight: "┘" };
 const ROUND_CORNERS: PanelCorners = { topLeft: "╭", topRight: "╮", bottomLeft: "╰", bottomRight: "╯" };
 
-/** The SGR that turns `background` on, without the reset `theme.bg` appends. */
-function backgroundOpenAnsi(background: ThemeBg): string {
-	return theme.bg(background, "").replace(BACKGROUND_RESET, "");
-}
-
 /**
  * Paint `text` with `background`, re-opening the fill after every reset the text
  * carries. A clipped line ends with a reset, and `truncateToWidth` also puts one
@@ -64,7 +59,7 @@ function backgroundOpenAnsi(background: ThemeBg): string {
  * padding after it on the terminal's own background.
  */
 export function paintBackground(background: ThemeBg, text: string): string {
-	const open = backgroundOpenAnsi(background);
+	const open = theme.getBgAnsi(background);
 	return `${open}${text.replace(RESET_ANY, (reset) => `${reset}${open}`)}${BACKGROUND_RESET}`;
 }
 

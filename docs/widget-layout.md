@@ -1,4 +1,4 @@
-# Extension Widget Row Budget
+# Widget Layout: Row Budget and Side Panel
 
 [中文文档](widget-layout.zh.md)
 

@@ -1,4 +1,4 @@
-# 独立 Vim 模式
+# Vim 模式
 
 [English Documentation](vim-mode.md)
 

@@ -1,11 +1,11 @@
-# Mixcode Changelog
+# MixCode Changelog
 
 Own changes on top of pi. The upstream anchor lives in `UPSTREAM.json`.
 
-Newest first, sections `Added` / `Changed` / `Fixed` / `Removed`. Entries say what changed
-and why; the why is the part git does not keep. When merging a new upstream tag, insert a
-boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
-`## [Unreleased]` at the new tag.
+Newest first, sections `Breaking Changes` / `Added` / `Changed` / `Fixed` / `Removed`.
+Entries say what changed and why; the why is the part git does not keep. When merging a new
+upstream tag, insert a boundary heading `## base pi vX.Y.Z — <date>` above the previous one and
+point `## [Unreleased]` at the new tag.
 
 ## [Unreleased] — base pi v0.87.1
 
@@ -182,7 +182,7 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   derived from the terminal height, so a tall widget stack cannot squeeze the chat and the dock
   chrome. Overflow rows are marked with a dim `… (widgets truncated)`, a partly shown widget keeps
   the rows it shows, and the budget is re-decided every frame. See
-  [Extension Widget Row Budget](docs/widget-layout.md).
+  [Widget Layout](docs/widget-layout.md).
 - `core/mixcode/mixcode-settings.ts` reads and writes `mixcode_settings.json` in the state
   directory shared with mixcode-pi, so both agents see the same global settings.
 - Pointer hover feedback: passive mouse motion highlights what a click would hit, without
@@ -278,8 +278,6 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   rows can hide both slots.
 - `CustomEditor.onAction` handlers may return `false` to decline a key, which then reaches the
   editor. Existing handlers are unaffected; the Home bindings rely on it.
-- `CustomEditor.onAction` handlers may return `false` to decline a key, which then reaches the
-  editor. Existing handlers are unaffected; the Home bindings rely on it.
 - pi-tui's `SettingItem` gained an optional `section`; consecutive items sharing one render under
   a heading row, which is how the `MixCode` group stays apart from pi's own settings.
 - The dock's widget slots are `DockWidgetBudget` components instead of plain containers, so the
@@ -292,6 +290,16 @@ boundary heading `## base pi vX.Y.Z — <date>` above the previous one and point
   code does. No behaviour change beyond the fixes below and the renames above.
 - `TuiAltScreen`'s `scrollToEndIndicator` callback now receives whether the pointer is over
   the label, so a caller can style the hovered state.
+- Another readability pass over the fork's MixCode code. Hint rows now resolve their keys from
+  the bindings instead of quoting them (the console notice reads `app.notice.copy`/
+  `dismiss`, and `app.queueEdit.steer`/`followUp`/`cancel` are new, which makes the
+  queue-edit keys rebindable, and the arm prompt names them), the repeated tab-title,
+  selection-unframing and theme-escape helpers collapsed to one implementation each, the three
+  clickable summary cards share one base, the oversized TUI methods split into named steps, and
+  duplicated literals and magic numbers got names. Two defects fell out: `VISUAL=" vim"` no
+  longer fails the editor probe and skips the fallback, and the workdir picker counts directories
+  instead of rows in its `N dirs` line. The session workdir writer names its temp file with a
+  UUID, so two writers of one session file no longer collide.
 
 ### Fixed
 

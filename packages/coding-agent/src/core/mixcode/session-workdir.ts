@@ -39,7 +39,7 @@ export async function persistSessionCwd(sessionFile: string, cwd: string): Promi
 	if (!isSessionHeader(header)) throw new Error(`Session file is missing a session header: ${sessionFile}`);
 	if (header.cwd === cwd) return;
 
-	const temporary = `${sessionFile}.${process.pid}.tmp`;
+	const temporary = `${sessionFile}.${process.pid}.${crypto.randomUUID()}.tmp`;
 	await writeFile(temporary, `${JSON.stringify({ ...header, cwd })}${rest}`);
 	await rename(temporary, sessionFile);
 }

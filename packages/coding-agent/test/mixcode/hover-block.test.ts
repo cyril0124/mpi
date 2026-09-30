@@ -1,7 +1,8 @@
 import type { TuiMouseEvent, TuiMouseEventType } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
 import { BlockHover, carriesPointerCue } from "../../src/modes/interactive/components/mixcode/hover/hover-block.ts";
-import { initTheme, theme } from "../../src/modes/interactive/theme/theme.ts";
+import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
+import { hoverBackgroundOpen } from "./test-utils.ts";
 
 /**
  * The hover owner for a message block: the whole block answers the pointer, a
@@ -13,12 +14,6 @@ beforeEach(() => {
 });
 
 const owner = { render: () => [], invalidate: () => {} };
-
-function backgroundOpen(): string {
-	const painted = theme.bg("selectedBg", "\u0001");
-	const markerIndex = painted.indexOf("\u0001");
-	return markerIndex > 0 ? painted.slice(0, markerIndex) : "";
-}
 
 function mouse(type: TuiMouseEventType, x: number, y: number, width = 10, height = 3): TuiMouseEvent {
 	return {
@@ -66,7 +61,7 @@ describe("block hover", () => {
 		const painted = hover.paint(["a", "b", "c"], 4);
 		expect(painted).toHaveLength(3);
 		for (const line of painted) {
-			expect(line).toContain(backgroundOpen());
+			expect(line).toContain(hoverBackgroundOpen());
 			expect(line).not.toContain("\x1b[4m");
 		}
 		// A blank row of the block is filled, so the cue is one rectangle.

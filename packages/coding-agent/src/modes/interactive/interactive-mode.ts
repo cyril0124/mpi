@@ -146,7 +146,9 @@ import {
 } from "../../core/mixcode/mixcode-settings.ts";
 import {
 	deleteWorkspaceRecord,
+	type MixcodeTabMeta,
 	type MixcodeWorkspace,
+	type MixcodeWorkspaceTab,
 	readOpenTabs,
 	readTabMeta,
 	readWorkspaces,
@@ -274,7 +276,7 @@ import {
 	type MetaAction,
 } from "./components/mixcode/input-dock/input-meta.ts";
 import { type EditorCardChrome, MixcodePromptEditor } from "./components/mixcode/input-dock/prompt-editor.ts";
-import { arrowKeyText } from "./components/mixcode/key-hints.ts";
+import { keyGlyphText, primaryKeyGlyphText } from "./components/mixcode/key-hints.ts";
 import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
 import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
 import {
@@ -586,7 +588,7 @@ const TAB_BAR_MAX_ROWS_SHARE = 0.1;
  * without a tab manager, and a harness driving one method on a hand-built `this`,
  * pass no tab and the work runs unwrapped.
  */
-function runInActiveTab<T>(tab: AgentTab | undefined, fn: () => Promise<T>): Promise<T> {
+function runInTabConsole<T>(tab: AgentTab | undefined, fn: () => Promise<T>): Promise<T> {
 	return tab ? runWithConsoleTab(tab.title, fn) : fn();
 }
 
@@ -596,8 +598,19 @@ const SINGLE_SESSION_TAB_ID = "session";
 /** How long the s/f queue-edit choice stays armed after the dequeue key. */
 const QUEUE_EDIT_ARM_WINDOW_MS = 1000;
 
-/** Prompt of the armed queue-edit choice; cleared when the window ends. */
-const QUEUE_EDIT_ARM_MESSAGE = "S: Steer · F: Follow-up · Esc: cancel";
+/** Prompt for the armed queue-edit choice, naming the keys the bindings currently carry. */
+function queueEditArmMessage(): string {
+	const steer = primaryKeyGlyphText("app.queueEdit.steer");
+	const followUp = primaryKeyGlyphText("app.queueEdit.followUp");
+	const cancel = primaryKeyGlyphText("app.queueEdit.cancel");
+	return `${steer}: Steer · ${followUp}: Follow-up · ${cancel}: cancel`;
+}
+
+/** Share of the context window at which the input card flags a near-full context. */
+const CONTEXT_WARNING_RATIO = 0.85;
+
+/** Composer hint naming the two keys that open a picker. */
+const FILES_COMMANDS_HINT = "  @ files  / commands";
 
 /** Columns the vim user-message preview keeps clear on the right, for the transcript scrollbar. */
 const USER_MESSAGE_PREVIEW_RIGHT_MARGIN = 2;
@@ -622,6 +635,57 @@ interface TranscriptBlocksCache {
 	documentLength: number;
 	chatLength: number;
 	blocks: Component[];
+}
+
+/** One tab reopened from the persisted startup layout. */
+interface RestoredTab {
+	id: string;
+	title?: string;
+	unread: boolean;
+}
+
+/** Count one session-file delete: one removed file, or the error that stopped it. */
+function deleteOutcome(result: { ok: boolean; removed: boolean; error?: string }): {
+	deleted: number;
+	error?: string;
+} {
+	if (result.ok && result.removed) return { deleted: 1 };
+	return result.error ? { deleted: 0, error: result.error } : { deleted: 0 };
+}
+
+/**
+ * A non-capturing overlay that takes itself down after a timeout. A newer `show`
+ * supersedes the one on screen: the older timer sees the generation change and
+ * leaves the newer card in place.
+ */
+class TransientOverlay {
+	private generation = 0;
+	private timer: NodeJS.Timeout | undefined;
+	private handle: OverlayHandle | undefined;
+
+	/** Show `component` for `durationMs`; `onExpire` runs only if this show is still current. */
+	show(ui: TUI, component: Component, options: OverlayOptions, durationMs: number, onExpire: () => void): void {
+		const generation = ++this.generation;
+		this.handle = ui.showOverlay(component, options);
+		const timer = setTimeout(() => {
+			if (generation !== this.generation) return;
+			onExpire();
+			ui.requestRender();
+		}, durationMs);
+		timer.unref();
+		this.timer = timer;
+		ui.requestRender();
+	}
+
+	/** Drop the timer and hide the card. */
+	hide(): void {
+		if (this.timer !== undefined) {
+			clearTimeout(this.timer);
+			this.timer = undefined;
+		}
+		this.handle?.hide();
+		this.handle = undefined;
+	}
 }
 
 export class InteractiveMode {
@@ -659,15 +723,10 @@ export class InteractiveMode {
 	private fallbackVimState: VimTabState | undefined;
 	/** Toast slot used when no tab manager exists (single-session fallback). */
 	private fallbackToastHost: ToastHost | undefined;
-	private toastHandle: OverlayHandle | undefined;
-	private toastTimer: NodeJS.Timeout | undefined;
-	/** Bumped on every toast, so a replaced toast's timer cannot hide its successor. */
-	private toastGeneration = 0;
-	/** Vim user-message preview overlay, and the timer that takes it down. */
-	private userMessagePreviewHandle: OverlayHandle | undefined;
-	private userMessagePreviewTimer: NodeJS.Timeout | undefined;
-	/** Bumped on every preview, so a replaced preview's timer cannot hide its successor. */
-	private userMessagePreviewGeneration = 0;
+	/** Toast overlay slot; a newer toast replaces the card on screen. */
+	private readonly toastOverlay = new TransientOverlay();
+	/** Vim user-message preview slot; a newer preview replaces the card on screen. */
+	private readonly userMessagePreviewOverlay = new TransientOverlay();
 	/** Most tabs reopened at startup; the remainder is reported, not restored. */
 	private static readonly RESTORE_TAB_LIMIT = 12;
 
@@ -783,6 +842,8 @@ export class InteractiveMode {
 	private queueEditArmDeadline = 0;
 	/** Timer that drops the choice toast when the arm window ends. */
 	private queueEditArmTimer: NodeJS.Timeout | undefined;
+	/** Prompt painted while the choice is armed, so the window clears the toast it showed. */
+	private queueEditArmMessage: string | undefined;
 
 	// Shutdown state
 	private shutdownRequested = false;
@@ -1527,7 +1588,7 @@ export class InteractiveMode {
 		// Process initial messages
 		if (initialMessage) {
 			try {
-				await runInActiveTab(this.tabManager?.getActive(), () =>
+				await runInTabConsole(this.tabManager?.getActive(), () =>
 					this.session.prompt(initialMessage, { images: initialImages }),
 				);
 			} catch (error: unknown) {
@@ -1539,7 +1600,7 @@ export class InteractiveMode {
 		if (initialMessages) {
 			for (const message of initialMessages) {
 				try {
-					await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(message));
+					await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(message));
 				} catch (error: unknown) {
 					const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 					this.showError(errorMessage);
@@ -1551,7 +1612,7 @@ export class InteractiveMode {
 		while (true) {
 			const userInput = await this.getUserInput();
 			try {
-				await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(userInput));
+				await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(userInput));
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);
@@ -2480,7 +2541,7 @@ export class InteractiveMode {
 		const current = manager.getActive();
 		if (tab.id === current.id) return;
 		// Home's composer is ephemeral: never store its text as a tab draft.
-		if (!leavingHome) manager.setDraft(current.id, this.editor.getText());
+		if (!leavingHome) manager.setDraft(current.id, this.editorText());
 		const active = manager.activate(tab.id);
 		await this.enqueueTabSwitch(() => this.switchActiveTab(active));
 	}
@@ -2500,7 +2561,7 @@ export class InteractiveMode {
 		// after Home and have its own `leaveHome` undo this activation.
 		await this.enqueueTabSwitch(async () => {
 			this.homeActivationQueued = false;
-			manager.setDraft(manager.getActive().id, this.editor.getText());
+			manager.setDraft(manager.getActive().id, this.editorText());
 			syncHomeSelectionToTab(this.homeSelection, manager.list(), manager.getActive().id);
 			// Entering Home from an agent the filter hides must still select a visible row.
 			clampHomeSelectedTabIndex(this.homeSelection, manager.list());
@@ -2645,13 +2706,13 @@ export class InteractiveMode {
 			const selected = tabs ? homeSelectedTab(this.homeSelection, tabs) : undefined;
 			return theme.fg(
 				"dim",
-				`${selected ? `Send to ${selected.title}...` : "Select an agent..."}  @ files  / commands`,
+				`${selected ? `Send to ${selected.title}...` : "Select an agent..."}${FILES_COMMANDS_HINT}`,
 			);
 		}
 		if (this.vimTabState().active) {
 			return theme.fg("dim", "Vim: → newer · Shift+→ older · j/k scroll · q exit");
 		}
-		return theme.fg("dim", `Describe your next change...  @ files  / commands${this.composerKeyHints()}`);
+		return theme.fg("dim", `Describe your next change...${FILES_COMMANDS_HINT}${this.composerKeyHints()}`);
 	}
 
 	/**
@@ -2662,8 +2723,8 @@ export class InteractiveMode {
 	 * TUI mode that does not split the chat.
 	 */
 	private composerKeyHints(): string {
-		const home = arrowKeyText("app.home.returnHome");
-		const widgets = this.ui.mode === "fullscreen" ? arrowKeyText("app.widgets.panel") : "";
+		const home = keyGlyphText("app.home.returnHome");
+		const widgets = this.ui.mode === "fullscreen" ? keyGlyphText("app.widgets.panel") : "";
 		const parts = [home && `${home} Home`, widgets && `${widgets} widgets`].filter(Boolean);
 		return parts.length > 0 ? `  ${parts.join(" · ")}` : "";
 	}
@@ -2709,7 +2770,7 @@ export class InteractiveMode {
 		return {
 			title: title ?? "New message",
 			contextText: home ? "" : exactContextUsageText(tokens, contextWindow),
-			contextWarning: tokens !== undefined && contextWindow > 0 && tokens >= contextWindow * 0.85,
+			contextWarning: tokens !== undefined && contextWindow > 0 && tokens >= contextWindow * CONTEXT_WARNING_RATIO,
 			vimMode: this.vimTabState().active,
 			shellMode: this.isBashMode,
 		};
@@ -2723,8 +2784,8 @@ export class InteractiveMode {
 		const thinking = state.thinkingLevel || "off";
 		return {
 			workdir: this.displayWorkdir(this.sessionManager.getCwd()),
-			model: process.env.MIXCODE_DISPLAY_MODEL?.trim() || (model ? `${model.provider}/${model.id}` : "-"),
-			thinking: process.env.MIXCODE_DISPLAY_THINKING?.trim() || thinking.charAt(0).toUpperCase() + thinking.slice(1),
+			model: this.displayOverride("model") ?? (model ? `${model.provider}/${model.id}` : "-"),
+			thinking: this.displayOverride("thinking") ?? thinking.charAt(0).toUpperCase() + thinking.slice(1),
 			gitBranch: this.footerDataProvider.getGitBranch() ?? undefined,
 			contextTokens: usage?.tokens,
 			contextWindow: usage?.contextWindow ?? model?.contextWindow ?? 0,
@@ -2793,8 +2854,21 @@ export class InteractiveMode {
 	// MixCode Home surface
 	// -----------------------------------------------------------------------
 
+	/**
+	 * Environment override that pins one displayed field, or undefined when unset.
+	 * The three `MIXCODE_DISPLAY_*` variables are read only here.
+	 */
+	private displayOverride(field: "model" | "thinking" | "workdir"): string | undefined {
+		const raw = {
+			model: process.env.MIXCODE_DISPLAY_MODEL,
+			thinking: process.env.MIXCODE_DISPLAY_THINKING,
+			workdir: process.env.MIXCODE_DISPLAY_WORKDIR,
+		}[field];
+		return raw?.trim() || undefined;
+	}
+
 	private displayWorkdir(fallback: string): string {
-		return process.env.MIXCODE_DISPLAY_WORKDIR?.trim() || fallback;
+		return this.displayOverride("workdir") ?? fallback;
 	}
 
 	private getHomeViewModel(): HomeViewModel {
@@ -2803,7 +2877,6 @@ export class InteractiveMode {
 			version: this.version,
 			workdir: this.displayWorkdir(this.tabsWorkdir),
 			workingCount: tabs.filter((tab) => isWorkingStatus(tab.status)).length,
-			inputCount: 0,
 			agents: tabs.map((tab) => {
 				const snapshot = this.homeSnapshotFor(tab);
 				return { card: this.homeCardFor(tab, snapshot), messages: snapshot.messages };
@@ -2818,7 +2891,7 @@ export class InteractiveMode {
 
 	private homeCardFor(tab: AgentTab, snapshot: HomeSnapshot): HomeCard {
 		const session = tab.runtime.session;
-		const override = process.env.MIXCODE_DISPLAY_MODEL?.trim();
+		const override = this.displayOverride("model");
 		const modelId = session.model?.id;
 		return {
 			id: tab.id,
@@ -2908,7 +2981,7 @@ export class InteractiveMode {
 	private handleHomeSelect(delta: number): boolean {
 		const manager = this.tabManager;
 		if (!manager || !this.homeSelection.active || this.ui.hasOverlay()) return false;
-		if (this.editorAutocompleteOpen()) return false;
+		if (isShowingAutocomplete(this.editor)) return false;
 		if (manager.list().length === 0) return false;
 		// A multi-line composer needs the arrows for its caret, as on an agent tab.
 		if (this.editorText().includes("\n")) return false;
@@ -2920,7 +2993,7 @@ export class InteractiveMode {
 	private handleHomeToggleNonIdle(): boolean {
 		const manager = this.tabManager;
 		if (!manager || !this.homeSelection.active || this.ui.hasOverlay()) return false;
-		if (this.editorAutocompleteOpen()) return false;
+		if (isShowingAutocomplete(this.editor)) return false;
 		if (manager.list().length === 0) return false;
 		toggleHomeNonIdleOnly(this.homeSelection, manager.list());
 		this.ui.requestRender();
@@ -2931,7 +3004,7 @@ export class InteractiveMode {
 	private handleHomeAttach(): boolean {
 		const manager = this.tabManager;
 		if (!manager || !this.homeSelection.active || this.ui.hasOverlay()) return false;
-		if (this.editorAutocompleteOpen()) return false;
+		if (isShowingAutocomplete(this.editor)) return false;
 		if (this.editorText().length > 0) return false;
 		if (this.homeSelectionIsHidden(manager.list())) return true;
 		const selected = homeSelectedTab(this.homeSelection, manager.list());
@@ -2956,7 +3029,7 @@ export class InteractiveMode {
 	private handleHomeSend(data: string): boolean {
 		const manager = this.tabManager;
 		if (!manager || !this.homeSelection.active || this.ui.hasOverlay()) return false;
-		if (this.editorAutocompleteOpen()) return false;
+		if (isShowingAutocomplete(this.editor)) return false;
 		if (data === "\n") return false;
 		const tabs = manager.list();
 		if (tabs.length === 0) return false;
@@ -2979,7 +3052,7 @@ export class InteractiveMode {
 		// A streaming agent takes the message as steering. A compacting one errors instead:
 		// the composer's queue belongs to the bound session, not to an arbitrary roster tab.
 		const options = session.isStreaming ? { streamingBehavior: "steer" as const } : undefined;
-		runInActiveTab(selected, () => session.prompt(text, options)).then(
+		runInTabConsole(selected, () => session.prompt(text, options)).then(
 			() => this.ui.requestRender(),
 			(error: unknown) => {
 				// Put the message back so the user can retry after fixing the cause.
@@ -2995,16 +3068,10 @@ export class InteractiveMode {
 	private handleHomeReturn(): boolean {
 		const manager = this.tabManager;
 		if (!manager || this.homeSelection.active || this.ui.hasOverlay()) return false;
-		if (this.editorAutocompleteOpen()) return false;
+		if (isShowingAutocomplete(this.editor)) return false;
 		if (this.editorText().length > 0) return false;
 		void this.activateHome();
 		return true;
-	}
-
-	/** True while the completion popup owns the arrow/enter keys. */
-	private editorAutocompleteOpen(): boolean {
-		const editor = this.editor as { isShowingAutocomplete?: () => boolean };
-		return editor.isShowingAutocomplete?.() ?? false;
 	}
 
 	/** True when the non-idle filter hides the selected row, so Home cannot act on it. */
@@ -3043,8 +3110,7 @@ export class InteractiveMode {
 		// to the newly active tab instead of leaving a stale "Working" indicator.
 		if (this.session.isStreaming || this.session.isCompacting) this.showWorkingStatusIndicator();
 		else this.clearStatusIndicator();
-		this.defaultEditor.setText(tab.draftInput);
-		if (this.editor !== this.defaultEditor) this.editor.setText(tab.draftInput);
+		this.setEditorText(tab.draftInput);
 		this.updateAvailableProviderCount();
 		this.updateEditorBorderColor();
 		this.updateTerminalTitle();
@@ -3299,7 +3365,7 @@ export class InteractiveMode {
 			return;
 		}
 		const previousId = manager.getActive().id;
-		manager.setDraft(previousId, this.editor.getText());
+		manager.setDraft(previousId, this.editorText());
 		try {
 			const tab = await manager.createTab(title ? { title } : {});
 			if (title && tab.runtime.session.sessionManager.getSessionName() !== title) {
@@ -3322,7 +3388,6 @@ export class InteractiveMode {
 		if (!manager) return;
 		if (manager.size <= 1) {
 			this.showWarning("Cannot close the last tab.");
-			this.notifyToast("warning", "Cannot close the last tab.");
 			return;
 		}
 		const closing = manager.getActive();
@@ -3409,57 +3474,15 @@ export class InteractiveMode {
 			if (entries.length === 0) return;
 
 			const initialId = manager.getActive().id;
-			let restored = 0;
-			const errors: string[] = [];
-			const restoredTabs: Array<{ id: string; title?: string; unread: boolean }> = [];
-			for (const sessionId of entries) {
-				try {
-					const tabMeta = meta.get(sessionId);
-					const sessionPath = resolveSessionPath(sessionDir, sessionId);
-					const title = tabMeta?.title;
-					const workdir = tabMeta?.workdir ?? this.tabsWorkdir;
-					// Session files are written lazily, so a tab that never ran a turn
-					// has no file. Restore its layout slot as a fresh session instead of
-					// dropping the tab.
-					const tab = sessionPath
-						? await manager.openSessionTab(sessionPath, { title, workdir })
-						: await manager.createTab({ title, workdir });
-					if (tabMeta?.color) manager.setColor(tab.id, tabMeta.color);
-					restoredTabs.push({ id: tab.id, title, unread: tabMeta?.unread ?? false });
-					restored += 1;
-				} catch (error) {
-					// Skip unreadable sessions and keep whatever restored so far.
-					errors.push(error instanceof Error ? error.message : String(error));
-				}
-			}
+			const { restoredTabs, errors } = await this.restoreStoredTabs(manager, sessionDir, entries, meta);
+			const restored = restoredTabs.length;
 			if (restored === 0) {
 				if (errors.length > 0) this.showWarning(`Could not restore tabs: ${errors[0]}`);
 				return;
 			}
 			// Drop the fresh startup tab; the restored layout replaces it.
 			if (manager.size > 1) await manager.closeTab(initialId);
-			// Re-apply persisted titles, then renumber the remaining default-named tabs
-			// in order, so the transient startup tab does not push them to the next
-			// free number.
-			const explicitTitles = new Map(restoredTabs.map((item) => [item.id, item.title]));
-			const used = new Set<string>();
-			for (const tab of manager.list()) {
-				const explicit = explicitTitles.get(tab.id);
-				if (explicit) used.add(explicit);
-				else if (!/^Agent-\d+$/.test(tab.title)) used.add(tab.title);
-			}
-			for (const tab of manager.list()) {
-				const explicit = explicitTitles.get(tab.id);
-				if (explicit) {
-					manager.restoreTitle(tab.id, explicit);
-					continue;
-				}
-				if (/^Agent-\d+$/.test(tab.title)) {
-					const next = nextAvailableAgentTitle(used);
-					used.add(next);
-					manager.restoreTitle(tab.id, next);
-				}
-			}
+			this.applyRestoredTabTitles(manager, restoredTabs);
 			const active = snapshot.activeSessionId
 				? manager
 						.list()
@@ -3486,6 +3509,68 @@ export class InteractiveMode {
 		} finally {
 			// Allow layout persistence only after the previous layout was read.
 			this.tabsRestoreAttempted = true;
+		}
+	}
+
+	/**
+	 * Open the recorded session ids as tabs, skipping the unreadable ones. Returns
+	 * the reopened tabs (with their persisted title and unread flag) and the errors
+	 * of the entries that could not be restored.
+	 */
+	private async restoreStoredTabs(
+		manager: TabManager,
+		sessionDir: string,
+		sessionIds: readonly string[],
+		meta: ReadonlyMap<string, MixcodeTabMeta>,
+	): Promise<{ restoredTabs: RestoredTab[]; errors: string[] }> {
+		const restoredTabs: RestoredTab[] = [];
+		const errors: string[] = [];
+		for (const sessionId of sessionIds) {
+			try {
+				const tabMeta = meta.get(sessionId);
+				const sessionPath = resolveSessionPath(sessionDir, sessionId);
+				const title = tabMeta?.title;
+				const workdir = tabMeta?.workdir ?? this.tabsWorkdir;
+				// Session files are written lazily, so a tab that never ran a turn
+				// has no file. Restore its layout slot as a fresh session instead of
+				// dropping the tab.
+				const tab = sessionPath
+					? await manager.openSessionTab(sessionPath, { title, workdir })
+					: await manager.createTab({ title, workdir });
+				if (tabMeta?.color) manager.setColor(tab.id, tabMeta.color);
+				restoredTabs.push({ id: tab.id, title, unread: tabMeta?.unread ?? false });
+			} catch (error) {
+				// Skip unreadable sessions and keep whatever restored so far.
+				errors.push(error instanceof Error ? error.message : String(error));
+			}
+		}
+		return { restoredTabs, errors };
+	}
+
+	/**
+	 * Re-apply the persisted titles, then renumber the remaining default-named tabs
+	 * in order, so the transient startup tab does not push them to the next free
+	 * number.
+	 */
+	private applyRestoredTabTitles(manager: TabManager, restoredTabs: readonly RestoredTab[]): void {
+		const explicitTitles = new Map(restoredTabs.map((item) => [item.id, item.title]));
+		const used = new Set<string>();
+		for (const tab of manager.list()) {
+			const explicit = explicitTitles.get(tab.id);
+			if (explicit) used.add(explicit);
+			else if (!/^Agent-\d+$/.test(tab.title)) used.add(tab.title);
+		}
+		for (const tab of manager.list()) {
+			const explicit = explicitTitles.get(tab.id);
+			if (explicit) {
+				manager.restoreTitle(tab.id, explicit);
+				continue;
+			}
+			if (/^Agent-\d+$/.test(tab.title)) {
+				const next = nextAvailableAgentTitle(used);
+				used.add(next);
+				manager.restoreTitle(tab.id, next);
+			}
 		}
 	}
 
@@ -3632,29 +3717,25 @@ export class InteractiveMode {
 
 		const errors: string[] = [];
 		let deleted = 0;
+		const record = (outcome: { deleted: number; error?: string }): void => {
+			deleted += outcome.deleted;
+			if (outcome.error) errors.push(outcome.error);
+		};
 		if (options.all || manager.size <= 1) {
 			// Keep one tab; delete its file after giving the runtime a fresh session.
 			const keep = manager.getActive();
 			for (const tab of [...manager.list()]) {
 				if (tab.id === keep.id) continue;
-				const result = await manager.deleteTab(tab.id);
+				record(await this.deleteOneTab(manager, tab));
 				this.disposeTabUi(tab.id);
-				if (result.ok && result.removed) deleted += 1;
-				else if (result.error) errors.push(result.error);
 			}
 			const keepPath = keep.runtime.session.sessionFile;
 			await this.runtimeHost.newSession();
-			if (keepPath) {
-				const result = await deleteSessionFile(keepPath);
-				if (result.ok && result.removed) deleted += 1;
-				else if (result.error) errors.push(result.error);
-			}
+			if (keepPath) record(deleteOutcome(await deleteSessionFile(keepPath)));
 			await this.enqueueTabSwitch(() => this.switchActiveTab(manager.getActive()));
 		} else {
 			const closingId = manager.getActive().id;
-			const result = await manager.deleteTab(closingId);
-			if (result.ok && result.removed) deleted += 1;
-			else if (result.error) errors.push(result.error);
+			record(await this.deleteOneTab(manager, manager.getActive()));
 			await this.enqueueTabSwitch(() => this.switchActiveTab(manager.getActive()));
 			this.disposeTabUi(closingId);
 		}
@@ -3662,6 +3743,11 @@ export class InteractiveMode {
 		if (errors.length > 0) this.showError(`Delete failed: ${errors.join("; ")}`);
 		if (deleted > 0) this.showStatus(`Deleted ${deleted} session file(s).`);
 		else if (errors.length === 0) this.showStatus("No session file to delete.");
+	}
+
+	/** Delete one tab's session file, returning the count and error for the tally. */
+	private async deleteOneTab(manager: TabManager, tab: AgentTab): Promise<{ deleted: number; error?: string }> {
+		return deleteOutcome(await manager.deleteTab(tab.id));
 	}
 
 	private renameActiveTab(title: string): void {
@@ -3874,16 +3960,8 @@ export class InteractiveMode {
 			let recreated = 0;
 			const openedTabs: Array<{ tab: AgentTab; title?: string }> = [];
 			for (const entry of record.tabs) {
-				const sessionPath =
-					entry.session_path && fs.existsSync(entry.session_path)
-						? entry.session_path
-						: resolveSessionPath(sessionDir, entry.session_id);
-				// Session files are written lazily, so a tab that never ran a turn has
-				// no file; restore its slot as a fresh session instead of dropping it.
-				const tab = sessionPath
-					? await manager.openSessionTab(sessionPath, { title: entry.title, workdir: entry.workdir })
-					: await manager.createTab({ title: entry.title, workdir: entry.workdir });
-				if (!sessionPath) recreated += 1;
+				const { tab, recreated: wasRecreated } = await this.openWorkspaceEntry(manager, sessionDir, entry);
+				if (wasRecreated) recreated += 1;
 				if (entry.session_id === record.active_session_id) activeTab = tab;
 				openedTabs.push({ tab, title: entry.title });
 				opened += 1;
@@ -3910,6 +3988,27 @@ export class InteractiveMode {
 		} catch (error) {
 			this.showError(`Failed to restore workspace: ${error instanceof Error ? error.message : String(error)}`);
 		}
+	}
+
+	/**
+	 * Open one saved-workspace entry as a tab, falling back to a fresh session when
+	 * its session file is missing. Reports whether it had to be recreated.
+	 */
+	private async openWorkspaceEntry(
+		manager: TabManager,
+		sessionDir: string,
+		entry: MixcodeWorkspaceTab,
+	): Promise<{ tab: AgentTab; recreated: boolean }> {
+		const sessionPath =
+			entry.session_path && fs.existsSync(entry.session_path)
+				? entry.session_path
+				: resolveSessionPath(sessionDir, entry.session_id);
+		// Session files are written lazily, so a tab that never ran a turn has
+		// no file; restore its slot as a fresh session instead of dropping it.
+		const tab = sessionPath
+			? await manager.openSessionTab(sessionPath, { title: entry.title, workdir: entry.workdir })
+			: await manager.createTab({ title: entry.title, workdir: entry.workdir });
+		return { tab, recreated: !sessionPath };
 	}
 
 	/** `/delete-workspace [name]` removes a saved workspace record. */
@@ -4007,9 +4106,6 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Get a registered tool definition by name (for custom rendering).
-	 */
-	/**
 	 * Extension-registered definition, falling back to the built-in one. The renderer components take
 	 * whatever this returns, so they never reach into the tool registry themselves.
 	 */
@@ -4053,7 +4149,7 @@ export class InteractiveMode {
 			compact: (options) => {
 				void (async () => {
 					try {
-						const result = await runInActiveTab(this.tabManager?.getActive(), () =>
+						const result = await runInTabConsole(this.tabManager?.getActive(), () =>
 							this.session.compact(options?.customInstructions),
 						);
 						options?.onComplete?.(result);
@@ -4359,8 +4455,8 @@ export class InteractiveMode {
 		if (this.homeSelection.active) return false;
 		if (this.ui.mode !== "fullscreen") return false;
 		if (this.ui.hasOverlay()) return false;
-		if (this.editorAutocompleteOpen()) return false;
-		if (this.editor.getText().length > 0) return false;
+		if (isShowingAutocomplete(this.editor)) return false;
+		if (this.editorText().length > 0) return false;
 		this.toggleWidgetPanel();
 		return true;
 	}
@@ -5131,29 +5227,28 @@ export class InteractiveMode {
 		// renderer scrolls it with the document, so the card stays at the window's top.
 		const chromeRows = this.renderer instanceof TuiAltScreen ? this.rowsAboveTranscript() : 0;
 		const topOffset = chromeRows + TOAST_MARGIN;
-		const generation = ++this.toastGeneration;
-		this.toastHandle = this.ui.showOverlay(new ToastCardComponent(type, message), {
-			anchor: "top-right",
-			width: boxWidth,
-			offsetY: topOffset,
-			// Right margin only: a narrow terminal can still hold the narrowest card flush
-			// against its left edge.
-			margin: { top: 0, right: TOAST_MARGIN, bottom: TOAST_MARGIN, left: 0 },
-			nonCapturing: true,
-			visible: (termWidth, termHeight) =>
-				termWidth >= boxWidth + TOAST_MARGIN && termHeight >= topOffset + rows + TOAST_MARGIN,
-		});
-		const timer = setTimeout(() => {
-			if (generation !== this.toastGeneration) return;
-			// The card on screen belongs to this host: a tab switch re-ran syncToast,
-			// which replaced this timer.
-			clearToast(this.toastHost());
-			this.hideToast();
-			this.ui.requestRender();
-		}, durationMs);
-		timer.unref();
-		this.toastTimer = timer;
-		this.ui.requestRender();
+		this.toastOverlay.show(
+			this.ui,
+			new ToastCardComponent(type, message),
+			{
+				anchor: "top-right",
+				width: boxWidth,
+				offsetY: topOffset,
+				// Right margin only: a narrow terminal can still hold the narrowest card flush
+				// against its left edge.
+				margin: { top: 0, right: TOAST_MARGIN, bottom: TOAST_MARGIN, left: 0 },
+				nonCapturing: true,
+				visible: (termWidth, termHeight) =>
+					termWidth >= boxWidth + TOAST_MARGIN && termHeight >= topOffset + rows + TOAST_MARGIN,
+			},
+			durationMs,
+			() => {
+				// The card on screen belongs to this host: a tab switch re-ran syncToast,
+				// which replaced this timer.
+				clearToast(this.toastHost());
+				this.hideToast();
+			},
+		);
 	}
 
 	/** Rows the layout spends above the transcript, which the card must clear. */
@@ -5165,12 +5260,7 @@ export class InteractiveMode {
 
 	/** Drop the card and its timer; the toast stays with the tab. */
 	private hideToast(): void {
-		if (this.toastTimer !== undefined) {
-			clearTimeout(this.toastTimer);
-			this.toastTimer = undefined;
-		}
-		this.toastHandle?.hide();
-		this.toastHandle = undefined;
+		this.toastOverlay.hide();
 	}
 
 	/**
@@ -5188,38 +5278,30 @@ export class InteractiveMode {
 		// The preview sits in the transcript region, directly above the dock: the rows
 		// the layout keeps below the transcript are the margin it must clear.
 		const bottomGap = this.rowsBelowTranscript() + USER_MESSAGE_PREVIEW_BOTTOM_GAP_ROWS;
-		const generation = ++this.userMessagePreviewGeneration;
-		this.userMessagePreviewHandle = this.ui.showOverlay(new UserMessagePreviewPanel(lines, highlightedIndex), {
-			anchor: "bottom-right",
-			width: boxWidth,
-			// The right margin keeps the transcript's scrollbar column visible.
-			margin: { top: 0, right: USER_MESSAGE_PREVIEW_RIGHT_MARGIN, bottom: bottomGap, left: 0 },
-			nonCapturing: true,
-			// A panel that does not fit above the transcript is dropped rather than clamped
-			// over the conversation: the overlay layout would otherwise pin it to the top row
-			// of the screen and paint it there.
-			visible: (width, height) =>
-				width >= boxWidth + USER_MESSAGE_PREVIEW_RIGHT_MARGIN &&
-				height - bottomGap - boxRows >= this.rowsAboveTranscript(),
-		});
-		const timer = setTimeout(() => {
-			if (generation !== this.userMessagePreviewGeneration) return;
-			this.hideUserMessagePreview();
-			this.ui.requestRender();
-		}, USER_MESSAGE_PREVIEW_TTL_MS);
-		timer.unref();
-		this.userMessagePreviewTimer = timer;
-		this.ui.requestRender();
+		this.userMessagePreviewOverlay.show(
+			this.ui,
+			new UserMessagePreviewPanel(lines, highlightedIndex),
+			{
+				anchor: "bottom-right",
+				width: boxWidth,
+				// The right margin keeps the transcript's scrollbar column visible.
+				margin: { top: 0, right: USER_MESSAGE_PREVIEW_RIGHT_MARGIN, bottom: bottomGap, left: 0 },
+				nonCapturing: true,
+				// A panel that does not fit above the transcript is dropped rather than clamped
+				// over the conversation: the overlay layout would otherwise pin it to the top row
+				// of the screen and paint it there.
+				visible: (width, height) =>
+					width >= boxWidth + USER_MESSAGE_PREVIEW_RIGHT_MARGIN &&
+					height - bottomGap - boxRows >= this.rowsAboveTranscript(),
+			},
+			USER_MESSAGE_PREVIEW_TTL_MS,
+			() => this.hideUserMessagePreview(),
+		);
 	}
 
 	/** Take the preview down and drop its timer. */
 	private hideUserMessagePreview(): void {
-		if (this.userMessagePreviewTimer !== undefined) {
-			clearTimeout(this.userMessagePreviewTimer);
-			this.userMessagePreviewTimer = undefined;
-		}
-		this.userMessagePreviewHandle?.hide();
-		this.userMessagePreviewHandle = undefined;
+		this.userMessagePreviewOverlay.hide();
 	}
 
 	/** Rows the layout keeps below the transcript, which the preview has to clear. */
@@ -5376,9 +5458,7 @@ export class InteractiveMode {
 			const state = this.vimTabState();
 			if (state.active) return false;
 			const canArm =
-				this.editor.getText().length === 0 &&
-				this.compactionQueuedMessages.length === 0 &&
-				!this.hasQueuedMessages();
+				this.editorText().length === 0 && this.compactionQueuedMessages.length === 0 && !this.hasQueuedMessages();
 			const result = handleVimEnterArmKey(state, data, this.createVimHost(), canArm, Date.now());
 			if (result.entered) this.refreshVimChrome();
 			return result.consumed;
@@ -5817,7 +5897,7 @@ export class InteractiveMode {
 						return;
 					}
 					this.editor.addToHistory?.(text);
-					await runInActiveTab(this.tabManager?.getActive(), () => this.handleBashCommand(command, isExcluded));
+					await runInTabConsole(this.tabManager?.getActive(), () => this.handleBashCommand(command, isExcluded));
 					this.isBashMode = false;
 					this.updateEditorBorderColor();
 					return;
@@ -5829,7 +5909,7 @@ export class InteractiveMode {
 				if (this.isExtensionCommand(text)) {
 					this.editor.addToHistory?.(text);
 					this.editor.setText("");
-					await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(text));
+					await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(text));
 				} else {
 					this.queueCompactionMessage(text, "steer");
 				}
@@ -5841,7 +5921,7 @@ export class InteractiveMode {
 			if (this.session.isStreaming) {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
-				await runInActiveTab(this.tabManager?.getActive(), () =>
+				await runInTabConsole(this.tabManager?.getActive(), () =>
 					this.session.prompt(text, { streamingBehavior: "steer" }),
 				);
 				this.updatePendingMessagesDisplay();
@@ -6969,7 +7049,7 @@ export class InteractiveMode {
 			if (this.isExtensionCommand(text)) {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
-				await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(text));
+				await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(text));
 			} else {
 				// Follow-up rounds wait out the compaction like any other run; the
 				// drain dispatches them once compaction_end settles.
@@ -7055,7 +7135,8 @@ export class InteractiveMode {
 		if (steerCount > 0 && followUpCount > 0) {
 			// Both queues wait on one choice; arm a short window for s/f.
 			this.queueEditArmDeadline = Date.now() + QUEUE_EDIT_ARM_WINDOW_MS;
-			this.notifyToast("info", QUEUE_EDIT_ARM_MESSAGE);
+			this.queueEditArmMessage = queueEditArmMessage();
+			this.notifyToast("info", this.queueEditArmMessage);
 			if (this.queueEditArmTimer) clearTimeout(this.queueEditArmTimer);
 			this.queueEditArmTimer = setTimeout(() => this.endQueueEditArm(), QUEUE_EDIT_ARM_WINDOW_MS);
 			return;
@@ -7071,23 +7152,23 @@ export class InteractiveMode {
 		this.showStatus("No queued messages to restore");
 	}
 
-	/** Resolve an armed queue-edit choice; consumes only s/f/Esc inside the window. */
+	/** Resolve an armed queue-edit choice; consumes only the queue-edit bindings inside the window. */
 	private handleQueueEditArmKey(data: string): boolean {
 		if (this.queueEditArmDeadline === 0 || Date.now() > this.queueEditArmDeadline) {
 			this.endQueueEditArm();
 			return false;
 		}
-		if (data === "\x1b") {
+		if (this.keybindings.matches(data, "app.queueEdit.cancel")) {
 			this.endQueueEditArm();
 			this.showStatus("Queue edit canceled");
 			return true;
 		}
-		if (data.toLowerCase() === "s") {
+		if (this.keybindings.matches(data, "app.queueEdit.steer")) {
 			this.endQueueEditArm();
 			this.popQueuedIntoEditor("steering");
 			return true;
 		}
-		if (data.toLowerCase() === "f") {
+		if (this.keybindings.matches(data, "app.queueEdit.followUp")) {
 			this.endQueueEditArm();
 			this.popQueuedIntoEditor("followUp");
 			return true;
@@ -7102,7 +7183,9 @@ export class InteractiveMode {
 			clearTimeout(this.queueEditArmTimer);
 			this.queueEditArmTimer = undefined;
 		}
-		if (activeToast(this.toastHost())?.message !== QUEUE_EDIT_ARM_MESSAGE) return;
+		const shownMessage = this.queueEditArmMessage;
+		this.queueEditArmMessage = undefined;
+		if (shownMessage === undefined || activeToast(this.toastHost())?.message !== shownMessage) return;
 		clearToast(this.toastHost());
 		this.hideToast();
 	}
@@ -7114,7 +7197,7 @@ export class InteractiveMode {
 			this.showWarning(`${kind === "steering" ? "Steer" : "Follow-up"} queue is empty`);
 			return;
 		}
-		const draft = this.editor.getText();
+		const draft = this.editorText();
 		if (draft.trim()) {
 			this.pendingListFor(kind).unshift(draft);
 		}
@@ -7293,7 +7376,7 @@ export class InteractiveMode {
 			this.hideConsoleNotice();
 			return { consume: true };
 		}
-		if (this.editor.getText().length > 0) return undefined;
+		if (this.editorText().length > 0) return undefined;
 		if (this.keybindings.matches(data, "app.notice.copy")) {
 			void copyToClipboard(open.component.getText()).catch((error: unknown) => {
 				this.showError(`Copying the notice failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -7440,7 +7523,7 @@ export class InteractiveMode {
 				return owningSession();
 			},
 			promptTurn: (text, preflightResult) =>
-				runInActiveTab(owningTab(), () => owningSession().prompt(text, { preflightResult })),
+				runInTabConsole(owningTab(), () => owningSession().prompt(text, { preflightResult })),
 			runQueuedCommand: async (text) => {
 				await this.defaultEditor.onSubmit?.(text);
 			},
@@ -7596,11 +7679,11 @@ export class InteractiveMode {
 				// When retry is pending, queue messages for the retry turn
 				for (const message of queuedMessages) {
 					if (this.isExtensionCommand(message.text)) {
-						await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(message.text));
+						await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(message.text));
 					} else if (message.mode === "followUp") {
-						await runInActiveTab(this.tabManager?.getActive(), () => this.session.followUp(message.text));
+						await runInTabConsole(this.tabManager?.getActive(), () => this.session.followUp(message.text));
 					} else {
-						await runInActiveTab(this.tabManager?.getActive(), () => this.session.steer(message.text));
+						await runInTabConsole(this.tabManager?.getActive(), () => this.session.steer(message.text));
 					}
 				}
 				this.updatePendingMessagesDisplay();
@@ -7612,7 +7695,7 @@ export class InteractiveMode {
 			if (firstPromptIndex === -1) {
 				// All extension commands - execute them all
 				for (const message of queuedMessages) {
-					await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(message.text));
+					await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(message.text));
 				}
 				return;
 			}
@@ -7623,11 +7706,11 @@ export class InteractiveMode {
 			const rest = queuedMessages.slice(firstPromptIndex + 1);
 
 			for (const message of preCommands) {
-				await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(message.text));
+				await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(message.text));
 			}
 
 			// Start a prompt when idle, or queue it into a run still finishing compaction.
-			const promptPromise = runInActiveTab(this.tabManager?.getActive(), () =>
+			const promptPromise = runInTabConsole(this.tabManager?.getActive(), () =>
 				this.session.prompt(firstPrompt.text, { streamingBehavior: firstPrompt.mode }),
 			).catch((error) => {
 				restoreQueue(error);
@@ -7636,11 +7719,11 @@ export class InteractiveMode {
 			// Queue remaining messages
 			for (const message of rest) {
 				if (this.isExtensionCommand(message.text)) {
-					await runInActiveTab(this.tabManager?.getActive(), () => this.session.prompt(message.text));
+					await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(message.text));
 				} else if (message.mode === "followUp") {
-					await runInActiveTab(this.tabManager?.getActive(), () => this.session.followUp(message.text));
+					await runInTabConsole(this.tabManager?.getActive(), () => this.session.followUp(message.text));
 				} else {
-					await runInActiveTab(this.tabManager?.getActive(), () => this.session.steer(message.text));
+					await runInTabConsole(this.tabManager?.getActive(), () => this.session.steer(message.text));
 				}
 			}
 			this.updatePendingMessagesDisplay();
@@ -7746,10 +7829,10 @@ export class InteractiveMode {
 	 */
 	private runCommandFromPalette(name: string): void {
 		const text = `/${name}`;
-		const draft = this.editor.getText();
+		const draft = this.editorText();
 		// A command that cleared the editor, or left the command text in it, is done with it.
 		const restoreDraft = () => {
-			const remaining = this.editor.getText();
+			const remaining = this.editorText();
 			if (!remaining.trim() || remaining === text) this.editor.setText(draft);
 		};
 		this.editor.setText(text);
@@ -9904,7 +9987,7 @@ export class InteractiveMode {
 		// keeps queued follow-up rounds and the Esc flush out of the gap.
 		this.compactionClaimed = true;
 		try {
-			await runInActiveTab(this.tabManager?.getActive(), () => this.session.compact(customInstructions));
+			await runInTabConsole(this.tabManager?.getActive(), () => this.session.compact(customInstructions));
 		} catch {
 			// A throw before compaction starts never reaches compaction_end.
 			this.compactionClaimed = false;

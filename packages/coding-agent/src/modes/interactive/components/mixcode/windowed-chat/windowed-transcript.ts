@@ -140,15 +140,11 @@ export class WindowedTranscript extends Container {
 	/**
 	 * Every line of the transcript, rendered so the result is exact. Search, prompt
 	 * jumps and copy use this: they need the whole document, not one window, and the
-	 * estimated line count is only a scroll-range hint.
+	 * estimated line count is only a scroll-range hint. Same rows as {@link render},
+	 * under the name the windowed protocol calls.
 	 */
 	materialize(width: number): string[] {
-		const safeWidth = this.safeWidth(width);
-		this.ensureWidth(safeWidth);
-		this.passLines.clear();
-		const lines: string[] = [];
-		for (const block of this.blockList()) lines.push(...this.linesOf(block, safeWidth));
-		return lines;
+		return this.render(width);
 	}
 
 	/**

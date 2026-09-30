@@ -16,7 +16,7 @@ selection and which cells of them are not text, so this fork supplies both.
 | --- | --- |
 | Transcript | the chat blocks, ANSI-clean, one line per row |
 | Prompt card | the draft body, without the card's frame or its hint row |
-| Notice panel | the console lines, without the panel's frame or its `c/y copy · Esc/q close` row |
+| Notice panel | the console lines, without the panel's frame or its `c/y copy · escape/q close` row |
 
 A press outside all three starts no selection, so the tab bar, the model/thinking/workdir badges,
 the footer, and the dock widgets keep whatever a click on them already did.
@@ -43,7 +43,7 @@ The clipboard gets plain text, never the frame the drag crossed:
   dropped, a leading and trailing `│` column are removed, one column of card padding is dropped, and
   inside a frame a hint row is dropped when it carries an arrow glyph plus one of
   `enter|ctrl|shift|tab|scroll|select|accept|cancel`.
-- The notice row naming `c/y copy` or `Esc/q close` never reaches the clipboard.
+- The notice row naming `c/y copy` or `escape/q close` never reaches the clipboard.
 - Wide characters survive: a CJK glyph or emoji under either end of the drag is copied in full, never
   half a cell.
 

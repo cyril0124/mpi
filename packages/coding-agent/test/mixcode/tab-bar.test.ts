@@ -2,6 +2,7 @@ import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
 import { TabBar, type TabBarModel } from "../../src/modes/interactive/components/mixcode/multi-tab/tab-bar.ts";
 import { initTheme, theme } from "../../src/modes/interactive/theme/theme.ts";
+import { hoverBackgroundOpen } from "./test-utils.ts";
 
 /**
  * Chip layout as the terminal shows it: what a chip looks like, how many rows
@@ -42,13 +43,6 @@ function click(x: number, y: number) {
 /** Passive pointer motion; hover moves the cue and never activates a tab. */
 function move(x: number, y: number) {
 	return { ...click(x, y), type: "move" as const, button: "none" as const };
-}
-
-/** The theme hover background sequence; the theme exists only once a test has initialized it. */
-function hoverBackgroundOpen(): string {
-	const painted = theme.bg("selectedBg", "\u0001");
-	const markerIndex = painted.indexOf("\u0001");
-	return markerIndex > 0 ? painted.slice(0, markerIndex) : "";
 }
 
 /** Layout assertions read the plain text; colors are asserted separately. */

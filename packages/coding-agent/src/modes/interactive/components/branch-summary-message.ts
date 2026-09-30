@@ -1,27 +1,17 @@
-import {
-	Box,
-	Container,
-	Markdown,
-	type MarkdownTheme,
-	Spacer,
-	Text,
-	type TuiMouseEvent,
-	type TuiMouseEventResult,
-} from "@earendil-works/pi-tui";
+import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
 import type { BranchSummaryMessage } from "../../../core/messages.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
+import { ClickableCard } from "./clickable-card.ts";
 import { keyText } from "./keybinding-hints.ts";
-import { BlockHover } from "./mixcode/hover/hover-block.ts";
 
 /**
  * Component that renders a branch summary message with collapsed/expanded state.
  * Uses same background color as custom messages for visual consistency.
  */
-export class BranchSummaryMessageComponent extends Box {
+export class BranchSummaryMessageComponent extends ClickableCard {
 	private expanded = false;
 	private message: BranchSummaryMessage;
 	private markdownTheme: MarkdownTheme;
-	private readonly hover = new BlockHover(this, (event) => this.handleBlockClick(event));
 
 	constructor(message: BranchSummaryMessage, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
 		super(1, 1, (t) => theme.bg("customMessageBg", t));
@@ -70,18 +60,7 @@ export class BranchSummaryMessageComponent extends Box {
 		this.addChild(content);
 	}
 
-	override render(width: number): string[] {
-		return this.hover.paint(super.render(width), width);
-	}
-
-	override handleMouse(event: TuiMouseEvent): ReturnType<Box["handleMouse"]> {
-		return this.hover.dispatch(event);
-	}
-
-	/** A primary click anywhere on the card toggles it. */
-	private handleBlockClick(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (event.type !== "click" || event.button !== "left") return undefined;
+	protected toggleExpanded(): void {
 		this.setExpanded(!this.expanded);
-		return { handled: true };
 	}
 }

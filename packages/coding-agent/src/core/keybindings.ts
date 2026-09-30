@@ -32,6 +32,9 @@ export interface AppKeybindings {
 	"app.notice.dismiss": true;
 	"app.message.followUp": true;
 	"app.message.dequeue": true;
+	"app.queueEdit.steer": true;
+	"app.queueEdit.followUp": true;
+	"app.queueEdit.cancel": true;
 	"app.clipboard.pasteImage": true;
 	"app.session.new": true;
 	"app.tab.next": true;
@@ -182,6 +185,18 @@ export const KEYBINDINGS = {
 	"app.message.dequeue": {
 		defaultKeys: "ctrl+u",
 		description: "Edit queued steer/follow-up messages",
+	},
+	"app.queueEdit.steer": {
+		defaultKeys: ["s", "shift+s"],
+		description: "Queue edit: steer the queued message",
+	},
+	"app.queueEdit.followUp": {
+		defaultKeys: ["f", "shift+f"],
+		description: "Queue edit: keep the message as a follow-up",
+	},
+	"app.queueEdit.cancel": {
+		defaultKeys: "escape",
+		description: "Queue edit: cancel the armed choice",
 	},
 	"app.clipboard.pasteImage": {
 		defaultKeys: windowsKeybindings ? "alt+v" : "ctrl+v",

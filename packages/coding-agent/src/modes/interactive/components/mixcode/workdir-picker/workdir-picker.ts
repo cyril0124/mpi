@@ -8,11 +8,11 @@
  * Rows answer the keyboard only, like this fork's other pickers; the workdir
  * badge in the dock is what answers the pointer.
  */
-import { basename } from "node:path";
+import { basename, sep } from "node:path";
 import { type Component, getKeybindings, truncateToWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
-import { padLine, windowStart } from "../home/home-model.ts";
-import { primaryKeyText } from "../key-hints.ts";
+import { primaryKeyGlyphText } from "../key-hints.ts";
+import { padLine, windowStart } from "../layout-text.ts";
 import { panel, panelContentWidth } from "../panel.ts";
 import {
 	parentWorkdir,
@@ -100,7 +100,7 @@ export class WorkdirPickerComponent implements Component {
 			}
 			if (end < rows.length) body.push(theme.fg("dim", `  ... (${rows.length - end} more below)`));
 		}
-		body.push("", ...this.renderHints(rows.length));
+		body.push("", ...this.renderHints(rows.filter((row) => row.kind === "dir").length));
 		return panel("Change Workdir", body, width);
 	}
 
@@ -229,7 +229,7 @@ export class WorkdirPickerComponent implements Component {
 			.map((segment, index) =>
 				index === segments.length - 1 ? theme.fg("warning", segment) : theme.fg("accent", segment),
 			)
-			.join(theme.fg("dim", " / "));
+			.join(theme.fg("dim", ` ${sep} `));
 	}
 
 	private renderFilterLine(): string {
@@ -272,18 +272,21 @@ export class WorkdirPickerComponent implements Component {
 	 * actions, and a clipped hint silently drops one. Keys are read from the bindings, so a
 	 * rebound key keeps the row accurate, and one key per action keeps both rows short.
 	 */
-	private renderHints(rowCount: number): string[] {
+	private renderHints(dirCount: number): string[] {
 		const hidden = this.showHidden ? "on" : "off";
 		const actions = [
-			`${primaryKeyText("app.workdir.parent")} parent`,
-			`${primaryKeyText("app.workdir.enterDir")} enter`,
-			`${primaryKeyText("tui.select.confirm")} set`,
+			`${primaryKeyGlyphText("app.workdir.parent")} parent`,
+			`${primaryKeyGlyphText("app.workdir.enterDir")} enter`,
+			`${primaryKeyGlyphText("tui.select.confirm")} set`,
 		].join(" \u00b7 ");
 		const state = [
-			`${primaryKeyText("app.workdir.toggleHidden")} hidden(${hidden})`,
-			`${primaryKeyText("app.workdir.clearQuery")} clear`,
-			`${primaryKeyText("tui.select.cancel")} cancel`,
+			`${primaryKeyGlyphText("app.workdir.toggleHidden")} hidden(${hidden})`,
+			`${primaryKeyGlyphText("app.workdir.clearQuery")} clear`,
+			`${primaryKeyGlyphText("tui.select.cancel")} cancel`,
 		].join(" \u00b7 ");
-		return [theme.fg("dim", `${rowCount} dirs \u00b7 ${actions}`), theme.fg("dim", state)];
+		return [
+			theme.fg("dim", `${dirCount} ${dirCount === 1 ? "dir" : "dirs"} \u00b7 ${actions}`),
+			theme.fg("dim", state),
+		];
 	}
 }

@@ -3,19 +3,9 @@
  * push, and dropped once it is three seconds old or on request.
  */
 import { describe, expect, it } from "vitest";
-import {
-	activeToast,
-	clearToast,
-	pushToast,
-	TOAST_DURATION_MS,
-	type ToastHost,
-} from "../../src/core/mixcode/toast/toast.ts";
+import { activeToast, clearToast, pushToast, type ToastHost } from "../../src/core/mixcode/toast/toast.ts";
 
 describe("toast state", () => {
-	it("carries a three second lifetime", () => {
-		expect(TOAST_DURATION_MS).toBe(3_000);
-	});
-
 	it("stores type, message and push time, replacing the previous toast", () => {
 		const tab: ToastHost = {};
 		pushToast(tab, { type: "success", message: "Copied 11 chars." });
@@ -36,7 +26,8 @@ describe("toast state", () => {
 
 		expect(activeToast(tab)?.message).toBe("Fresh");
 
-		tab.toast = { type: "info", message: "Fresh", createdAt: Date.now() - TOAST_DURATION_MS - 1 };
+		// Past the three second lifetime the toast expires on read.
+		tab.toast = { type: "info", message: "Fresh", createdAt: Date.now() - 3_000 - 1 };
 
 		expect(activeToast(tab)).toBeUndefined();
 		expect(tab.toast).toBeUndefined();

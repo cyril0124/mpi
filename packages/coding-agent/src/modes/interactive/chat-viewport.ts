@@ -60,23 +60,26 @@ export function createChatViewport(options: ChatViewportOptions): ChatViewport {
 	]);
 	// A visible panel splits the transcript row region only: the dock below it
 	// keeps the full width, so the composer spans the terminal as before.
-	const content: Component =
-		options.panel === undefined
-			? transcript
-			: new HStack(
-					[
-						{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
-						{
-							component: options.panel.component,
-							basis: "auto",
-							grow: 0,
-							shrink: 0,
-							minSize: 0,
-							visible: (viewport) => options.panel!.visible(viewport.width),
-						},
-					],
-					{ gap: 1 },
-				);
+	let content: Component;
+	if (options.panel === undefined) {
+		content = transcript;
+	} else {
+		const panel = options.panel;
+		content = new HStack(
+			[
+				{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+				{
+					component: panel.component,
+					basis: "auto",
+					grow: 0,
+					shrink: 0,
+					minSize: 0,
+					visible: (viewport) => panel.visible(viewport.width),
+				},
+			],
+			{ gap: 1 },
+		);
+	}
 	return {
 		transcript,
 		root: new VStack([

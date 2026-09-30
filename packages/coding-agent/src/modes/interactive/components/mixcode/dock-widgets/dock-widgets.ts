@@ -10,9 +10,10 @@
  *
  * The budget is per frame, because a terminal resize reaches nothing in this
  * mode: each slot measures the widgets it can see at the width it is rendered
- * with, and renders each of them once. Nothing is cached across frames, so a
- * widget that updates itself in place cannot go stale. A slot also forwards
- * mouse rows to the widget row they came from.
+ * with. Both slots share one plan per render pass, so each widget renders once;
+ * a slot that renders again starts the next pass, so a widget that updates itself
+ * in place cannot go stale. A slot also forwards mouse rows to the widget row it
+ * came from.
  */
 import {
 	type Component,
@@ -21,7 +22,7 @@ import {
 	truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
-import { dispatchToRegion, type MouseRegion, regionAtRow } from "../mouse-regions.ts";
+import { dispatchToRegion, type RowHitRegion, regionAtRow } from "../mouse-regions.ts";
 
 /**
  * Rows the editor keeps when widgets are docked. This is the editor's own layout
@@ -56,7 +57,7 @@ export interface DockWidgetSources {
 /** One slot's rows, with the row range each widget owns for mouse dispatch. */
 interface DockSlotPlan {
 	lines: string[];
-	hits: MouseRegion[];
+	hits: RowHitRegion[];
 }
 
 /** Shared by both slots, and only ever read. */
@@ -66,6 +67,14 @@ export class DockWidgetBudget {
 	readonly above: DockWidgetSlot;
 	readonly below: DockWidgetSlot;
 	private readonly sources: DockWidgetSources;
+	/** Plan shared by the two slots of the current render pass, and which slot has read it. */
+	private planCache:
+		| {
+				width: number;
+				plan: { above: DockSlotPlan; below: DockSlotPlan };
+				consumed: { above: boolean; below: boolean };
+		  }
+		| undefined;
 
 	constructor(sources: DockWidgetSources) {
 		this.sources = sources;
@@ -83,9 +92,27 @@ export class DockWidgetBudget {
 		return this.sources.widgetsHidden();
 	}
 
-	/** Plan for this frame: every widget is rendered once, at this width. */
-	planFor(width: number): { above: DockSlotPlan; below: DockSlotPlan } {
-		return this.computePlan(width, this.sources.viewportRows(), this.widgetsOf("above"), this.widgetsOf("below"));
+	/**
+	 * Rows for one slot this render pass. Both slots share one plan, so the widgets
+	 * are measured once: the first slot to ask renders them, the second reads its own
+	 * rows from the same plan. Asking the same slot again starts a new pass and
+	 * measures the widgets again, so an in-place update cannot go stale, and a width
+	 * change measures them because wrapping follows the width.
+	 */
+	planFor(width: number, side: "above" | "below"): DockSlotPlan {
+		const cached = this.planCache;
+		if (cached !== undefined && cached.width === width && !cached.consumed[side]) {
+			cached.consumed[side] = true;
+			return cached.plan[side];
+		}
+		const plan = this.computePlan(
+			width,
+			this.sources.viewportRows(),
+			this.widgetsOf("above"),
+			this.widgetsOf("below"),
+		);
+		this.planCache = { width, plan, consumed: { above: side === "above", below: side === "below" } };
+		return plan[side];
 	}
 
 	private computePlan(
@@ -142,7 +169,7 @@ export class DockWidgetSlot implements Component {
 		this.hits = [];
 		if (this.budget.widgetsHidden()) return [];
 
-		const plan = this.budget.planFor(width)[this.side];
+		const plan = this.budget.planFor(width, this.side);
 		// The above-editor slot keeps the separating row the dock always had: without
 		// it the editor sits against the chat.
 		const leadingRow = this.side === "above" ? [""] : [];

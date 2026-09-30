@@ -65,7 +65,8 @@ export class BlockHover implements Component {
 	 */
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		const onCard = event.y >= this.cardFirstRow;
-		if (event.type !== "move" || event.button !== "none") return onCard ? this.onClick(event) : undefined;
+		const passiveMove = event.type === "move" && event.button === "none";
+		if (!passiveMove) return onCard ? this.onClick(event) : undefined;
 		const inside = onCard && event.x >= 0 && event.x < event.width && event.y < event.height;
 		const changed = inside !== this.hovered;
 		this.hovered = inside;

@@ -10,6 +10,7 @@ import type {
 	BetaRawMessageStreamEvent as RawMessageStreamEvent,
 	BetaRefusalStopDetails as RefusalStopDetails,
 } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
+import { recordResponseModel } from "../mixcode/response-model.ts";
 import { calculateCost } from "../models.ts";
 import type {
 	Api,
@@ -604,7 +605,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 					const transformations = event.message.input_transformations;
 					if (Array.isArray(transformations)) inputTransformations = transformations;
 					const responseModel = event.message.model;
-					if (responseModel !== model.id) output.responseModel = responseModel;
+					recordResponseModel(output, responseModel, model.id, { overwrite: true });
 					const fallbackCost =
 						responseModel === model.id
 							? undefined

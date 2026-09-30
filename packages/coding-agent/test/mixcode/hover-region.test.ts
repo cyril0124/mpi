@@ -1,7 +1,8 @@
 import { Text, type TuiMouseEvent, type TuiMouseEventType } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
 import { HoverRegion } from "../../src/modes/interactive/components/mixcode/hover/hover-region.ts";
-import { initTheme, theme } from "../../src/modes/interactive/theme/theme.ts";
+import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
+import { hoverBackgroundOpen } from "./test-utils.ts";
 
 /**
  * The clickable region that paints itself while hovered: the cue follows passive
@@ -12,11 +13,6 @@ import { initTheme, theme } from "../../src/modes/interactive/theme/theme.ts";
 beforeEach(() => {
 	initTheme("dark");
 });
-
-function backgroundOpen(): string {
-	const marked = theme.bg("selectedBg", "\u0001");
-	return marked.slice(0, marked.indexOf("\u0001"));
-}
 
 function mouse(type: TuiMouseEventType, x: number, y: number): TuiMouseEvent {
 	return {
@@ -43,21 +39,21 @@ describe("hover region", () => {
 			return { handled: true };
 		});
 
-		expect(region.render(8)[0]).not.toContain(backgroundOpen());
+		expect(region.render(8)[0]).not.toContain(hoverBackgroundOpen());
 		expect(region.handleMouse(mouse("move", 3, 0))).toMatchObject({ handled: true, render: true });
-		expect(region.render(8)[0]).toContain(backgroundOpen());
+		expect(region.render(8)[0]).toContain(hoverBackgroundOpen());
 
 		// Moving inside the same region is still answered, but needs no repaint.
 		expect(region.handleMouse(mouse("move", 4, 0))).toMatchObject({ handled: true, render: false });
 		// The dispatcher sends a move outside every cell once the pointer leaves.
 		expect(region.handleMouse(mouse("move", -1, -1))).toMatchObject({ handled: true, render: true });
-		expect(region.render(8)[0]).not.toContain(backgroundOpen());
+		expect(region.render(8)[0]).not.toContain(hoverBackgroundOpen());
 		expect(region.render(8)[0]).toBe("row text");
 
 		// A click is still the region's own handler; a press or drag is not a hover.
 		expect(region.handleMouse(mouse("click", 1, 0))).toMatchObject({ handled: true });
 		expect(clicks).toEqual(["click"]);
 		expect(region.handleMouse(mouse("press", 1, 0))).toBeUndefined();
-		expect(region.render(8)[0]).not.toContain(backgroundOpen());
+		expect(region.render(8)[0]).not.toContain(hoverBackgroundOpen());
 	});
 });

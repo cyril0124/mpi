@@ -14,32 +14,10 @@ import { WindowedTranscript } from "../../src/modes/interactive/components/mixco
 import { createInteractiveTui, InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../../src/utils/ansi.ts";
+import { WidgetBody } from "./test-utils.ts";
 
 /** Tab id the inline wiring falls back to when there is no tab manager. */
 const SESSION_KEY = "session";
-
-/** A widget stand-in: a fixed number of body rows plus a render counter. */
-class WidgetBody implements Component {
-	renders = 0;
-	private readonly key: string;
-	private rows: number;
-
-	constructor(key: string, rows: number) {
-		this.key = key;
-		this.rows = rows;
-	}
-
-	setRows(rows: number): void {
-		this.rows = rows;
-	}
-
-	render(_width: number): string[] {
-		this.renders += 1;
-		return Array.from({ length: this.rows }, (_, index) => `${this.key}-body-${index}`);
-	}
-
-	invalidate(): void {}
-}
 
 /** A widget stand-in whose body is given verbatim, with no line splitting. */
 class MultiLineBody implements Component {
@@ -120,7 +98,7 @@ async function bootInline(options: {
 	const below = new Map<string, Component>();
 	const bodies = new Map<string, WidgetBody>();
 	for (const widget of options.widgets ?? []) {
-		const body = new WidgetBody(widget.key, widget.rows);
+		const body = WidgetBody.keyed(widget.key, widget.rows);
 		bodies.set(widget.key, body);
 		(widget.placement === "below" ? below : above).set(widget.key, body);
 	}
@@ -363,7 +341,7 @@ describe("inline widget row budget", () => {
 		const state = createInlineWidgetTabState(true);
 		const above = new Map<string, Component>();
 		for (let index = 0; index < 40; index += 1) {
-			above.set(`w${index}`, new WidgetBody(`w${index}`, 1));
+			above.set(`w${index}`, WidgetBody.keyed(`w${index}`, 1));
 		}
 		const component = new InlineWidgetsComponent({
 			widgets: () => ({ above, below: new Map() }),
@@ -434,8 +412,8 @@ describe("/widgets", () => {
 
 describe("inline widget budget decisions", () => {
 	function twoWidgetComponent(state: InlineWidgetTabState) {
-		const a = new WidgetBody("a", 5);
-		const b = new WidgetBody("b", 3);
+		const a = WidgetBody.keyed("a", 5);
+		const b = WidgetBody.keyed("b", 3);
 		const above = new Map<string, Component>([
 			["a", a],
 			["b", b],
@@ -457,12 +435,12 @@ describe("inline widget budget decisions", () => {
 		expect(first.some((line) => line.includes("b-body-2"))).toBe(true);
 
 		// One row smaller: inside the deadband, so `a` stays collapsed.
-		a.setRows(3);
+		a.setRowCount(3);
 		expect(render().some((line) => line.includes("a-body-0"))).toBe(false);
 
 		// A larger move recomputes, and the whole block now fits the budget.
-		a.setRows(1);
-		b.setRows(1);
+		a.setRowCount(1);
+		b.setRowCount(1);
 		const recovered = render();
 		expect(recovered.some((line) => line.includes("a-body-0"))).toBe(true);
 		expect(recovered.some((line) => line.includes("b-body-0"))).toBe(true);
@@ -475,7 +453,7 @@ describe("inline widget budget decisions", () => {
 
 		// Exactly at the budget, two rows under the held height: one fitting frame
 		// holds, so a one-row dip cannot flip the block back and forth.
-		a.setRows(3);
+		a.setRowCount(3);
 		expect(render().some((line) => line.includes("a-body-0"))).toBe(false);
 
 		// The second fitting frame releases the held decisions.
@@ -484,7 +462,7 @@ describe("inline widget budget decisions", () => {
 
 	it("applies only manual state without a viewport and leaves the automatic set alone", () => {
 		const state = createInlineWidgetTabState(true);
-		const above = new Map<string, Component>([["a", new WidgetBody("a", 20)]]);
+		const above = new Map<string, Component>([["a", WidgetBody.keyed("a", 20)]]);
 		const component = new InlineWidgetsComponent({
 			widgets: () => ({ above, below: new Map() }),
 			state: () => state,
@@ -511,7 +489,7 @@ describe("inline widget budget decisions", () => {
 
 	it("hides a narrow collapsed header's hint piece by piece", () => {
 		const state = createInlineWidgetTabState(true);
-		const above = new Map<string, Component>([["goal", new WidgetBody("goal", 20)]]);
+		const above = new Map<string, Component>([["goal", WidgetBody.keyed("goal", 20)]]);
 		const component = new InlineWidgetsComponent({
 			widgets: () => ({ above, below: new Map() }),
 			state: () => state,
@@ -532,7 +510,7 @@ describe("inline widget budget decisions", () => {
 
 	it("drops the commands from a header that is too narrow for any of them", () => {
 		const state = createInlineWidgetTabState(true);
-		const above = new Map<string, Component>([["goal", new WidgetBody("goal", 20)]]);
+		const above = new Map<string, Component>([["goal", WidgetBody.keyed("goal", 20)]]);
 		const component = new InlineWidgetsComponent({
 			widgets: () => ({ above, below: new Map() }),
 			state: () => state,
@@ -545,7 +523,7 @@ describe("inline widget budget decisions", () => {
 	it("keeps a key's colour and line breaks out of the header row", () => {
 		const state = createInlineWidgetTabState(true);
 		const above = new Map<string, Component>([
-			["ev\u001b[31mil\u001b[2J\u001b[3;40H\nsecond", new WidgetBody("goal", 20)],
+			["ev\u001b[31mil\u001b[2J\u001b[3;40H\nsecond", WidgetBody.keyed("goal", 20)],
 		]);
 		const component = new InlineWidgetsComponent({
 			widgets: () => ({ above, below: new Map() }),
@@ -644,7 +622,7 @@ describe("inline widget tab state", () => {
 	});
 
 	it("places widgets by the tab it is attached to, not the previous one", () => {
-		const above = new Map<string, Component>([["goal", new WidgetBody("goal", 1)]]);
+		const above = new Map<string, Component>([["goal", WidgetBody.keyed("goal", 1)]]);
 		const inlineTab = createInlineWidgetTabState(true);
 		const dockedTab = createInlineWidgetTabState(false);
 		const context = {

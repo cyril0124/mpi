@@ -163,6 +163,13 @@ export class ScrollView extends Container {
 		return this.maxScrollTop() > this.suspendedMaxScrollTop;
 	}
 
+	/** Drop a suspended follow-end and the gesture bookkeeping it recorded. */
+	private clearFollowSuspension(): void {
+		this.followSuspended = false;
+		this.gestureScrolledWhileSuspended = false;
+		this.offsetMovedWhileSuspended = false;
+	}
+
 	/**
 	 * Suspend follow-end until cleared, so the view holds its offset when content grows. The layout
 	 * re-scrolls a windowed child to the offset it collected each frame, which would otherwise put
@@ -171,9 +178,8 @@ export class ScrollView extends Container {
 	 */
 	setFollowSuspended(suspended: boolean): void {
 		if (suspended === this.followSuspended) return;
+		this.clearFollowSuspension();
 		this.followSuspended = suspended;
-		this.gestureScrolledWhileSuspended = false;
-		this.offsetMovedWhileSuspended = false;
 		this.suspendedMaxScrollTop = this.maxScrollTop();
 		if (suspended) {
 			this.followingEnd = false;
@@ -225,26 +231,27 @@ export class ScrollView extends Container {
 		return requested - moved;
 	}
 
+	/** Move to the content end and take up follow-end without painting. */
+	private moveToEnd(): void {
+		this.clearFollowSuspension();
+		this.currentScrollTop = this.maxScrollTop();
+		this.followingEnd = this.followEnd;
+		this.followSuppressedAtEnd = false;
+	}
+
 	/**
 	 * Take up follow-end again without painting, for a gesture that ended without changing which
 	 * rows the user is looking at.
 	 */
 	resumeFollowEnd(): void {
-		this.followSuspended = false;
-		this.gestureScrolledWhileSuspended = false;
-		this.offsetMovedWhileSuspended = false;
-		this.currentScrollTop = this.maxScrollTop();
-		this.followingEnd = this.followEnd;
-		this.followSuppressedAtEnd = false;
+		this.moveToEnd();
 	}
 
 	scrollToStart(): void {
 		const changed =
 			this.currentScrollTop !== 0 ||
 			this.followingEnd !== (this.followEnd && this.contentHeight <= this.currentViewportHeight);
-		this.followSuspended = false;
-		this.gestureScrolledWhileSuspended = false;
-		this.offsetMovedWhileSuspended = false;
+		this.clearFollowSuspension();
 		this.currentScrollTop = 0;
 		this.followingEnd = this.followEnd && this.contentHeight <= this.currentViewportHeight;
 		this.followSuppressedAtEnd = false;
@@ -255,14 +262,8 @@ export class ScrollView extends Container {
 	}
 
 	scrollToEnd(): void {
-		const next = this.maxScrollTop();
-		const changed = this.currentScrollTop !== next || this.followingEnd !== this.followEnd;
-		this.followSuspended = false;
-		this.gestureScrolledWhileSuspended = false;
-		this.offsetMovedWhileSuspended = false;
-		this.currentScrollTop = next;
-		this.followingEnd = this.followEnd;
-		this.followSuppressedAtEnd = false;
+		const changed = this.currentScrollTop !== this.maxScrollTop() || this.followingEnd !== this.followEnd;
+		this.moveToEnd();
 		if (changed) {
 			this.markScrollbarActivity();
 			this.requestRenderCallback?.();

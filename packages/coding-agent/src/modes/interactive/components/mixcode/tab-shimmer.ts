@@ -12,12 +12,13 @@ export const TAB_ACTIVE_SHIMMER_SWEEP_MS = 2000;
 const TAB_ACTIVE_SHIMMER_REDRAW_INTERVAL_MS = 50;
 
 /**
- * Cell distance from the wave center where each brightness step ends: the peak,
- * then its shoulder, then the tail that fades into the plain title.
+ * Code-point distance from the wave center where each brightness step ends: the
+ * peak, then its shoulder, then the tail that fades into the plain title. Measured
+ * in `Array.from` characters, not terminal cells, so a wide glyph shifts the wave.
  */
-const SHIMMER_PEAK_CELLS = 0.6;
-const SHIMMER_SHOULDER_CELLS = 1.6;
-const SHIMMER_TAIL_CELLS = 2.8;
+const SHIMMER_PEAK_CHARS = 0.6;
+const SHIMMER_SHOULDER_CHARS = 1.6;
+const SHIMMER_TAIL_CHARS = 2.8;
 
 /** Brightness steps of the wave, from the lit peak outwards. */
 export interface TabShimmerStyles {
@@ -75,9 +76,9 @@ export function applyActiveTabShimmer(
 	return chars
 		.map((char, index) => {
 			const distance = Math.abs(index - waveCenter);
-			if (distance < SHIMMER_PEAK_CELLS) return styles.peak(char);
-			if (distance < SHIMMER_SHOULDER_CELLS) return styles.shoulder(char);
-			if (distance < SHIMMER_TAIL_CELLS) return styles.tail(char);
+			if (distance < SHIMMER_PEAK_CHARS) return styles.peak(char);
+			if (distance < SHIMMER_SHOULDER_CHARS) return styles.shoulder(char);
+			if (distance < SHIMMER_TAIL_CHARS) return styles.tail(char);
 			return char;
 		})
 		.join("");

@@ -24,7 +24,7 @@ import { getSettingsPath } from "../../../../../config.ts";
 import { mixcodeSettingsFilePath } from "../../../../../core/mixcode/mixcode-settings.ts";
 import { shortenPath } from "../../../../../core/tools/render-utils.ts";
 import { theme } from "../../../theme/theme.ts";
-import { padLine, windowStart } from "../home/home-model.ts";
+import { padLine, windowStart } from "../layout-text.ts";
 import { paintBackground, panel, panelContentWidth } from "../panel.ts";
 
 /** Rows the framed panel spends on its two border rows. */
@@ -90,8 +90,6 @@ export interface SettingsPanelBodyOptions {
 export interface SettingsPanelOptions extends SettingsPanelBodyOptions {
 	onChange: (id: string, newValue: string) => void;
 	onCancel: () => void;
-	/** Rows the framed panel may occupy, its two border rows included. */
-	rowBudget?: number;
 	/** Frame title; `Settings` unless the caller names the view. */
 	title?: string;
 }
@@ -158,9 +156,8 @@ function chromeRows(
 }
 
 /**
- * Terminal rows the panel fills when its caller does not pass a budget. Reads the
- * same sources the terminal does, so the budget and the overlay's own maximum stay
- * on one measurement.
+ * Terminal rows the panel fills. Reads the same sources the terminal does, so the
+ * budget and the overlay's own maximum stay on one measurement.
  */
 function defaultRowBudget(): number {
 	const rows = process.stdout.rows || Number(process.env.LINES) || DEFAULT_TERMINAL_ROWS;
@@ -479,11 +476,9 @@ export class SettingsPanelBody implements Component {
 export class SettingsPanel implements Component {
 	private readonly body: SettingsPanelBody;
 	private readonly title: string;
-	private readonly fixedRowBudget: number | undefined;
 
 	constructor(items: SettingItem[], options: SettingsPanelOptions) {
 		this.title = options.title ?? "Settings";
-		this.fixedRowBudget = options.rowBudget;
 		this.body = new SettingsPanelBody(items, this.bodyRows(), options.onChange, options.onCancel, {
 			hint: options.hint,
 			filter: options.filter,
@@ -496,7 +491,7 @@ export class SettingsPanel implements Component {
 
 	/** Body rows this frame may paint, measured against the terminal on every render. */
 	private bodyRows(): number {
-		return Math.max(1, (this.fixedRowBudget ?? defaultRowBudget()) - FRAME_ROWS);
+		return Math.max(1, defaultRowBudget() - FRAME_ROWS);
 	}
 
 	render(width: number): string[] {

@@ -43,17 +43,19 @@ export class ClockedMessageBody implements Component {
 	}
 
 	render(width: number): string[] {
-		const clockCells = this.clock === "" ? 0 : visibleWidth(` ${this.clock}`);
+		if (this.clock === "") return this.body.render(width);
+		// Reserve the clock's own cells once: the body is sized for them and the row
+		// is assembled from the same truncated clock text, so the two agree at any width.
+		const clockText = truncateToWidth(` ${this.clock}`, Math.max(0, width));
+		const clockCells = visibleWidth(clockText);
 		const lines = this.body.render(Math.max(1, width - clockCells));
 		if (clockCells === 0 || lines.length === 0) return lines;
-		return [stampFirstRow(lines[0] ?? "", this.clock, width), ...lines.slice(1)];
+		return [stampFirstRow(lines[0] ?? "", clockText, clockCells, width), ...lines.slice(1)];
 	}
 }
 
 /** First row with the clock right-aligned: the body is clipped to make room, then the gap filled. */
-function stampFirstRow(text: string, clock: string, width: number): string {
-	const clockText = truncateToWidth(` ${clock}`, Math.max(0, width));
-	const clockCells = visibleWidth(clockText);
+function stampFirstRow(text: string, clockText: string, clockCells: number, width: number): string {
 	const bodyText = truncateToWidth(text.replace(/\s+$/u, ""), Math.max(0, width - clockCells));
 	const gap = " ".repeat(Math.max(0, width - visibleWidth(bodyText) - clockCells));
 	return `${bodyText}${gap}${theme.fg("dim", clockText)}`;

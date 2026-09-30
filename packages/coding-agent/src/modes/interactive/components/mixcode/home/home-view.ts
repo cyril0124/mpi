@@ -16,13 +16,13 @@ import {
 import { visibleRosterIndices } from "../../../../../core/mixcode/home/home-state.ts";
 import { isWorkingStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
 import { theme } from "../../../theme/theme.ts";
+import { compactWorkdir, padLine, windowStart } from "../layout-text.ts";
 import { tabColorPaint, tabStatusGlyph } from "../multi-tab/tab-bar.ts";
 import { paintBackground } from "../panel.ts";
 import {
 	AGENT_CARD_HEIGHT,
 	cachedOutputPreview,
 	cachedPreviewBlock,
-	compactWorkdir,
 	formatContextUsage,
 	formatElapsed,
 	formatRelativeAge,
@@ -32,10 +32,8 @@ import {
 	joinColumns,
 	latestOutputPreview,
 	lineEnds,
-	padLine,
 	previewRows,
 	singleLinePreview,
-	windowStart,
 	wrapPreviewTail,
 } from "./home-model.ts";
 
@@ -50,8 +48,6 @@ export interface HomeViewModel {
 	version: string;
 	workdir: string;
 	workingCount: number;
-	/** Tabs waiting on the user; the activity line prints it only above zero. */
-	inputCount: number;
 	/** Outdated extension packages the startup check reported; absent when it found none. */
 	packageUpdates?: readonly string[];
 	agents: readonly HomeAgentEntry[];
@@ -75,6 +71,11 @@ interface ActionRegion {
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 80;
+/** Action button labels; the compact form is used when the full one does not fit. */
+const NEW_SESSION_LABEL = " + New session ";
+const NEW_SESSION_COMPACT_LABEL = " + New ";
+/** Command that updates the outdated extension packages the masthead reports. */
+const PACKAGE_UPDATE_COMMAND = "pi update --extensions";
 const PREVIEW_HEIGHT_PERCENT = 15;
 const MIN_PREVIEW_ROWS = 4;
 const DEFAULT_PREVIEW_ROWS = 6;
@@ -154,7 +155,10 @@ export class HomeActions {
 		layout: HeadingLayout,
 	): string[] {
 		const buttons: Array<{ action: HomeAction; label: string }> = [
-			{ action: "new-session", label: width >= 15 ? " + New session " : " + New " },
+			{
+				action: "new-session",
+				label: width >= visibleWidth(NEW_SESSION_LABEL) ? NEW_SESSION_LABEL : NEW_SESSION_COMPACT_LABEL,
+			},
 			{ action: "resume", label: "[ Resume ]" },
 		];
 		if (width < visibleWidth(buttons[0]!.label)) {
@@ -317,10 +321,7 @@ function renderHome(view: HomeViewModel, width: number, height: number | undefin
 	const bodyWidth = Math.max(0, width - inset * 2);
 	actions.beginFrame(width, height, view.overlayOpen);
 	const brand = `${theme.fg("accent", theme.bold("MixCode"))} ${theme.fg("dim", "/ HOME")}`;
-	const activity = [
-		view.workingCount ? theme.fg("accent", `${view.workingCount} working`) : "",
-		view.inputCount ? theme.fg("warning", `${view.inputCount} input`) : "",
-	]
+	const activity = [view.workingCount ? theme.fg("accent", `${view.workingCount} working`) : ""]
 		.filter(Boolean)
 		.join(theme.fg("dim", "  ·  "));
 	const roomy = height === undefined || height >= ROOMY_MASTHEAD_ROWS;
@@ -342,7 +343,7 @@ function renderHome(view: HomeViewModel, width: number, height: number | undefin
 	const headerBudget = height === undefined ? header.length + updates.length : Math.max(0, height - 4);
 	const top = [...header, ...updates].slice(0, headerBudget);
 	if (updates.length > 0 && header.length + updates.length > headerBudget && top.length > header.length) {
-		top[top.length - 1] = theme.fg("warning", "… more package updates · pi update --extensions");
+		top[top.length - 1] = theme.fg("warning", `… more package updates · ${PACKAGE_UPDATE_COMMAND}`);
 	}
 	const body = renderAgentViewTable(view, bodyWidth, height === undefined ? undefined : height - top.length, actions, {
 		x: inset,
@@ -381,16 +382,7 @@ function renderAgentViewTable(
 		return content;
 	};
 	if (budget !== undefined && budget < TINY_TABLE_ROWS) {
-		if (budget === 0) {
-			actions.reset();
-			return [];
-		}
-		if (visible.length > 0) actions.reset();
-		const rows =
-			visible.length === 0
-				? actions.renderHeading("", width, origin, 1, "actions-first")
-				: renderAgentRoster(view, width, Math.max(1, budget - 1), visible);
-		return budget === 1 ? rows.slice(0, 1) : finish(rows);
+		return renderTinyTable(view, width, budget, visible, actions, origin, finish);
 	}
 	const split = visible.length > 0 && width >= SPLIT_MIN_WIDTH && (budget === undefined || budget >= SPLIT_MIN_ROWS);
 	const listWidth = split ? Math.floor((width - 3) * SPLIT_LIST_SHARE) : width;
@@ -401,11 +393,10 @@ function renderAgentViewTable(
 		budget === undefined || budget >= TWO_ROW_HEADING_BUDGET ? 2 : 1,
 		visible.length === 0 ? "actions-first" : "heading-first",
 	);
-	const rule = theme.fg("borderMuted", "─".repeat(width));
 	if (visible.length === 0) {
 		return finish([
 			...headings,
-			rule,
+			theme.fg("borderMuted", "─".repeat(width)),
 			theme.fg("dim", view.agents.length === 0 ? "No agent sessions." : "No non-idle agents."),
 		]);
 	}
@@ -413,27 +404,74 @@ function renderAgentViewTable(
 	const selected = view.agents[selectedIndex]!;
 	const bodyRows = budget === undefined ? undefined : Math.max(0, budget - headings.length - 2);
 	if (split) {
-		// Roster left, the selected agent's conversation right.
-		const previewWidth = width - listWidth - 3;
-		const roster = renderAgentRoster(view, listWidth, bodyRows, visible);
-		const detailRows = bodyRows ?? Math.max(roster.length, MIN_DETAIL_ROWS);
-		const left = [...headings, theme.fg("borderMuted", "─".repeat(listWidth)), ...roster];
-		const right = [
-			lineEnds(theme.bold("Conversation"), statusChip(selected.card), previewWidth),
-			...Array.from({ length: Math.max(0, headings.length - 1) }, () => ""),
-			theme.fg("borderMuted", "─".repeat(previewWidth)),
-			...renderConversationPreview(selected, previewWidth, detailRows),
-		];
-		return finish(joinColumns(left, right, listWidth, previewWidth, theme.fg("borderMuted", "│")));
+		return finish(renderSplitTable(view, visible, selected, width, listWidth, headings, bodyRows));
 	}
-	// Single column: roster first, a bounded preview panel under it when the budget allows.
+	return finish(renderStackedTable(view, width, visible, selected, headings, bodyRows, budget));
+}
+
+/** Tiny budget: the action buttons alone, or the selected card, then the hint row. */
+function renderTinyTable(
+	view: HomeViewModel,
+	width: number,
+	budget: number,
+	visible: number[],
+	actions: HomeActions,
+	origin: { x: number; y: number },
+	finish: (lines: string[]) => string[],
+): string[] {
+	if (budget === 0) {
+		actions.reset();
+		return [];
+	}
+	if (visible.length > 0) actions.reset();
+	const rows =
+		visible.length === 0
+			? actions.renderHeading("", width, origin, 1, "actions-first")
+			: renderAgentRoster(view, width, Math.max(1, budget - 1), visible);
+	return budget === 1 ? rows.slice(0, 1) : finish(rows);
+}
+
+/** Wide layout: the roster left, the selected agent's conversation right. */
+function renderSplitTable(
+	view: HomeViewModel,
+	visible: number[],
+	selected: HomeAgentEntry,
+	width: number,
+	listWidth: number,
+	headings: string[],
+	bodyRows: number | undefined,
+): string[] {
+	const previewWidth = width - listWidth - 3;
+	const roster = renderAgentRoster(view, listWidth, bodyRows, visible);
+	const detailRows = bodyRows ?? Math.max(roster.length, MIN_DETAIL_ROWS);
+	const left = [...headings, theme.fg("borderMuted", "─".repeat(listWidth)), ...roster];
+	const right = [
+		lineEnds(theme.bold("Conversation"), statusChip(selected.card), previewWidth),
+		...Array.from({ length: Math.max(0, headings.length - 1) }, () => ""),
+		theme.fg("borderMuted", "─".repeat(previewWidth)),
+		...renderConversationPreview(selected, previewWidth, detailRows),
+	];
+	return joinColumns(left, right, listWidth, previewWidth, theme.fg("borderMuted", "│"));
+}
+
+/** Single column: the roster, then a bounded preview panel under it when the budget allows. */
+function renderStackedTable(
+	view: HomeViewModel,
+	width: number,
+	visible: number[],
+	selected: HomeAgentEntry,
+	headings: string[],
+	bodyRows: number | undefined,
+	budget: number | undefined,
+): string[] {
 	const panelRows = previewSlotRows(bodyRows);
 	const rosterRows = bodyRows === undefined ? undefined : Math.max(0, bodyRows - panelRows);
-	const lines = [...headings, rule, ...renderAgentRoster(view, width, rosterRows, visible)];
+	const roster = renderAgentRoster(view, width, rosterRows, visible);
+	const lines = [...headings, theme.fg("borderMuted", "─".repeat(width)), ...roster];
 	if (panelRows > 0) {
 		lines.push(...renderPreviewPanel(selected, width, budget === undefined ? panelRows : budget - 1 - lines.length));
 	}
-	return finish(lines);
+	return lines;
 }
 
 /**
@@ -444,20 +482,21 @@ function renderPackageUpdateNotice(packages: readonly string[], width: number): 
 	if (packages.length === 0) return [];
 	return [
 		theme.fg("warning", theme.bold("Package Updates Available")),
-		theme.fg("dim", "pi update --extensions"),
+		theme.fg("dim", PACKAGE_UPDATE_COMMAND),
 		...packages.map((name) => theme.fg("dim", truncateToWidth(`- ${singleLinePreview(name)}`, width, "…"))),
 		"",
 	];
 }
 
-/** Hints joined by two spaces, dropping from the middle until the row fits. */
-function hintText(hints: string[], width: number): string {
-	while (hints.length > KEPT_HINTS) {
-		const joined = hints.join(HINT_GAP);
+/** Hints joined by two spaces, dropping from the middle until the row fits; `hints` is not modified. */
+function hintText(hints: readonly string[], width: number): string {
+	const kept = [...hints];
+	while (kept.length > KEPT_HINTS) {
+		const joined = kept.join(HINT_GAP);
 		if (visibleWidth(joined) <= width) return joined;
-		hints.splice(Math.max(KEPT_HINTS, hints.length - 2), 1);
+		kept.splice(Math.max(KEPT_HINTS, kept.length - 2), 1);
 	}
-	return hints.join(HINT_GAP);
+	return kept.join(HINT_GAP);
 }
 
 /** Roster indices to draw, honouring the non-idle filter. */

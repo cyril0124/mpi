@@ -13,6 +13,7 @@ import type {
 	ResponseStreamEvent,
 	ResponseToolSearchOutputItemParam,
 } from "openai/resources/responses/responses.js";
+import { recordResponseModel } from "../mixcode/response-model.ts";
 import { calculateCost } from "../models.ts";
 import type {
 	Api,
@@ -548,20 +549,10 @@ export async function processResponsesStream<TApi extends Api>(
 			});
 		}
 	};
-	// Keep a server-reported model name that differs from the requested id, so a
-	// caller can tell the user a gateway routed or substituted the model. Valid
-	// terminal metadata replaces an earlier name; missing or invalid metadata
-	// leaves it alone.
-	const captureResponseModel = (response: { model?: string } | undefined): void => {
-		const reported = response?.model;
-		if (typeof reported !== "string" || reported.trim().length === 0) return;
-		if (reported === model.id) delete output.responseModel;
-		else output.responseModel = reported;
-	};
 	const finalizeResponse = (
 		response: Extract<ResponseStreamEvent, { type: "response.completed" | "response.incomplete" }>["response"],
 	): void => {
-		captureResponseModel(response);
+		recordResponseModel(output, response?.model, model.id, { overwrite: true });
 		sawTerminalResponseEvent = true;
 		backfillReasoningSignatures(response.output ?? []);
 		if (response?.id) {
@@ -608,7 +599,7 @@ export async function processResponsesStream<TApi extends Api>(
 
 	for await (const event of openaiStream) {
 		if (event.type === "response.created") {
-			captureResponseModel(event.response);
+			recordResponseModel(output, event.response.model, model.id, { overwrite: true });
 			output.responseId = event.response.id;
 		} else if (event.type === "response.output_item.added") {
 			createSlot(event.output_index, event.item);
@@ -755,7 +746,7 @@ export async function processResponsesStream<TApi extends Api>(
 		} else if (event.type === "error") {
 			throw new Error(`Error Code ${event.code}: ${event.message}` || "Unknown error");
 		} else if (event.type === "response.failed") {
-			captureResponseModel(event.response);
+			recordResponseModel(output, event.response?.model, model.id, { overwrite: true });
 			sawTerminalResponseEvent = true;
 			output.rawStopReason = event.response?.status;
 			const error = event.response?.error;

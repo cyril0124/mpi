@@ -14,8 +14,8 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
 import { formatCwdForFooter } from "../../footer.ts";
-import { compactWorkdir, padLine } from "../home/home-model.ts";
 import { homeDir } from "../home-dir.ts";
+import { compactWorkdir, padLine } from "../layout-text.ts";
 import { sanitizeTerminalText } from "../terminal-text.ts";
 
 /** Bar cells in the context meter. */
@@ -85,7 +85,7 @@ export function renderInputMeta(data: InputMetaData, width: number): InputMetaRe
 	// Coverage falls back from the full right block to the meter alone, then to
 	// nothing, so the left block keeps the most room it can.
 	const rightOptions = [git ? `${contextBadge} ${git}` : contextBadge, contextBadge, ""];
-	let left = renderInputMetaLeft(workdir, data.model, data.thinking, width);
+	let left: LeftBlock | undefined;
 	let right = "";
 	for (const candidate of rightOptions) {
 		const rightWidth = visibleWidth(candidate);
@@ -99,6 +99,8 @@ export function renderInputMeta(data: InputMetaData, width: number): InputMetaRe
 		right = candidate;
 		break;
 	}
+	// The last candidate is empty and always renders, so the loop sets `left`.
+	if (!left) return { lines: [], regions: [] };
 
 	const gap = Math.max(1, width - visibleWidth(left.text) - visibleWidth(right));
 	// A right block only survives the loop above when a cell is left between the two.
@@ -167,7 +169,9 @@ interface MetaMode {
 /**
  * The left block, in the richest layout that fits: full model name with the
  * thinking level and the workdir, then the module name, then a truncated model
- * with single-space gaps.
+ * with single-space gaps. In `strict` mode a part that does not fit fails
+ * instead of compacting; the returned `fits` and `workdirIntact` say whether the
+ * caller may use the block.
  */
 function renderInputMetaLeft(workdirPath: string, model: string, thinking: string, width: number): LeftBlock {
 	if (width <= 0) return { text: "", regions: [], fits: false, workdirIntact: false };

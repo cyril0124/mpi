@@ -14,47 +14,44 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
 
 /**
- * Paint one edge of the card.
- *
- * The top edge shares its right side between the title and the context, and the
- * mode labels anchor its left side; a narrow top drops the mode labels and the
- * context before truncating the title. The bottom edge fits both of its labels to
- * the available width, keeping the right one first.
+ * Columns one side label may keep before the title yields: enough for a mode
+ * badge or the working status, not enough to crowd the title off the edge.
  */
-export function renderEditorCardEdge(
+export const LABEL_ROOM_MAX = 16;
+
+/** Columns the two corners and the surrounding dashes reserve in an edge row. */
+const EDGE_CHROME_COLUMNS = 6;
+
+/**
+ * Top edge of the card: the mode labels on the left, the title and the context
+ * usage right-aligned. A narrow edge drops the mode labels and the context before
+ * truncating the title.
+ */
+export function renderTopEdge(
 	width: number,
-	edge: "top" | "bottom",
-	leftLabel: string,
-	rightLabel: string,
+	title: string,
+	context: string,
 	frame: (text: string) => string,
 	modeLabel = "",
 ): string {
 	// Space both corners and the surrounding dashes reserve.
-	const available = Math.max(0, width - 6);
-	const left = visibleWidth(leftLabel) === 0 ? "" : leftLabel;
-	const right = visibleWidth(rightLabel) === 0 ? "" : rightLabel;
+	const available = Math.max(0, width - EDGE_CHROME_COLUMNS);
+	const modeChunk = visibleWidth(modeLabel) > 0 ? ` ${modeLabel} ` : "";
+	const modes =
+		visibleWidth(modeChunk) + Math.min(visibleWidth(title), LABEL_ROOM_MAX) + 1 > available ? "" : modeChunk;
+	const titleBudget = available - visibleWidth(modes);
+	const contextText = visibleWidth(title) + visibleWidth(context) + 3 > titleBudget ? "" : context;
+	const contextChunk = contextText ? `${theme.fg("dim", " · ")}${contextText}` : "";
+	const label = ` ${truncateToWidth(title, Math.max(0, titleBudget - visibleWidth(contextChunk)))}${contextChunk} `;
+	const fill = width - 4 - visibleWidth(modes) - visibleWidth(label);
+	return `${frame("╭─")}${modes}${frame("─".repeat(fill))}${label}${frame("─╮")}`;
+}
 
-	if (edge === "top") {
-		const modeChunk = visibleWidth(modeLabel) > 0 ? ` ${modeLabel} ` : "";
-		const modes = visibleWidth(modeChunk) + Math.min(visibleWidth(left), 16) + 1 > available ? "" : modeChunk;
-		const titleBudget = available - visibleWidth(modes);
-		const contextText = visibleWidth(left) + visibleWidth(right) + 3 > titleBudget ? "" : right;
-		const contextChunk = contextText ? `${theme.fg("dim", " · ")}${contextText}` : "";
-		const title = truncateToWidth(left, Math.max(0, titleBudget - visibleWidth(contextChunk)));
-		const label = ` ${title}${contextChunk} `;
-		const fill = width - 4 - visibleWidth(modes) - visibleWidth(label);
-		return `${frame("╭─")}${modes}${frame("─".repeat(fill))}${label}${frame("─╮")}`;
-	}
-
-	// The bottom edge drops its left label before truncating the right one.
-	const cramped = visibleWidth(left) + visibleWidth(right) + 3 > available;
-	const leftText = cramped ? "" : left;
-	const rightText = cramped ? truncateToWidth(right, available) : right;
-	const keepRight = !leftText || visibleWidth(rightText) + Math.min(visibleWidth(leftText), 16) + 3 <= available;
-	const keptRight = keepRight ? rightText : "";
-	const leftBudget = available - (keptRight ? visibleWidth(keptRight) + 3 : 0);
-	const leftChunk = leftText ? ` ${truncateToWidth(leftText, Math.max(0, leftBudget))} ` : "";
-	const rightChunk = keptRight ? ` ${keptRight} ` : "";
-	const fill = Math.max(0, width - 4 - visibleWidth(leftChunk) - visibleWidth(rightChunk));
-	return `${frame("╰─")}${leftChunk}${frame("─".repeat(fill))}${rightChunk}${frame("─╯")}`;
+/** Bottom edge of the card: the scroll hint on the left, then the closing rule. */
+export function renderBottomEdge(width: number, hint: string, frame: (text: string) => string): string {
+	const available = Math.max(0, width - EDGE_CHROME_COLUMNS);
+	// The hint is dropped whole rather than clipped when it cannot share the edge.
+	const leftChunk = hint && visibleWidth(hint) + 3 <= available ? ` ${truncateToWidth(hint, available)} ` : "";
+	const fill = Math.max(0, width - 4 - visibleWidth(leftChunk));
+	return `${frame("╰─")}${leftChunk}${frame("─".repeat(fill))}${frame("─╯")}`;
 }

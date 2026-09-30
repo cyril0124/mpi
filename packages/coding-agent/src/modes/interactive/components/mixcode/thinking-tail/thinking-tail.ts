@@ -6,7 +6,7 @@
  */
 import { type Component, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
-import { formatSecondCount, padLine } from "../home/home-model.ts";
+import { formatSecondCount, padLine } from "../layout-text.ts";
 
 /** Body rows the tail shows under its header. */
 const TAIL_ROWS = 3;

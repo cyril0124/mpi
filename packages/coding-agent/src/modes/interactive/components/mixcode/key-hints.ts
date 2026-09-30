@@ -17,8 +17,8 @@ function formatKeyGlyphs(text: string): string {
 		.replace(/\bright\b/g, "→");
 }
 
-/** One keybinding's key, with the cursor keys as glyphs. Empty when unbound. */
-export function arrowKeyText(keybinding: Keybinding): string {
+/** Every key the binding answers, with the cursor keys as glyphs. Empty when unbound. */
+export function keyGlyphText(keybinding: Keybinding): string {
 	return formatKeyGlyphs(keyText(keybinding));
 }
 
@@ -26,7 +26,7 @@ export function arrowKeyText(keybinding: Keybinding): string {
  * The keybinding's first key only, with the cursor keys as glyphs. A hint row with
  * room for one key per action names the main one instead of every alternative.
  */
-export function primaryKeyText(keybinding: Keybinding): string {
+export function primaryKeyGlyphText(keybinding: Keybinding): string {
 	const [first] = getKeybindings().getKeys(keybinding);
 	return first === undefined ? "" : formatKeyGlyphs(formatKeyText(first));
 }

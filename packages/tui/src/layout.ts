@@ -501,7 +501,7 @@ export function getLayoutBoxesAt(frame: LayoutFrame, x: number, y: number): Layo
 	return result.map(({ box }) => box);
 }
 
-/** The box that rendered `component` in the committed frame, if it is a layout node. */
+/** The box that rendered `component` in the committed frame, if any box matched. */
 export function getComponentBox(frame: LayoutFrame, component: Component): LayoutBox | undefined {
 	const visit = (box: LayoutBox): LayoutBox | undefined => {
 		if (box.component === component) return box;

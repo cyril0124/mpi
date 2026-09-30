@@ -1,4 +1,4 @@
-# Mixcode Fork Documentation
+# MixCode Fork Documentation
 
 [中文文档](README.zh.md)
 
@@ -29,8 +29,8 @@ merge. Every place where this fork's behavior and upstream's documentation disag
   editor dock — the setting, the per-tab toggle, the row budget, and `/widgets`.
 - **[Thinking Tail Preview](thinking-tail-preview.md)**: hidden thinking as a three-row tail with
   a live-then-frozen duration, the `ui.boxedHiddenThinking` setting, and the label override.
-- **[Extension Widget Row Budget](widget-layout.md)**: how the dock caps a widget stack, and how
-  that cap differs from the per-widget line cap.
+- **[Widget Layout](widget-layout.md)**: how the dock caps a widget stack, the per-widget line
+  cap, and the `→` side panel that moves the widgets beside the chat.
 - **[Input Dock](input-dock.md)**: the rounded card around the composer, the tab name and exact
   context usage on its top edge, and the meta row that replaces pi's status footer.
 

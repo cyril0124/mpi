@@ -23,8 +23,8 @@ replaces pi's status footer.
 - The body keeps the card's side borders and holds its text one column off the left border. The
   autocomplete menu stays outside them, indented to the column that text starts in.
 - The context reading switches to the warning colour at 85% of the model's window.
-- An empty composer hints the two keys that act on it besides `@` and `/`: `← Home` leaves for
-  Agent View and `→ widgets` toggles the side panel. Both labels follow the configured keybindings,
+- An empty composer hints the two keys that act on it besides `@` and `/`: `← Home` opens
+  MixCode Home and `→ widgets` toggles the side panel. Both labels follow the configured keybindings,
   and the panel half is left out in TUI modes that do not split the chat.
 
 The card needs ten columns. Below that the plain editor is used, so a working status always has

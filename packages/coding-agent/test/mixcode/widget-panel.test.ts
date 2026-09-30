@@ -1,4 +1,4 @@
-import { type Component, Text, type TuiAltScreen } from "@earendil-works/pi-tui";
+import { type Component, Text, type TuiAltScreen, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeEach, describe, expect, it } from "vitest";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import { createChatViewport } from "../../src/modes/interactive/chat-viewport.ts";
@@ -10,24 +10,10 @@ import {
 import { createInteractiveTui, InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../../src/utils/ansi.ts";
+import { WidgetBody } from "./test-utils.ts";
 
 /** Tab id the panel wiring falls back to when there is no tab manager. */
 const SESSION_KEY = "session";
-
-/** A widget stand-in rendering a fixed set of rows. */
-class WidgetBody implements Component {
-	private readonly lines: string[];
-
-	constructor(lines: string[]) {
-		this.lines = lines;
-	}
-
-	render(_width: number): string[] {
-		return this.lines;
-	}
-
-	invalidate(): void {}
-}
 
 type PanelWiringContext = {
 	extensionWidgetsAbove: Map<string, Component>;
@@ -43,6 +29,7 @@ type PanelWiringContext = {
 		terminal: { columns: number };
 	};
 	editor: { getText: () => string };
+	editorText: () => string;
 	editorAutocompleteOpen: () => boolean;
 	notifyToast: (type: string, message: string) => void;
 	widgetPanelState: () => WidgetPanelTabState | undefined;
@@ -73,8 +60,8 @@ async function bootPanel(options: {
 	const rows = options.rows ?? 24;
 	const above = new Map<string, Component>();
 	const below = new Map<string, Component>();
-	if (options.above) above.set("todos", new WidgetBody(options.above));
-	if (options.below) below.set("fleet", new WidgetBody(options.below));
+	if (options.above) above.set("todos", WidgetBody.lines(options.above));
+	if (options.below) below.set("fleet", WidgetBody.lines(options.below));
 
 	const chatBlocks: Component[] = [];
 	for (let index = 1; index <= (options.messages ?? 2); index += 1) {
@@ -123,6 +110,7 @@ async function bootPanel(options: {
 			terminal: { columns },
 		},
 		editor: { getText: () => "" },
+		editorText: () => context.editor.getText(),
 		editorAutocompleteOpen: () => false,
 		notifyToast: (type: string, message: string) => toasts.push({ type, message }),
 	} satisfies Partial<PanelWiringContext>);
@@ -187,7 +175,7 @@ describe("widget side panel", () => {
 		const sideBySide = lines.some((line) => line.includes("message-") && line.includes("│"));
 		expect(sideBySide).toBe(true);
 		// Every painted row fits the terminal.
-		for (const line of terminalLines(frame)) expect(visibleLen(line)).toBeLessThanOrEqual(100);
+		for (const line of terminalLines(frame)) expect(visibleWidth(line)).toBeLessThanOrEqual(100);
 	});
 
 	it("Right on the empty composer toggles the panel open and closed", async () => {
@@ -229,7 +217,7 @@ describe("widget side panel", () => {
 		const lines = await frame.painted();
 		expect(lines.some((line) => line.includes("→ to close"))).toBe(false);
 		// No line overflows the narrow terminal.
-		for (const line of terminalLines(frame)) expect(visibleLen(line)).toBeLessThanOrEqual(60);
+		for (const line of terminalLines(frame)) expect(visibleWidth(line)).toBeLessThanOrEqual(60);
 	});
 
 	it("windows tall content at a clamped offset with edge markers and a pinned title", async () => {
@@ -321,16 +309,4 @@ describe("widget side panel", () => {
 
 function terminalLines(frame: Awaited<ReturnType<typeof bootPanel>>): string[] {
 	return frame.terminal.getViewport();
-}
-
-function visibleLen(line: string): number {
-	let width = 0;
-	for (const char of stripAnsi(line)) {
-		width +=
-			char.codePointAt(0) !== undefined &&
-			/[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE6F\uFF00-\uFF60\uFFE0-\uFFE6]/.test(char)
-				? 2
-				: 1;
-	}
-	return width;
 }

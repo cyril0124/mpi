@@ -5,10 +5,7 @@
  * work records a duration) into one place so event handlers do not each
  * re-derive it.
  */
-import type { TabStatus } from "./types.ts";
-
-/** Statuses that represent the agent actively working (a timer is running). */
-const WORKING_STATUSES: ReadonlySet<TabStatus> = new Set<TabStatus>(["running", "thinking"]);
+import { isWorkingStatus, type TabStatus } from "./types.ts";
 
 export interface TabTimerState {
 	status: TabStatus;
@@ -36,7 +33,7 @@ export function setTabStatus(tab: TabTimerState, status: TabStatus, options: Set
 	const now = options.now ?? new Date();
 	tab.status = status;
 
-	if (WORKING_STATUSES.has(status)) {
+	if (isWorkingStatus(status)) {
 		if (options.restart) tab.workingStartedAt = now.toISOString();
 		else tab.workingStartedAt ??= now.toISOString();
 		tab.lastWorkedDurationSeconds = undefined;

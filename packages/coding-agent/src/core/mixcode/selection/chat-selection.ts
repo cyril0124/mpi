@@ -33,12 +33,10 @@ function normalizeLines(text: string, normalize: (line: string) => string | unde
  * hint row. Only a framed line has that padding column; on a plain line the leading space is text.
  */
 function normalizeInputSelectionLine(line: string): string | undefined {
-	const visible = line.trimEnd();
-	if (isBoxBorderLine(visible)) return undefined;
-	const unframed = stripVerticalBorders(visible);
-	const body = unframed.framed ? dropPaddingColumn(unframed.text) : unframed.text.trimEnd();
-	if (unframed.framed && isFramedInputHintLine(body)) return undefined;
-	return body;
+	const frame = stripFrame(line);
+	if (!frame) return undefined;
+	if (frame.framed && isFramedInputHintLine(frame.body)) return undefined;
+	return frame.body;
 }
 
 /**
@@ -46,12 +44,24 @@ function normalizeInputSelectionLine(line: string): string | undefined {
  * panel's keys.
  */
 function normalizeNoticeSelectionLine(line: string): string | undefined {
+	const frame = stripFrame(line);
+	if (!frame) return undefined;
+	if (/\bc\/y copy\b/i.test(frame.body) || /\bEsc(?:\/q)? close\b/i.test(frame.body)) return undefined;
+	return frame.body;
+}
+
+/**
+ * Strip a framed surface's chrome from one row, leaving its body: `undefined` for a
+ * frame edge, otherwise the row without its border columns and padding column.
+ */
+function stripFrame(line: string): { body: string; framed: boolean } | undefined {
 	const visible = line.trimEnd();
 	if (isBoxBorderLine(visible)) return undefined;
 	const unframed = stripVerticalBorders(visible);
-	const body = unframed.framed ? dropPaddingColumn(unframed.text) : unframed.text.trimEnd();
-	if (/\bc\/y copy\b/i.test(body) || /\bEsc(?:\/q)? close\b/i.test(body)) return undefined;
-	return body;
+	return {
+		body: unframed.framed ? dropPaddingColumn(unframed.text) : unframed.text.trimEnd(),
+		framed: unframed.framed,
+	};
 }
 
 /** Whether a row is nothing but a frame edge. */

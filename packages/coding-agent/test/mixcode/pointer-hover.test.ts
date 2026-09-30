@@ -6,6 +6,7 @@ import {
 	paintRowBackground,
 } from "../../src/modes/interactive/components/mixcode/hover/pointer-hover.ts";
 import { initTheme, theme } from "../../src/modes/interactive/theme/theme.ts";
+import { hoverBackgroundOpen } from "./test-utils.ts";
 
 /**
  * The hover primitive: what a hovered target paints, when a highlight survives a
@@ -15,12 +16,6 @@ import { initTheme, theme } from "../../src/modes/interactive/theme/theme.ts";
 beforeEach(() => {
 	initTheme("dark");
 });
-
-function backgroundOpen(): string {
-	const painted = theme.bg("selectedBg", "\u0001");
-	const markerIndex = painted.indexOf("\u0001");
-	return markerIndex > 0 ? painted.slice(0, markerIndex) : "";
-}
 
 /** The visible text of a painted line. */
 function plain(line: string): string {
@@ -47,8 +42,8 @@ describe("hover paint", () => {
 		expect(painted[0]!.match(/\x1b\[4m/g)).toHaveLength(1);
 		expect(plain(painted[0]!.slice(underlined))).toBe("bcde");
 		expect(plain(painted[0]!.slice(0, underlined))).toBe("a");
-		expect(backgroundOpen()).not.toBe("");
-		expect(painted[0]!).toContain(backgroundOpen());
+		expect(hoverBackgroundOpen()).not.toBe("");
+		expect(painted[0]!).toContain(hoverBackgroundOpen());
 	});
 
 	it("returns the same lines when nothing is hovered and skips rows that are not painted", () => {
@@ -72,14 +67,14 @@ describe("hover paint", () => {
 		const painted = hover.paint([chip], 3)[0]!;
 		expect(plain(painted)).toBe("abc");
 		// The hover background is re-opened after the chip's own background resets.
-		expect(sliceByColumn(painted, 0, 3, true)).toContain(backgroundOpen());
+		expect(sliceByColumn(painted, 0, 3, true)).toContain(hoverBackgroundOpen());
 	});
 
 	it("cues a whole row, filled to the block width, and never an underline", () => {
 		const marked = paintRowBackground(theme.fg("accent", "row"), 10);
 		expect(plain(marked)).toBe("row       ");
 		expect(visibleWidth(marked)).toBe(10);
-		expect(marked).toContain(backgroundOpen());
+		expect(marked).toContain(hoverBackgroundOpen());
 		expect(marked).not.toContain("\x1b[4m");
 		// A blank row of a card is a bar, not a hole in the cue.
 		expect(plain(paintRowBackground("", 4))).toBe("    ");

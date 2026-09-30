@@ -20,7 +20,7 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
-import { dispatchToRegion, type MouseRegion, regionAtRow } from "../mouse-regions.ts";
+import { dispatchToRegion, type RowHitRegion, regionAtRow } from "../mouse-regions.ts";
 import { sanitizeTerminalText } from "../terminal-text.ts";
 
 /** Share of the chat viewport the inline widget block may occupy. */
@@ -126,7 +126,7 @@ export class InlineWidgetsComponent implements Component {
 	private readonly stamps = new Map<string, { component: Component; stamp: number }>();
 	private nextStamp = 1;
 	/** Row ranges of the last render, so mouse events reach the widget under them. */
-	private hits: MouseRegion[] = [];
+	private hits: RowHitRegion[] = [];
 
 	constructor(options: InlineWidgetsOptions) {
 		this.options = options;
@@ -158,7 +158,7 @@ export class InlineWidgetsComponent implements Component {
 		if (plan.bodyRows.size === 0) return [` ${inlineWidgetSummaryLine(entries.length, bodyWidth)}`];
 
 		const lines: string[] = [];
-		const hits: MouseRegion[] = [];
+		const hits: RowHitRegion[] = [];
 		for (const [index, entry] of entries.entries()) {
 			const body = plannedBodyRows(entries, plan.bodyRows, index);
 			const collapsed = body === 0;
@@ -237,6 +237,21 @@ function planInlineWidgetBlock(
 	budget: number | undefined,
 	width: number,
 ): InlineWidgetPlan {
+	const { manuallyCollapsed, pinned } = resolveManualState(state, entries);
+	const autoCollapsed = state.autoCollapsed;
+	const naturalBodies = new Map(entries.map((entry) => [entry.key, entry.lines.length]));
+	if (budget === undefined) {
+		return { bodyRows: withBodies(entries, naturalBodies, manuallyCollapsed), autoCollapsed };
+	}
+	const hidden = applyAutoHold(state, entries, budget, width, naturalBodies, manuallyCollapsed, pinned, autoCollapsed);
+	return allocateBodies(entries, budget, naturalBodies, pinned, hidden, autoCollapsed);
+}
+
+/** Manual intent of this frame, split by key; auto decisions for gone or user-owned widgets are pruned. */
+function resolveManualState(
+	state: InlineWidgetTabState,
+	entries: readonly InlineWidgetEntry[],
+): { manuallyCollapsed: Set<string>; pinned: Set<string> } {
 	const manuallyCollapsed = new Set<string>();
 	const pinned = new Set<string>();
 	for (const entry of entries) {
@@ -244,33 +259,42 @@ function planInlineWidgetBlock(
 		if (manual === true) manuallyCollapsed.add(entry.key);
 		else if (manual === false) pinned.add(entry.key);
 	}
-
-	const autoCollapsed = state.autoCollapsed;
 	// Drop decisions for widgets that are gone or that a user command now owns.
-	for (const key of [...autoCollapsed]) {
-		if (!entries.some((entry) => entry.key === key) || state.collapsed.has(key)) autoCollapsed.delete(key);
+	for (const key of [...state.autoCollapsed]) {
+		if (!entries.some((entry) => entry.key === key) || state.collapsed.has(key)) state.autoCollapsed.delete(key);
 	}
+	return { manuallyCollapsed, pinned };
+}
 
-	const naturalBody = (entry: InlineWidgetEntry): number => entry.lines.length;
-	const naturalBodies = new Map(entries.map((entry) => [entry.key, naturalBody(entry)]));
-	// A manually expanded widget keeps its body: the user asked for it, so the row
-	// budget makes the other widgets give way instead.
-	const pinnedBodies = new Map<string, number>();
+/** Body rows per widget; a key in `hiddenKeys` renders as its header alone. */
+function withBodies(
+	entries: readonly InlineWidgetEntry[],
+	bodies: ReadonlyMap<string, number>,
+	hiddenKeys: ReadonlySet<string>,
+): Map<string, number> {
+	const rows = new Map<string, number>();
 	for (const entry of entries) {
-		if (pinned.has(entry.key)) pinnedBodies.set(entry.key, naturalBody(entry));
+		rows.set(entry.key, hiddenKeys.has(entry.key) ? 0 : (bodies.get(entry.key) ?? 0));
 	}
-	// Body rows per widget; a key in `hiddenKeys` renders as its header alone.
-	const withBodies = (bodies: ReadonlyMap<string, number>, hiddenKeys: ReadonlySet<string>): Map<string, number> => {
-		const rows = new Map<string, number>();
-		for (const entry of entries) {
-			rows.set(entry.key, hiddenKeys.has(entry.key) ? 0 : (bodies.get(entry.key) ?? 0));
-		}
-		return rows;
-	};
-	const fullyExpanded = withBodies(naturalBodies, manuallyCollapsed);
+	return rows;
+}
 
-	if (budget === undefined) return { bodyRows: fullyExpanded, autoCollapsed };
-
+/**
+ * Hidden keys for this frame: manual collapse plus the auto decisions the hold
+ * heuristic keeps. Updates the tab's auto state (signature, row count, fit streak)
+ * as a side effect.
+ */
+function applyAutoHold(
+	state: InlineWidgetTabState,
+	entries: readonly InlineWidgetEntry[],
+	budget: number,
+	width: number,
+	naturalBodies: ReadonlyMap<string, number>,
+	manuallyCollapsed: ReadonlySet<string>,
+	pinned: ReadonlySet<string>,
+	autoCollapsed: Set<string>,
+): Set<string> {
+	const fullyExpanded = withBodies(entries, naturalBodies, manuallyCollapsed);
 	// Hold the previous decisions while the same widgets (keys, recency, budget,
 	// width) are on screen and the block only moved a little: that absorbs height
 	// jitter. A resize, a widget update, or a larger content change recomputes
@@ -296,7 +320,28 @@ function planInlineWidgetBlock(
 	state.autoFitStreak = fitStreak;
 	if (!hold) autoCollapsed.clear();
 	const sticky = hold ? new Set([...autoCollapsed].filter((key) => !pinned.has(key))) : new Set<string>();
-	const hidden = new Set([...manuallyCollapsed, ...sticky]);
+	return new Set([...manuallyCollapsed, ...sticky]);
+}
+
+/**
+ * Body rows for this frame. A block that fits keeps every body; otherwise whole
+ * bodies go to the highest-priority widgets and the first one that no longer fits
+ * ends the run. An empty map means even a header-only stack overflows.
+ */
+function allocateBodies(
+	entries: readonly InlineWidgetEntry[],
+	budget: number,
+	naturalBodies: ReadonlyMap<string, number>,
+	pinned: ReadonlySet<string>,
+	hidden: ReadonlySet<string>,
+	autoCollapsed: Set<string>,
+): InlineWidgetPlan {
+	// A manually expanded widget keeps its body: the user asked for it, so the row
+	// budget makes the other widgets give way instead.
+	const pinnedBodies = new Map<string, number>();
+	for (const entry of entries) {
+		if (pinned.has(entry.key)) pinnedBodies.set(entry.key, naturalBodies.get(entry.key) ?? 0);
+	}
 	// Record automatic decisions once, so a header can say it collapsed itself.
 	const finish = (bodyRows: Map<string, number>): InlineWidgetPlan => {
 		for (const entry of entries) {
@@ -307,7 +352,7 @@ function planInlineWidgetBlock(
 		return { bodyRows, autoCollapsed };
 	};
 
-	const natural = withBodies(naturalBodies, hidden);
+	const natural = withBodies(entries, naturalBodies, hidden);
 	if (inlineWidgetRows(entries, natural) <= budget) return finish(natural);
 
 	// A bare header stack that already overflows has one answer whatever the
@@ -327,11 +372,11 @@ function planInlineWidgetBlock(
 	for (const entry of byPriority) {
 		if (hidden.has(entry.key) || assigned.has(entry.key)) continue;
 		const candidate = new Map(assigned);
-		candidate.set(entry.key, naturalBody(entry));
-		if (inlineWidgetRows(entries, withBodies(candidate, hidden)) > budget) break;
-		assigned.set(entry.key, naturalBody(entry));
+		candidate.set(entry.key, naturalBodies.get(entry.key) ?? 0);
+		if (inlineWidgetRows(entries, withBodies(entries, candidate, hidden)) > budget) break;
+		assigned.set(entry.key, naturalBodies.get(entry.key) ?? 0);
 	}
-	return finish(withBodies(assigned, hidden));
+	return finish(withBodies(entries, assigned, hidden));
 }
 
 /** Higher value = kept expanded longer: most recently updated, then registration order. */

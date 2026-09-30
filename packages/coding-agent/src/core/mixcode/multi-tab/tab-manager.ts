@@ -190,12 +190,7 @@ export class TabManager {
 			sessionManager,
 			sessionStartEvent: { type: "session_start", reason: "new" },
 		});
-		const title = this.resolveTabTitle(options.title);
-		const tab = this.attachTab(title, runtime);
-		this.setActive(tab);
-		this.notifyLayoutChanged();
-		this.onTabsChanged();
-		return tab;
+		return this.addRuntime(runtime, options.title);
 	}
 
 	/** Open an existing session file in a new tab (`/restore-workspace`). */
@@ -209,8 +204,16 @@ export class TabManager {
 			sessionManager,
 			sessionStartEvent: { type: "session_start", reason: "resume" },
 		});
-		const title = this.resolveTabTitle(options.title);
-		const tab = this.attachTab(title, runtime);
+		return this.addRuntime(runtime, options.title);
+	}
+
+	/**
+	 * Add a freshly created runtime as the new active tab: resolve its title,
+	 * attach it, focus it and notify the layout listeners.
+	 */
+	private addRuntime(runtime: AgentSessionRuntime, title: string | undefined): AgentTab {
+		const resolved = this.resolveTabTitle(title);
+		const tab = this.attachTab(resolved, runtime);
 		this.setActive(tab);
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
@@ -276,6 +279,10 @@ export class TabManager {
 		this.onTabsChanged();
 	}
 
+	/**
+	 * Stash a tab's editor text. An unknown id is ignored: a draft save can race
+	 * a tab closing, and losing the draft of a gone tab is harmless.
+	 */
 	setDraft(id: string, text: string): void {
 		const tab = this.get(id);
 		if (tab) tab.draftInput = text;
@@ -310,7 +317,11 @@ export class TabManager {
 		this.onTabsChanged();
 	}
 
-	/** Force a tab's exact title, bypassing the duplicate check (restore normalization). */
+	/**
+	 * Force a tab's exact title, bypassing the duplicate check (restore
+	 * normalization). An unknown id is ignored: the restore pass also names tabs
+	 * that have since closed.
+	 */
 	restoreTitle(id: string, title: string): void {
 		const tab = this.get(id);
 		if (!tab) return;
@@ -321,7 +332,10 @@ export class TabManager {
 		this.onTabsChanged();
 	}
 
-	/** Set the unread completion badge (restored from persisted state). */
+	/**
+	 * Set the unread completion badge (restored from persisted state). An unknown
+	 * id is ignored: badges restore from state written before some tabs closed.
+	 */
 	setUnread(id: string, unread: boolean): void {
 		const tab = this.get(id);
 		if (!tab) return;
