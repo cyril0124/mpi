@@ -52,6 +52,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "group-colored-tabs", description: "Sort agent tabs by color" },
 	{ name: "mark-done", description: "Flag the active tab as finished" },
 	{ name: "vim", description: "Enter Vim mode for transcript navigation" },
+	{ name: "toggle-zen-mode", description: "Toggle Zen mode (hide the tab bar; Tab stops switching agents)" },
 	{ name: "toggle-inline-widgets", description: "Show extension widgets in the chat tail or in the dock" },
 	{ name: "widgets", description: "Expand or collapse widgets", argumentHint: "[expand|collapse|toggle] [key]" },
 	{ name: "save-workspace", description: "Save the open tab layout", argumentHint: "[name]" },

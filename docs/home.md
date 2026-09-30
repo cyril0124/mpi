@@ -11,7 +11,7 @@ in the tab cycle as a pseudo-tab (`home`) that owns no session and no runtime.
 | From | Action | Result |
 | --- | --- | --- |
 | An agent tab | `left` with an empty composer | Home opens with that agent selected |
-| Any tab | `tab` / `shift+tab` | Cycles `[Home, ...agents]` and wraps |
+| Any tab | `tab` / `shift+tab` | Cycles `[Home, ...agents]` and wraps, unless the focused agent is in [zen mode](zen-mode.md) |
 | Any tab | Click the `MixCode Home` chip | Home opens |
 
 `left` does nothing while the composer holds text: the key belongs to the editor then, so cursor

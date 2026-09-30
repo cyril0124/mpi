@@ -278,6 +278,8 @@ import {
 import { type EditorCardChrome, MixcodePromptEditor } from "./components/mixcode/input-dock/prompt-editor.ts";
 import { keyGlyphText, primaryKeyGlyphText } from "./components/mixcode/key-hints.ts";
 import { TabBar, type TabBarModel } from "./components/mixcode/multi-tab/tab-bar.ts";
+import { bindWorkingIndicatorRedraw } from "./components/mixcode/multi-tab/tab-glyphs.ts";
+import { zenStatusMarkers } from "./components/mixcode/multi-tab/zen-status.ts";
 import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
 import {
 	SETTINGS_PANEL_HEIGHT_PERCENT,
@@ -717,6 +719,8 @@ export class InteractiveMode {
 		| undefined;
 	/** Stopper for the interval that repaints the active tab's title shimmer. */
 	private stopTabShimmerRedraw: (() => void) | undefined;
+	/** Stopper for the interval that animates the working indicators drawn outside the editor. */
+	private stopWorkingIndicatorRedraw: (() => void) | undefined;
 	/** Workdir that scopes the persisted open-tab layout. */
 	private readonly tabsWorkdir: string;
 	/** Vim-mode state used when no tab manager exists (single-session fallback). */
@@ -1358,6 +1362,12 @@ export class InteractiveMode {
 			this.stopTabShimmerRedraw = bindActiveTabShimmerRedraw(
 				() => this.ui.requestRender(),
 				() => (this.homeSelection.active ? undefined : this.tabManager?.activeTab()?.activatedAt),
+			);
+			// A working indicator drawn outside the editor changes with nothing but the
+			// clock, so it brings its own repaint loop.
+			this.stopWorkingIndicatorRedraw = bindWorkingIndicatorRedraw(
+				() => this.ui.requestRender(),
+				() => this.workingIndicatorAnimating(),
 			);
 		}
 		if (this.mixcodeSettingsError) {
@@ -2495,6 +2505,7 @@ export class InteractiveMode {
 	private getTabBarModel(): TabBarModel {
 		const manager = this.tabManager;
 		if (!manager) return { tabs: [], activeId: "" };
+		const zenAgent = this.zenHidesTabBar() ? manager.activeTab() : undefined;
 		const activeId = this.homeSelection.active ? HOME_TAB_ID : manager.getActive().id;
 		return {
 			tabs: manager.list().map((tab) => ({
@@ -2515,6 +2526,9 @@ export class InteractiveMode {
 			// The bar may wrap, but it must not push the transcript out of the
 			// viewport; the surplus collapses into the overflow counts.
 			maxRows: Math.max(1, Math.floor(this.ui.terminal.rows * TAB_BAR_MAX_ROWS_SHARE)),
+			// Home is a different surface and brings the whole bar back, so zen only
+			// applies to the agent whose chrome it hides.
+			...(zenAgent ? { zen: { statusMarkers: zenStatusMarkers(manager.list(), zenAgent.id) } } : {}),
 		};
 	}
 
@@ -2530,6 +2544,41 @@ export class InteractiveMode {
 			return;
 		}
 		void this.activateTabById(nextId);
+	}
+
+	/**
+	 * True while a surface outside the editor shows a working indicator that has to
+	 * keep moving: Home lists every tab, and zen shows a dot for each agent the bar
+	 * no longer shows. The focused tab's own indicator is a loader.
+	 */
+	private workingIndicatorAnimating(): boolean {
+		const manager = this.tabManager;
+		if (!manager) return false;
+		const tabs = manager.list();
+		if (this.homeSelection.active) return tabs.some((tab) => isWorkingStatus(tab.status));
+		if (!this.zenHidesTabBar()) return false;
+		const activeId = manager.getActive().id;
+		return tabs.some((tab) => tab.id !== activeId && isWorkingStatus(tab.status));
+	}
+
+	/**
+	 * `Tab` / `Shift+Tab`. With zen on the bar is hidden, so the surface that would
+	 * show where focus went is gone and the key is swallowed; switching stays
+	 * deliberate. Consumed either way, so the editor never inserts a tab character.
+	 */
+	private handleTabCycle(delta: number): boolean {
+		if (!this.zenHidesTabBar()) this.cycleTab(delta);
+		return true;
+	}
+
+	/**
+	 * True while the focused agent's zen mode owns the tab bar. Home shows the bar
+	 * again, so it navigates normally there.
+	 */
+	private zenHidesTabBar(): boolean {
+		const manager = this.tabManager;
+		if (!manager || this.homeSelection.active) return false;
+		return manager.activeTab()?.zenMode === true;
 	}
 
 	/** Focus an existing agent tab, restoring its draft and transcript. */
@@ -2772,6 +2821,8 @@ export class InteractiveMode {
 			contextText: home ? "" : exactContextUsageText(tokens, contextWindow),
 			contextWarning: tokens !== undefined && contextWindow > 0 && tokens >= contextWindow * CONTEXT_WARNING_RATIO,
 			vimMode: this.vimTabState().active,
+			// The badge belongs to the agent surface: Home shows the tab bar again.
+			zenMode: this.zenHidesTabBar(),
 			shellMode: this.isBashMode,
 		};
 	}
@@ -4536,6 +4587,17 @@ export class InteractiveMode {
 		this.refreshInlineWidgets();
 	}
 
+	/** `/toggle-zen-mode`: hide or restore the focused agent's tab-bar chrome. */
+	private handleToggleZenMode(): void {
+		const manager = this.tabManager;
+		const tab = manager?.activeTab();
+		if (!manager || !tab) {
+			this.showWarning("Zen mode needs an agent tab");
+			return;
+		}
+		manager.toggleZenMode(tab.id);
+	}
+
 	/** Widget keys registered in the active tab, above-editor widgets first. */
 	private getWidgetKeys(): string[] {
 		return [...this.extensionWidgetsAbove.keys(), ...this.extensionWidgetsBelow.keys()];
@@ -5523,8 +5585,8 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
 		this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
 		this.defaultEditor.onAction("app.session.new", () => this.handleClearCommand());
-		this.defaultEditor.onAction("app.tab.next", () => this.cycleTab(1));
-		this.defaultEditor.onAction("app.tab.previous", () => this.cycleTab(-1));
+		this.defaultEditor.onAction("app.tab.next", () => this.handleTabCycle(1));
+		this.defaultEditor.onAction("app.tab.previous", () => this.handleTabCycle(-1));
 		// Home keys decline (return false) off Home so the composer keeps them.
 		this.defaultEditor.onAction("app.home.selectPrevious", () => this.handleHomeSelect(-1));
 		this.defaultEditor.onAction("app.home.selectNext", () => this.handleHomeSelect(1));
@@ -5802,6 +5864,11 @@ export class InteractiveMode {
 			if (text === "/vim") {
 				this.editor.setText("");
 				this.enterActiveTabVimMode();
+				return;
+			}
+			if (text === "/toggle-zen-mode") {
+				this.editor.setText("");
+				this.handleToggleZenMode();
 				return;
 			}
 			if (text === "/toggle-inline-widgets") {
@@ -9997,6 +10064,8 @@ export class InteractiveMode {
 	stop(fullscreenExitOutput = this.settingsManager.getFullscreenExitOutput()): void {
 		this.stopTabShimmerRedraw?.();
 		this.stopTabShimmerRedraw = undefined;
+		this.stopWorkingIndicatorRedraw?.();
+		this.stopWorkingIndicatorRedraw = undefined;
 		this.disposeActiveSelector();
 		if (this.settingsManager.getShowTerminalProgress()) {
 			this.ui.terminal.setProgress(false);

@@ -14,9 +14,9 @@ replaces pi's status footer.
 ```
 
 - The top edge carries the working status while a turn runs, the mode badges (`[VIM]`, `[SHELL]`,
-  and `↑ N` when editor rows are scrolled out of view), the tab name, and the exact context usage
-  (`12.3k/200k`, or `?/200k` while the count is unknown). A turn in flight and a mode badge share
-  the edge while they fit.
+  `[ZEN]`, and `↑ N` when editor rows are scrolled out of view), the tab name, and the exact context
+  usage (`12.3k/200k`, or `?/200k` while the count is unknown). A turn in flight and a mode badge
+  share the edge while they fit.
 - The bottom edge carries `↓ N more` when the draft has rows below the visible window.
 - The frame takes the editor's own border colour, so vim mode, shell mode and the thinking level
   keep the colours they had.

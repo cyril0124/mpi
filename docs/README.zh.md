@@ -9,6 +9,7 @@
 - **[Agent 标签页](tabs.zh.md)**：一个终端里并行运行多个 agent —— 键位、命令、标签栏状态、颜色、持久化、启动恢复。
 - **[命令面板与退出确认](command-palette.zh.md)**：`ctrl+p` 模糊搜索并列出所有可执行命令，`ctrl+q` 在结束会话前先询问。
 - **[Vim 模式](vim-mode.zh.md)**：全屏对话区的模态导航（进入方式、按键、按标签页的行为、全屏前提）。
+- **[Zen 专注模式](zen-mode.zh.md)**：`/toggle-zen-mode` 隐藏标签栏标签块，只留分隔线继续显示其他 agent 的状态圆点，并让 `tab`/`shift+tab` 不再切换标签页。
 - **[窗口化对话渲染](windowed-transcript.zh.md)**：全屏对话区如何只渲染可见块、保持滚动范围正确，以及鼠标交互行为。
 - **[鼠标拖拽选中](mouse-selection.zh.md)**：全屏拖动可以选中哪些区域、复制出的文本去掉了什么、选区如何着色。
 - **[MixCode Home](home.zh.md)**：列出所有已打开 agent 的起始页面，展示所选 agent 的对话预览，并可新建或恢复会话。

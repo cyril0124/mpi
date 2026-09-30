@@ -31,6 +31,8 @@ export interface EditorCardChrome {
 	/** Paint the context text as a warning: usage is close to the model's limit. */
 	contextWarning?: boolean;
 	vimMode?: boolean;
+	/** Zen focus mode: the tab bar is hidden behind this agent. */
+	zenMode?: boolean;
 	/** The draft starts with `!`, so it runs as a shell command. */
 	shellMode?: boolean;
 }
@@ -162,11 +164,12 @@ export class MixcodePromptEditor extends CustomEditor {
 		};
 	}
 
-	/** Mode badges for the top edge: vim or shell mode, and the hidden-row count. */
+	/** Mode badges for the top edge: vim, shell or zen mode, and the hidden-row count. */
 	private badgeText(chrome: EditorCardChrome): string {
 		const badges: string[] = [];
 		if (chrome.vimMode) badges.push(theme.fg("borderAccent", "[VIM]"));
 		else if (chrome.shellMode) badges.push(theme.fg("bashMode", "[SHELL]"));
+		if (chrome.zenMode) badges.push(theme.fg("dim", "[ZEN]"));
 		if (this.hiddenAbove > 0) badges.push(theme.fg("dim", `↑ ${this.hiddenAbove}`));
 		return badges.join(" ");
 	}

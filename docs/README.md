@@ -16,6 +16,8 @@ merge. Every place where this fork's behavior and upstream's documentation disag
   command with fuzzy search, and `ctrl+q` asks before ending the session.
 - **[Vim Mode](vim-mode.md)**: modal transcript navigation for the fullscreen transcript (entry,
   keys, per-tab behaviour, fullscreen requirement).
+- **[Zen Mode](zen-mode.md)**: `/toggle-zen-mode` hides the tab bar's chips, leaves the separator
+  carrying the other agents' status dots, and takes `tab`/`shift+tab` out of tab switching.
 - **[Windowed Transcript](windowed-transcript.md)**: how the fullscreen transcript renders only
   the visible blocks, keeps the scroll range correct, and behaves under mouse input.
 - **[Mouse Selection](mouse-selection.md)**: which surfaces a fullscreen drag may select, what the

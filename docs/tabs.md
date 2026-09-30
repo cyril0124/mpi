@@ -10,8 +10,8 @@ single runtime host, so watching N agents there means N terminals.
 
 | Action | Keys |
 | --- | --- |
-| Next tab | `tab`, `ctrl+shift+right` |
-| Previous tab | `shift+tab`, `ctrl+shift+left` |
+| Next tab | `tab`, `ctrl+shift+right` (no-op while the focused agent is in [zen mode](zen-mode.md)) |
+| Previous tab | `shift+tab`, `ctrl+shift+left` (same exception) |
 | New tab | none — use `/new-session` |
 | Close tab | none — use `/close-session` |
 
@@ -34,6 +34,7 @@ moved the thinking cycle to `alt+t`. See [Upstream Drift](upstream-drift.md).
 | `/color [name\|clear]` | Set the current tab's chip color; without an argument or with `clear` the color is removed. |
 | `/group-colored-tabs` | Sort tabs so colored ones lead, aggregated by color in palette order. |
 | `/mark-done` | Flag the current tab as finished in the tab bar. |
+| `/toggle-zen-mode` | Hide the focused tab's tab-bar chips so the transcript gets the row; the separator stays and reports the other agents. `tab` and `shift+tab` stop switching while it is on. See [Zen Mode](zen-mode.md). |
 | `/save-workspace <name>` | Save the current tab layout under a name. |
 | `/restore-workspace <name>` | Reopen a saved layout, closing tabs that are not part of it. |
 | `/delete-workspace <name>` | Delete a saved tab layout. |
@@ -90,6 +91,10 @@ A highlight wave sweeps across the active tab's title: it reaches the right edge
 2 s, then the title rests for 1 s before the next pass. The wave eases into each turnaround and
 keeps the chip's own background, foreground, and focus mark; a colored chip inverts the lit cells
 instead of recoloring them, because theme foregrounds have no contrast over a chip color.
+
+While the focused agent is in [zen mode](zen-mode.md) the bar renders no chips. One separator row
+stays and carries a dot per non-focused tab that is working, finished, or failed, so the other
+agents are still visible without the row the chips took.
 
 ## Colors
 

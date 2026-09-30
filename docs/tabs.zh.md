@@ -8,8 +8,8 @@
 
 | 动作 | 按键 |
 | --- | --- |
-| 下一个标签页 | `tab`、`ctrl+shift+right` |
-| 上一个标签页 | `shift+tab`、`ctrl+shift+left` |
+| 下一个标签页 | `tab`、`ctrl+shift+right`（当前 agent 处于 [zen 专注模式](zen-mode.zh.md) 时不生效） |
+| 上一个标签页 | `shift+tab`、`ctrl+shift+left`（同样例外） |
 | 新建标签页 | 无 —— 用 `/new-session` |
 | 关闭标签页 | 无 —— 用 `/close-session` |
 
@@ -31,6 +31,7 @@
 | `/color [name\|clear]` | 设置当前标签页底色；不带参数或传 `clear` 则清除。 |
 | `/group-colored-tabs` | 重排标签页：有颜色的排前面，按调色板顺序聚合。 |
 | `/mark-done` | 在标签栏把当前标签页标记为已完成。 |
+| `/toggle-zen-mode` | 隐藏当前聚焦标签页的标签块，把这行让给对话区；分隔线保留并汇报其他 agent。开启期间 `tab` 与 `shift+tab` 不再切换。见 [Zen 专注模式](zen-mode.zh.md)。 |
 | `/save-workspace <name>` | 把当前标签页布局存成命名工作区。 |
 | `/restore-workspace <name>` | 恢复命名工作区，关闭不属于该布局的标签页。 |
 | `/delete-workspace <name>` | 删除命名工作区。 |
@@ -76,6 +77,8 @@
 字形颜色取自主题：`error` 用错误色，未读标签页用成功色，`running`/`thinking` 用强调色。完成或未读的标签页保持强调（标题加粗），直到被聚焦。当前标签页带前置焦点标记 `▌`，有颜色时用 `▐`。
 
 当前标签页的标题上有一道高亮波：2 秒内扫到右端再折返，随后标题静止 1 秒，再开始下一轮。波在折返处减速，chip 自身的背景、前景和焦点标记保持不变；有颜色的 chip 以反色点亮，因为主题前景色在 chip 颜色上没有对比度。
+
+聚焦的 agent 处于 [zen 专注模式](zen-mode.zh.md) 时，标签栏不渲染任何 chip。只保留一行分隔线，其上每个未聚焦标签页只要处于运行中、已完成或出错就画一个圆点，因此其他 agent 依然可见，而标签块占用的那一行还给了对话区。
 
 ## 颜色
 

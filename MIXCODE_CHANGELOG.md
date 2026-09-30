@@ -18,6 +18,19 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- `/toggle-zen-mode` (also in the `ctrl+p` palette) hides the tab bar's chips and leaves their row to
+  the transcript. The separator under the bar stays and takes over what the chips still reported: one
+  dot per other agent with something to report, in tab order — an accent braille frame while a tab
+  works, a success dot for a tab that finished unopened, an error dot for a failed turn. Past five
+  dots they collapse into `[+N]`, and a row too narrow for that falls back to a plain rule instead of
+  truncating. The card's top edge gains a `[ZEN]` badge. See [Zen Mode](docs/zen-mode.md).
+- `tab`/`shift+tab` stop switching agents while an agent tab is in zen, because the surface that
+  shows where focus went is exactly what zen hides; `/tab <index|title>` still switches, and chip
+  clicks resume once zen is off.
+  Zen follows focus like vim: at most one tab holds it, a tab opened or focused while another holds it
+  takes it over, Home puts the full bar back, and nothing about it is persisted, so a session
+  restored at startup starts with the bar. See [Zen Mode](docs/zen-mode.md).
+
 - `/workdir [path]` moves the active tab onto another working directory, and without a path it opens
   a directory picker over the composer. The session keeps running: the transcript is unchanged, the
   agent's cwd-bound services are rebuilt in the new directory, and the session header records it so a
@@ -40,7 +53,7 @@ point `## [Unreleased]` at the new tag.
   points clamp to its body cells and releasing copies the text ANSI-clean without the frame, so a
   selection never crosses the chat/panel split in either direction.
 - Input dock: the composer is framed by a rounded card whose top edge carries the working status,
-  the mode badges (`[VIM]`, `[SHELL]`, `↑ N`), the tab name and the exact context usage
+  the mode badges (`[VIM]`, `[SHELL]`, `[ZEN]`, `↑ N`), the tab name and the exact context usage
   (`12.3k/200k`), and whose bottom edge carries `↓ N more`. Under it sits one meta row with the
   model, the thinking level and the workdir on the left and an eight-cell context meter plus the git
   branch on the right, followed by the extension status row. Both replace pi's flat editor rules and
@@ -302,6 +315,13 @@ point `## [Unreleased]` at the new tag.
   UUID, so two writers of one session file no longer collide.
 
 ### Fixed
+
+- MixCode Home's working indicators only moved when something else repainted the frame: a tab that
+  worked without emitting session events (a blocked or long-running tool, a stalled model response)
+  left the roster card's spinner and its `running <n>s` counter frozen at whatever second they last
+  painted. A repaint loop at the indicator's own frame cadence now runs while Home shows a working
+  tab, and the same loop covers the zen separator's working dot for another agent; the focused tab's
+  own indicator is a loader that already repainted itself.
 
 - A clipped row lost its background fill from the ellipsis on. `truncateToWidth` ends a cut line with
   a full SGR reset and puts one before its ellipsis, so a row painted with `theme.bg` fell back to

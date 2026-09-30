@@ -19,6 +19,8 @@ import { isWorkingStatus, type TabColorName, type TabStatus } from "../../../../
 import { theme } from "../../../theme/theme.ts";
 import { type HoverTarget, PointerHover } from "../hover/pointer-hover.ts";
 import { applyActiveTabShimmer, COLORED_SHIMMER_STYLES, THEME_SHIMMER_STYLES } from "../tab-shimmer.ts";
+import { RULE_CHAR, TAB_STATUS_GLYPHS, tabStatusGlyph } from "./tab-glyphs.ts";
+import { renderZenStatusSeparator, type ZenStatusMarker } from "./zen-status.ts";
 
 export interface TabBarItem {
 	id: string;
@@ -48,6 +50,11 @@ export interface TabBarModel {
 	rulePainter?: (text: string) => string;
 	/** Row cap for the bar; the rest of the tabs collapse into overflow counts. */
 	maxRows?: number;
+	/**
+	 * Zen focus mode: the chips are hidden and the separator reports the other
+	 * agents' statuses instead. Absent while the bar shows its chips.
+	 */
+	zen?: { statusMarkers: readonly ZenStatusMarker[] };
 }
 
 /** Visible cells of one chip in the last rendered frame, in zero-based coordinates. */
@@ -58,18 +65,9 @@ interface ChipRect {
 	end: number;
 }
 
-const GLYPHS: Record<TabStatus, string> = {
-	idle: "-",
-	running: "\u25cf",
-	thinking: "\u25cf",
-	error: "x",
-	done: "\u2713",
-};
-
 /** Marks the active chip by replacing its leading space. */
 const FOCUS_MARK = "\u258c";
 const FOCUS_MARK_INNER = "\u2590";
-const RULE_CHAR = "\u2500";
 const ELLIPSIS = "\u2026";
 /** A pinned Home chip is abbreviated once it would take more than this share of the row. */
 const HOME_PIN_FULL_MAX_RATIO = 0.15;
@@ -121,12 +119,6 @@ export function tabColorPaint(color: TabColorName): (text: string) => string {
 	return paint;
 }
 
-/** Status glyph shared by the tab chips and the Home roster cards. */
-export function tabStatusGlyph(status: TabStatus, unread: boolean): string {
-	if (unread && status !== "error") return GLYPHS.done;
-	return GLYPHS[status];
-}
-
 function glyphPainter(item: TabBarItem): ((text: string) => string) | undefined {
 	if (item.status === "error") return (text) => theme.fg("error", text);
 	if (item.unread) return (text) => theme.fg("success", text);
@@ -174,7 +166,7 @@ function chipTitle(item: TabBarItem, active: boolean, completed: boolean): strin
 function renderChip(item: TabBarItem, active: boolean, markPainter: (text: string) => string): string {
 	const glyph = tabStatusGlyph(item.status, item.unread);
 	const glyphPaint = glyphPainter(item);
-	const completed = glyph === GLYPHS.done;
+	const completed = glyph === TAB_STATUS_GLYPHS.done;
 	const body = ` ${glyph} ${chipTitle(item, active, completed)} `;
 
 	if (item.color) {
@@ -324,8 +316,12 @@ export class TabBar implements Component {
 		if (width <= 0) return [];
 		const model = this.getModel();
 		this.hoverRevision = model.activeId;
-		if (model.tabs.length === 0 && !model.home) return [];
 		const markPainter = model.rulePainter ?? ((text: string) => theme.fg("borderMuted", text));
+		// Zen keeps one row where the chips were: the separator, carrying what the
+		// chips still had to report. Nothing is hit-testable, so a click falls
+		// through to whatever occupies the freed rows.
+		if (model.zen) return [renderZenStatusSeparator(width, model.zen.statusMarkers, markPainter)];
+		if (model.tabs.length === 0 && !model.home) return [];
 		const chips: Chip[] = model.tabs.map((item) => ({
 			id: item.id,
 			text: renderChip(item, item.id === model.activeId, markPainter),

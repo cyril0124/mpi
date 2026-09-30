@@ -51,6 +51,11 @@ export interface AgentTab {
 	draftInput: string;
 	/** Vim-mode modal state; at most one tab is active at a time. */
 	vim: VimTabState;
+	/**
+	 * Zen focus mode: the tab bar hides and only its separator stays. Per-tab but
+	 * at most one tab owns it, and it follows focus like vim; never persisted.
+	 */
+	zenMode: boolean;
 	/** Transient toast shown over this tab's transcript; at most one at a time. */
 	toast?: ToastNotification;
 
@@ -165,6 +170,7 @@ export class TabManager {
 		if (tab.status === "done") tab.status = "idle";
 		// Vim mode is a per-tab modal surface and follows focus to the tab being shown.
 		if (previous && previous !== tab) transferVimMode(previous.vim, tab.vim);
+		if (previous) this.transferZenMode(previous, tab);
 		this.noteRecent(id);
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
@@ -209,12 +215,15 @@ export class TabManager {
 
 	/**
 	 * Add a freshly created runtime as the new active tab: resolve its title,
-	 * attach it, focus it and notify the layout listeners.
+	 * attach it, focus it, hand it the chrome mode the tab being left held, and
+	 * notify the layout listeners.
 	 */
 	private addRuntime(runtime: AgentSessionRuntime, title: string | undefined): AgentTab {
+		const previous = this.getActive();
 		const resolved = this.resolveTabTitle(title);
 		const tab = this.attachTab(resolved, runtime);
 		this.setActive(tab);
+		this.transferZenMode(previous, tab);
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
 		return tab;
@@ -305,6 +314,19 @@ export class TabManager {
 		this.onTabsChanged();
 	}
 
+	/** Flip a tab's zen focus mode and repaint. Returns the new value. */
+	toggleZenMode(id: string): boolean {
+		const tab = this.get(id);
+		if (!tab) throw new Error(`Unknown tab: ${id}`);
+		const enabled = !tab.zenMode;
+		// Zen owns the whole chrome, so the mutator keeps the at-most-one-holder
+		// invariant itself rather than trusting every caller to pass the focused tab.
+		for (const other of this.tabs) other.zenMode = false;
+		tab.zenMode = enabled;
+		this.onTabsChanged();
+		return tab.zenMode;
+	}
+
 	/** Flag a tab as finished: `done` status plus the unread badge. */
 	markDone(id: string): void {
 		const tab = this.get(id);
@@ -364,6 +386,18 @@ export class TabManager {
 		tab.activatedAt = Date.now();
 	}
 
+	/**
+	 * Zen owns the whole chrome rather than the tab, so it follows focus: the tab
+	 * being left drops it and the tab now in front takes it. `activate`, `createTab`
+	 * and `openSessionTab` call it; `closeTab` deliberately does not, so closing the
+	 * holder ends zen instead of handing it to the successor.
+	 */
+	private transferZenMode(previous: AgentTab, next: AgentTab): void {
+		if (previous === next || !previous.zenMode) return;
+		previous.zenMode = false;
+		next.zenMode = true;
+	}
+
 	private noteRecent(id: string): void {
 		const index = this.recentIds.indexOf(id);
 		if (index >= 0) this.recentIds.splice(index, 1);
@@ -396,6 +430,7 @@ export class TabManager {
 			unread: false,
 			draftInput: "",
 			vim: createVimTabState(),
+			zenMode: false,
 			toast: undefined,
 			runtime,
 			unsubscribe: () => {},

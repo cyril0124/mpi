@@ -9,7 +9,7 @@ MixCode Home 是本 fork 的起始页面：一页列出所有已打开的 agent 
 | 当前位置 | 操作 | 结果 |
 | --- | --- | --- |
 | agent 标签页 | 输入框为空时按 `left` | 进入 Home，并选中刚才所在的 agent |
-| 任意位置 | `tab` / `shift+tab` | 在 `[Home, ...agent 标签页]` 中循环，可回绕 |
+| 任意位置 | `tab` / `shift+tab` | 在 `[Home, ...agent 标签页]` 中循环，可回绕；但当前 agent 处于 [zen 专注模式](zen-mode.zh.md) 时不生效 |
 | 任意位置 | 点击 `MixCode Home` 标签块 | 进入 Home |
 
 输入框中有内容时 `left` 不会切页：这时该键属于编辑器，光标移动照常工作。

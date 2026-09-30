@@ -17,7 +17,8 @@ import { visibleRosterIndices } from "../../../../../core/mixcode/home/home-stat
 import { isWorkingStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
 import { theme } from "../../../theme/theme.ts";
 import { compactWorkdir, padLine, windowStart } from "../layout-text.ts";
-import { tabColorPaint, tabStatusGlyph } from "../multi-tab/tab-bar.ts";
+import { tabColorPaint } from "../multi-tab/tab-bar.ts";
+import { tabStatusGlyph, WORKING_INDICATOR_FRAMES, WORKING_INDICATOR_INTERVAL_MS } from "../multi-tab/tab-glyphs.ts";
 import { paintBackground } from "../panel.ts";
 import {
 	AGENT_CARD_HEIGHT,
@@ -69,8 +70,6 @@ interface ActionRegion {
 	y: number;
 }
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const SPINNER_INTERVAL_MS = 80;
 /** Action button labels; the compact form is used when the full one does not fit. */
 const NEW_SESSION_LABEL = " + New session ";
 const NEW_SESSION_COMPACT_LABEL = " + New ";
@@ -661,8 +660,9 @@ function spinnerFrame(card: HomeCard, now: number): string {
 	const start = card.workingStartedAt ? Date.parse(card.workingStartedAt) : Number.NaN;
 	// Without a start stamp the spinner still animates off wall-clock time.
 	const elapsed = Number.isFinite(start) ? Math.max(0, now - start) : now;
-	const frame = SPINNER_FRAMES[Math.floor(elapsed / SPINNER_INTERVAL_MS) % SPINNER_FRAMES.length];
-	return theme.fg("accent", frame ?? SPINNER_FRAMES[0]!);
+	const frame =
+		WORKING_INDICATOR_FRAMES[Math.floor(elapsed / WORKING_INDICATOR_INTERVAL_MS) % WORKING_INDICATOR_FRAMES.length];
+	return theme.fg("accent", frame ?? WORKING_INDICATOR_FRAMES[0]!);
 }
 
 /** `model · context · recency`, dropping the recency when the tab has never worked. */
