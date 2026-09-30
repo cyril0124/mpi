@@ -854,6 +854,8 @@ export class InteractiveMode {
 	private readonly followUpStates = new Map<string, FollowUpQueueState>();
 	/** True from the moment a manual compact is requested until compaction_end. */
 	private compactionClaimed = false;
+	/** Manual compaction model labels belong to their originating sessions. */
+	private readonly compactionModelRefs = new Map<AgentSession, string>();
 	/** Deadline of the armed queue-edit choice (s/f) after the dequeue key; 0 = unarmed. */
 	private queueEditArmDeadline = 0;
 	/** Timer that drops the choice toast when the arm window ends. */
@@ -6388,9 +6390,9 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/compact" || text.startsWith("/compact ")) {
-				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
+				const args = text.startsWith("/compact ") ? text.slice(9).trim() : "";
 				this.editor.setText("");
-				await this.handleCompactCommand(customInstructions);
+				await this.handleCompactCommand(args);
 				return;
 			}
 			if (text === "/reload") {
@@ -6764,13 +6766,16 @@ export class InteractiveMode {
 				this.defaultEditor.onEscape = () => {
 					this.session.abortCompaction();
 				};
-				this.showStatusIndicator(new CompactionStatusIndicator(this.ui, event.reason));
+				this.showStatusIndicator(
+					new CompactionStatusIndicator(this.ui, event.reason, this.compactionModelRefs.get(this.session)),
+				);
 				this.ui.requestRender();
 				break;
 			}
 
 			case "compaction_end": {
 				this.compactionClaimed = false;
+				this.compactionModelRefs.delete(this.session);
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
@@ -6867,7 +6872,9 @@ export class InteractiveMode {
 				if (event.source === "branchSummary") {
 					this.showStatusIndicator(new BranchSummaryStatusIndicator(this.ui));
 				} else {
-					this.showStatusIndicator(new CompactionStatusIndicator(this.ui, event.reason));
+					this.showStatusIndicator(
+						new CompactionStatusIndicator(this.ui, event.reason, this.compactionModelRefs.get(this.session)),
+					);
 				}
 				this.ui.requestRender();
 				break;
@@ -10519,17 +10526,32 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private async handleCompactCommand(customInstructions?: string): Promise<void> {
+	private async handleCompactCommand(args = ""): Promise<void> {
+		const session = this.session;
+		const tab = this.tabManager?.getActive();
+		const firstToken = args.trimStart().split(/\s/)[0] ?? "";
+		const modelRef = /^[^/\s]+\/[^/\s]+(?:\/[^/\s]+)*$/.test(firstToken) ? firstToken : undefined;
+		const customInstructions = modelRef ? args.trimStart().slice(firstToken.length).trimStart() : args;
+		const model = modelRef
+			? findExactModelReferenceMatch(modelRef, [...session.modelRuntime.getAvailableSnapshot()])
+			: undefined;
+		if (modelRef && !model) {
+			this.showError(`Unknown model: ${modelRef}`);
+			return;
+		}
+		if (modelRef) this.compactionModelRefs.set(session, modelRef);
 		this.clearStatusIndicator();
 
-		// The SDK sets isCompacting only after an await; claiming synchronously
-		// keeps queued follow-up rounds and the Esc flush out of the gap.
+		// Claim synchronously so queued rounds cannot enter before compaction starts.
 		this.compactionClaimed = true;
 		try {
-			await runInTabConsole(this.tabManager?.getActive(), () => this.session.compact(customInstructions));
+			await runInTabConsole(tab, () => session.compact(customInstructions || undefined, model));
 		} catch {
-			// A throw before compaction starts never reaches compaction_end.
+			// A throw before compaction starts never reaches compaction_end, so this is
+			// the only place the synchronous claim is released.
 			this.compactionClaimed = false;
+		} finally {
+			this.compactionModelRefs.delete(session);
 		}
 	}
 

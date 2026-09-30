@@ -26,6 +26,7 @@
 | 设置列表行 | 单一平铺列表 | `SettingItem` 新增可选 `section`，渲染为分组标题行 | 同上 |
 | `/settings` 面板 | 上游 `SettingsList` 放在带边框的 selector 里并替换编辑器区域：`→` 光标、搜索输入框、原始的 `true`/`false` 取值、平直的分组标题 | 居中浮层面板，标题为 `Settings`：surface 背景的列表配一条暗色 `filter: type to filter  N/N` 行，每个配置文件上方是 `Pi` / `MixCode` 标题加该文件路径，`›` 行分为标签列与取值列，布尔值显示为 `On`/`Off`，选中项下方显示其说明，底部一行按键提示 | 面板因此像浮在工作内容之上的一层表面，并直接说明某项设置存在哪个文件里；打开面板时输入框保留草稿。选择 `TUI mode` 会先收起面板再切换，因为浮层打开时模式切换会被拒绝 |
 | Follow-up 输入（`alt+enter`） | 排入 SDK follow-up 队列，由 agent 在运行结束后投递 | 改为宿主侧的轮次：`/follow-up <message>` 产生独占轮次，`alt+enter` 与 `/follow-up --batch <message>` 产生合并轮次，空闲时每轮投递一次，失败时暂停直到 `/follow-up` 恢复 | follow-up 轮次需要暂停/恢复、批量合并，以及可排队的本地命令 |
+| 手动压缩模型 | `/compact` 只接受自定义指令并使用当前模型 | `/compact [provider/modelId] [instructions]` 仅为摘要请求使用指定模型，会话模型与 thinking 等级保持不变，并在工作状态中显示指定模型；压缩原因分别使用 accent/warning/error 颜色 | 手动摘要有时需要使用另一个模型，临时状态需要区分手动、阈值和溢出压缩 |
 | 排队消息显示 | 对话区下方的平铺 `Steering:`/`Follow-up:` 行 | 带边框的 `Steer (n)`/`Follow-up (n)` 预览，含轮次编号（`Round k · next/command ·`）、`SDK ·` 伴随标记、只显示最近五条、暂停提示，以及 `Esc->send now`/编辑提示 | 队列现在是有序轮次列表，而不是文本堆 |
 | Esc 时有排队的 steer 文本 | 把每一条排队消息还原到输入框并中止 | 中止，然后把 steer 队列作为一次立即轮次发送；follow-up 轮次保持排队（暂停） | `Esc->send now` 不应把 follow-up 轮次一并发出 |
 | `AgentSession`/`Agent` 队列 API | 只有 `clearQueue()`/`clearAllQueues()` | 新增 `removeQueuedMessages(kind, texts)`/`restoreQueuedMessages(kind, removed)`：从镜像与待发队列中按精确文本出队（最后匹配优先），返回按队列顺序排列的条目供还原 | flush 与 pop 需要移除指定文本，而不是整个队列 |
@@ -59,6 +60,8 @@
 | `packages/coding-agent/docs/keybindings.md:152` | `app.model.cycleForward` 默认 `ctrl+p` | 无默认键；`ctrl+p` 是 `app.palette` |
 | `packages/coding-agent/docs/models.md:33` | "`Ctrl+P` cycles through available models" | `ctrl+p` 打开命令面板；只有 `shift+ctrl+p` 仍可循环，且只能回到上一个模型 |
 | `packages/coding-agent/src/cli/args.ts:303`（源码文案） | `--models` 帮助说是 "patterns for Ctrl+P cycling" | `ctrl+p` 打开命令面板；循环键是 `shift+ctrl+p`（Windows 与 WSL 为 `alt+p`） |
+| `packages/coding-agent/docs/slash-commands.md:30` | `/compact [instructions]` | 本 fork 还接受前置的 `provider/modelId`，让摘要只用该模型执行 |
+| `packages/coding-agent/docs/compaction.md:41` | "trigger manually with `/compact [instructions]`" | 同上：可在指令前指定摘要模型 |
 
 上面这些页面也都没有列出标签页键位和标签页斜杠命令；这些以 [Agent 标签页](tabs.zh.md) 为准。
 
@@ -67,6 +70,7 @@
 以下每一个都是潜在冲突点，因此改动要压缩到"调用 `mixcode/` 代码的接线"这一层：
 
 - `packages/coding-agent/src/modes/interactive/interactive-mode.ts`
+- `packages/coding-agent/src/modes/interactive/components/status-indicator.ts`：摘要模型标签与按压缩原因区分的文案颜色
 - `packages/coding-agent/src/modes/interactive/components/session-selector.ts`
 - `packages/coding-agent/src/modes/interactive/components/custom-editor.ts`
 - `packages/coding-agent/src/core/keybindings.ts`
@@ -74,7 +78,7 @@
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
-- `packages/coding-agent/src/core/agent-session.ts`：steering 与 follow-up 队列的摘除
+- `packages/coding-agent/src/core/agent-session.ts`：手动压缩请求独立指定模型，以及 steering 与 follow-up 队列的摘除
 - `packages/coding-agent/src/core/settings-manager.ts`：fork 的 fullscreen `tuiMode` 默认值
 - `packages/coding-agent/src/core/extensions/loader.ts`：让 bun 发行版的扩展导入走 `virtualModules`
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调与选中选项转发给备用屏幕

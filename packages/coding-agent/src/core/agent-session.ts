@@ -27,6 +27,7 @@ import type {
 } from "@earendil-works/pi-agent-core";
 import { contentText, getCurrentSystemMessage, retryDelayMs } from "@earendil-works/pi-ai";
 import type {
+	Api,
 	AssistantMessage,
 	AuthResult,
 	ImageContent,
@@ -2447,8 +2448,9 @@ export class AgentSession {
 	 * continues the interrupted agent turn.
 	 *
 	 * @param customInstructions Optional instructions for the compaction summary
+	 * @param modelOverride Model used only for this summary; leaves the session model and thinking level unchanged
 	 */
-	async compact(customInstructions?: string): Promise<CompactionResult> {
+	async compact(customInstructions?: string, modelOverride?: Model<Api>): Promise<CompactionResult> {
 		await this.abort();
 		this._compactionAbortController = new AbortController();
 		this._emit({ type: "compaction_start", reason: "manual" });
@@ -2456,7 +2458,7 @@ export class AgentSession {
 		let cancelledByExtension = false;
 
 		try {
-			const model = this.model;
+			const model = modelOverride ?? this.model;
 			if (!model) {
 				throw new Error(formatNoModelSelectedMessage());
 			}

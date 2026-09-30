@@ -18,6 +18,8 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- `/compact` accepts an optional `provider/modelId` before its instructions, including model IDs containing `/`. Only the summary request uses that model; the session model and thinking level stay unchanged. Model references are offered by slash-command completion until the instruction separator is entered.
+- Compaction status names a requested summary model and colors its message by reason: accent for manual, warning for threshold, and error for context overflow.
 - Startup lists the previous run's tabs before building any of them: the tab bar carries a chip per
   persisted tab from the first frame, each showing a spinner until its tab is ready, and the tabs are
   built one at a time in the recorded order. The session opens on MixCode Home with the tab that was

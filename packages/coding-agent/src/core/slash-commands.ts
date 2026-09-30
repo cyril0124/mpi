@@ -58,7 +58,11 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "save-workspace", description: "Save the open tab layout", argumentHint: "[name]" },
 	{ name: "restore-workspace", description: "Restore a saved tab layout", argumentHint: "[name]" },
 	{ name: "delete-workspace", description: "Delete a saved tab layout", argumentHint: "[name]" },
-	{ name: "compact", description: "Manually compact the session context" },
+	{
+		name: "compact",
+		description: "Manually compact the session context, optionally using a given model for the summary",
+		argumentHint: "[provider/modelId] [instructions]",
+	},
 	{
 		name: "follow-up",
 		description: "Queue a follow-up round, or resume queued follow-ups",

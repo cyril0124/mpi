@@ -164,9 +164,11 @@ export function collectSlashCommands(source: CommandSource): SlashCommand[] {
 		...(command.argumentHint && { argumentHint: command.argumentHint }),
 	}));
 
-	const modelCommand = slashCommands.find((command) => command.name === "model");
-	if (modelCommand) {
-		modelCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+	for (const name of ["model", "compact"]) {
+		const command = slashCommands.find((candidate) => candidate.name === name);
+		if (!command) continue;
+		command.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+			if (name === "compact" && /\s/.test(prefix.trimStart())) return null;
 			const models =
 				source.session.scopedModels.length > 0
 					? source.session.scopedModels.map((s) => s.model)

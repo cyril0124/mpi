@@ -38,6 +38,7 @@ commit that causes it.
 | Settings list rows | one flat list of settings | `SettingItem` gained an optional `section` that renders a heading row | same as above |
 | `/settings` panel | pi-tui's `SettingsList` inside a bordered selector that replaces the editor area: `→` cursor, a search input box, raw `true`/`false` values, flat section headings | a centred floating panel titled `Settings`: a surface-framed list with a dim `filter: type to filter  N/N` line, a `Pi` / `MixCode` heading above each settings file's path, `›` rows with a label column and a value column, booleans shown as `On`/`Off`, the selected item's description, and one key-hint footer row | the panel reads as a surface over the work and names the file a setting lives in, and the composer keeps its draft while settings are open; picking `TUI mode` takes the panel down before switching, because a mode switch refuses while an overlay is open |
 | Follow-up input (`alt+enter`) | queues into the SDK follow-up queue, delivered by the agent after the run | queues host-side rounds: exclusive rounds from `/follow-up <message>`, merged rounds from `alt+enter` and `/follow-up --batch <message>`, dispatched one turn per round when idle, paused on failure until `/follow-up` resumes | follow-up rounds need pause/resume, batch merging, and queued local commands |
+| Manual compaction model | `/compact` accepts only custom instructions and uses the active model | `/compact [provider/modelId] [instructions]` uses the requested model only for the summary, without changing the session model or thinking level, and shows it in the working status; compaction reason messages use accent/warning/error colors | manual summaries sometimes need a different model, and transient status should distinguish manual, threshold, and overflow compaction |
 | Queued messages display | flat `Steering:`/`Follow-up:` lines under the transcript | boxed `Steer (n)`/`Follow-up (n)` previews with round numbering (`Round k · next/command ·`), `SDK ·` companions, latest-five truncation, a pause hint, and `Esc->send now`/edit hints | the queue is now an ordered round list, not a text dump |
 | Esc with queued steer texts | restores every queued message into the editor and aborts | aborts, then sends the steer queue as one immediate turn; follow-up rounds stay queued (paused) | `Esc->send now` must not promote follow-up rounds |
 | `AgentSession`/`Agent` queue API | `clearQueue()`/`clearAllQueues()` only | additive `removeQueuedMessages(kind, texts)`/`restoreQueuedMessages(kind, removed)`: exact-text dequeue (last match first) from the mirrors and the pending queues, returning queue-ordered entries for restore | flush and pop must remove specific texts, not the whole queue |
@@ -61,6 +62,8 @@ Deliberately left unpatched:
 | `packages/coding-agent/docs/keybindings.md:152` | `app.model.cycleForward` defaults to `ctrl+p` | no default key; `ctrl+p` is `app.palette` |
 | `packages/coding-agent/docs/models.md:33` | "`Ctrl+P` cycles through available models" | `ctrl+p` opens the command palette; only `shift+ctrl+p` still cycles, and only back to the previous model |
 | `packages/coding-agent/src/cli/args.ts:303` (source copy) | the `--models` help says "patterns for Ctrl+P cycling" | `ctrl+p` opens the command palette; the cycle key is `shift+ctrl+p` (`alt+p` on Windows and WSL) |
+| `packages/coding-agent/docs/slash-commands.md:30` | `/compact [instructions]` | the fork also accepts a leading `provider/modelId` that runs only the summary on that model |
+| `packages/coding-agent/docs/compaction.md:41` | "trigger manually with `/compact [instructions]`" | same: the summary model can be named before the instructions |
 
 Those pages also never list the tab keybindings and tab slash commands; [Agent Tabs](tabs.md) is the source of truth for those.
 
@@ -69,6 +72,7 @@ Those pages also never list the tab keybindings and tab slash commands; [Agent T
 Each one is a potential conflict point, so edits are kept down to the wiring that calls into `mixcode/` code:
 
 - `packages/coding-agent/src/modes/interactive/interactive-mode.ts`
+- `packages/coding-agent/src/modes/interactive/components/status-indicator.ts`: summary model label and reason-specific message colors
 - `packages/coding-agent/src/modes/interactive/components/session-selector.ts`
 - `packages/coding-agent/src/modes/interactive/components/custom-editor.ts`
 - `packages/coding-agent/src/core/keybindings.ts`
@@ -76,7 +80,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
-- `packages/coding-agent/src/core/agent-session.ts`: the steering and follow-up queue splice
+- `packages/coding-agent/src/core/agent-session.ts`: request-scoped manual compaction model and the steering and follow-up queue splice
 - `packages/coding-agent/src/core/settings-manager.ts`: the fork's fullscreen `tuiMode` default
 - `packages/coding-agent/src/core/extensions/loader.ts`: routes bun-dist extension imports through `virtualModules`
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: forwards the host's copy callback and selection options to the alternate screen
