@@ -370,6 +370,11 @@ point `## [Unreleased]` at the new tag.
   changes, and once more on shutdown), a tab's extensions are bound by a background worker that drains
   right after the restored layout is in place and records its chrome against the tab, and the
   transcript table survives a switch. See [Agent Tabs](docs/tabs.md).
+- Selecting a user message in `/fork` opens an independent tab immediately after its source,
+  leaving the original session open. Fork titles use `-fork`, then `-1`, `-2`, and so on on
+  collisions, and the selected message fills the new tab's editor. Failed startup leaves the
+  source untouched and removes the generated fork file.
+
 - A steer flush whose batch turned out to hold nothing deliverable dropped the texts it had already
   taken out of the queue: `flushSteerQueue` spliced them out, removed the mirrored copies from the
   session queue, then returned before the block that restores both on failure. A flush of only blank

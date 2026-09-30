@@ -9023,6 +9023,7 @@ export class InteractiveMode {
 		}
 
 		const initialSelectedId = userMessages[userMessages.length - 1]?.entryId;
+		const sourceTab = this.tabManager?.getActive();
 
 		this.showSelector((done) => {
 			const selector = new UserMessageSelectorComponent(
@@ -9030,6 +9031,17 @@ export class InteractiveMode {
 				async (entryId) => {
 					done();
 					try {
+						if (this.tabManager && sourceTab) {
+							this.tabManager.setDraft(sourceTab.id, this.editorText());
+							const result = await this.tabManager.forkTab(sourceTab.id, entryId);
+							const tab = result.tab;
+							if (tab) {
+								await this.enqueueTabSwitch(() => this.switchActiveTab(tab));
+								this.showStatus("Forked to new tab");
+							}
+							this.ui.requestRender();
+							return;
+						}
 						const result = await this.runtimeHost.fork(entryId);
 						if (result.cancelled) {
 							this.ui.requestRender();

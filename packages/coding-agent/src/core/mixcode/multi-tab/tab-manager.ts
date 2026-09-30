@@ -8,6 +8,8 @@
  * including background ones, is subscribed here so the tab bar keeps showing
  * live status and unread completions.
  */
+import { existsSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 import type { AgentSessionEvent } from "../../agent-session.ts";
 import {
 	type AgentSessionRuntime,
@@ -192,6 +194,88 @@ export class TabManager {
 		return this.activate(this.tabs[nextIndex]!.id);
 	}
 
+	/** Fork before a user message into an independent tab without replacing the source. */
+	async forkTab(
+		sourceId: string,
+		entryId: string,
+	): Promise<{ cancelled: boolean; tab?: AgentTab; selectedText?: string }> {
+		const sourceTab = this.get(sourceId);
+		if (!sourceTab) throw new Error(`Unknown tab: ${sourceId}`);
+		const sourceSession = sourceTab.runtime.session;
+		const runner = sourceSession.extensionRunner;
+		if (runner.hasHandlers("session_before_fork")) {
+			const result = await runner.emit({ type: "session_before_fork", entryId, position: "before" });
+			if (result?.cancel) return { cancelled: true };
+		}
+
+		const sourceManager = sourceSession.sessionManager;
+		const selectedEntry = sourceManager.getEntry(entryId);
+		if (!selectedEntry || selectedEntry.type !== "message" || selectedEntry.message.role !== "user") {
+			throw new Error("Invalid entry ID for forking");
+		}
+
+		const selectedText =
+			sourceSession.getUserMessagesForForking().find((message) => message.entryId === entryId)?.text ?? "";
+		const sourceFile = sourceManager.getSessionFile();
+		const cwd = sourceManager.getCwd();
+		const priorEntries = selectedEntry.parentId ? sourceManager.getBranch(selectedEntry.parentId) : [];
+		const hasPriorConversation = priorEntries.some((entry) => {
+			if (entry.type === "custom_message") return entry.display;
+			return entry.type === "message" && entry.message.role !== "system";
+		});
+
+		let sessionManager: SessionManager;
+		if (!hasPriorConversation) {
+			sessionManager = sourceManager.isPersisted()
+				? SessionManager.create(cwd, sourceManager.getSessionDir(), { parentSession: sourceFile })
+				: SessionManager.inMemory(cwd);
+		} else {
+			if (sourceManager.isPersisted()) {
+				if (!sourceFile || !existsSync(sourceFile)) {
+					throw new Error(
+						"This session has not been saved yet. Wait for the first assistant response before forking it.",
+					);
+				}
+				sessionManager = SessionManager.open(sourceFile, sourceManager.getSessionDir());
+			} else {
+				const header = sourceManager.getHeader();
+				if (!header) throw new Error("Session is missing its header");
+				sessionManager = SessionManager.inMemory(cwd, undefined, [header, ...sourceManager.getEntries()]);
+			}
+			if (!selectedEntry.parentId) throw new Error("Invalid fork target");
+			// Forks without assistant messages may not have a file yet; use the populated manager.
+			sessionManager.createBranchedSession(selectedEntry.parentId);
+		}
+
+		const forkSessionFile = sessionManager.getSessionFile();
+		let runtime: AgentSessionRuntime;
+		try {
+			runtime = await createAgentSessionRuntime(this.createRuntime, {
+				cwd,
+				agentDir: this.agentDir,
+				sessionManager,
+				sessionStartEvent: { type: "session_start", reason: "fork", previousSessionFile: sourceFile },
+			});
+		} catch (error) {
+			if (forkSessionFile) {
+				try {
+					await unlink(forkSessionFile);
+				} catch (cleanupError) {
+					if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") {
+						throw new AggregateError([error, cleanupError], "Fork startup and session cleanup failed");
+					}
+				}
+			}
+			throw error;
+		}
+
+		const title = this.resolveTabTitle(`${sourceTab.title}-fork`);
+		runtime.session.setSessionName(title);
+		const tab = this.addRuntime(runtime, title, sourceTab.id);
+		tab.draftInput = selectedText;
+		return { cancelled: false, tab, selectedText };
+	}
+
 	/**
 	 * Create a fresh session in a new tab.
 	 *
@@ -237,6 +321,26 @@ export class TabManager {
 		const title = this.resolveTabTitle(options.title);
 		const tab = this.attachTab(title, runtime, options.id);
 		const previous = this.getActive();
+		this.setActive(tab);
+		this.transferZenMode(previous, tab);
+		this.notifyLayoutChanged();
+		this.onTabsChanged();
+		return tab;
+	}
+
+	/** Attach a new runtime, optionally placing it after an existing tab. */
+	private addRuntime(runtime: AgentSessionRuntime, title: string | undefined, afterTabId?: string): AgentTab {
+		const previous = this.getActive();
+		const resolved = this.resolveTabTitle(title);
+		const tab = this.attachTab(resolved, runtime);
+		if (afterTabId) {
+			const sourceIndex = this.tabs.findIndex((item) => item.id === afterTabId);
+			const attachedIndex = this.tabs.indexOf(tab);
+			if (sourceIndex >= 0 && attachedIndex !== sourceIndex + 1) {
+				this.tabs.splice(attachedIndex, 1);
+				this.tabs.splice(sourceIndex + 1, 0, tab);
+			}
+		}
 		this.setActive(tab);
 		this.transferZenMode(previous, tab);
 		this.notifyLayoutChanged();

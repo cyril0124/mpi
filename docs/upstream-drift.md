@@ -13,6 +13,7 @@ commit that causes it.
 | `install.sh` | release archives via `scripts/build-binaries.sh` | installs a standalone runtime in `<prefix>/lib/<name>/` and a wrapper at `<prefix>/bin/<name>`; `<name>` defaults to `mpi` and supports `--name` or `MIXCODE_INSTALL_NAME` | single-machine installs can use a custom command name while keeping the runtime and wrapper names aligned |
 | `app.thinking.cycle` default key | `shift+tab` | `alt+t` | `shift+tab` became `app.tab.previous` |
 | Agent tabs | one session per terminal | several concurrent tabs, each with its own `AgentSessionRuntime` | [Agent Tabs](tabs.md) |
+| `/fork` message selection | replaces the active session | opens a new independent tab after the source, with a unique `-fork` title and the selected message in its editor | the original conversation remains available beside the alternative |
 | Session deletion | deletes the selected session file | refuses while the owning tab has a turn in progress | another tab may still be writing that file |
 | `app.model.cycleForward` default key | `ctrl+p` | no default key | `ctrl+p` opens the command palette |
 | Quit | `ctrl+d` exits, no confirmation | `ctrl+q` (`ctrl+shift+q` on Windows and WSL) asks first; `ctrl+d` unchanged | [Command Palette and Quit Confirmation](command-palette.md) |
