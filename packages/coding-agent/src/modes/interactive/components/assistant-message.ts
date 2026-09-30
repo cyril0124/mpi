@@ -1,7 +1,7 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { type Component, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
-import { getMarkdownTheme, getActiveThemeName, theme } from "../theme/theme.ts";
+import { getActiveThemeName, getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 import { HoverRegion } from "./mixcode/hover/hover-region.ts";
 import {
@@ -77,6 +77,9 @@ export class AssistantMessageComponent extends Container {
 	 * directly, so the lazy path never serves stale lines.
 	 */
 	override invalidate(): void {
+		if (this.renderedTheme !== undefined && this.renderedTheme !== getActiveThemeName()) {
+			super.invalidate();
+		}
 		this.renderedLines = undefined;
 	}
 

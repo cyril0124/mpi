@@ -1,6 +1,6 @@
 import { Box, Container, Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
-import { getMarkdownTheme, getActiveThemeName, theme } from "../theme/theme.ts";
+import { getActiveThemeName, getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 import { ClockedMessageBody, formatMessageClock } from "./mixcode/message-clock.ts";
 
@@ -105,8 +105,18 @@ export class UserMessageComponent extends Container {
 		return this.text;
 	}
 
-	/** Drop the memo; the next paint rebuilds lazily. See AssistantMessageComponent.invalidate. */
+	/**
+	 * Drop the memo; the next paint rebuilds lazily. See AssistantMessageComponent.invalidate.
+	 *
+	 * The subtree is flushed only when the theme changed: the children cache their
+	 * rendered lines against content and width alone, so a theme switch would otherwise
+	 * serve rows in the old colors. A plain relayout or a background tab bind leaves the
+	 * theme alone and must not pay for a subtree walk.
+	 */
 	override invalidate(): void {
+		if (this.renderedTheme !== undefined && this.renderedTheme !== getActiveThemeName()) {
+			super.invalidate();
+		}
 		this.renderedLines = undefined;
 	}
 

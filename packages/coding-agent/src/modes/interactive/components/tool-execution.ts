@@ -264,8 +264,15 @@ export class ToolExecutionComponent extends Container {
 	 * says nothing about this row's content, and rebuilding every row's renderer
 	 * tree eagerly is what made showing a tab re-render its whole window. Nothing
 	 * is lost by waiting: `render` rebuilds from the same fields the setters keep.
+	 *
+	 * The subtree is flushed only when the theme changed: the card's children cache
+	 * their rendered lines against content and width alone, so a theme switch would
+	 * otherwise serve rows in the old colors.
 	 */
 	override invalidate(): void {
+		if (this.renderedTheme !== undefined && this.renderedTheme !== getActiveThemeName()) {
+			super.invalidate();
+		}
 		this.renderedLines = undefined;
 	}
 

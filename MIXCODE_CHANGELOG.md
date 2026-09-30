@@ -341,6 +341,8 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A theme switch (preview or permanent) left message blocks showing the old colors: `invalidate()` only cleared the block-level memo but did not propagate to child Markdown/Box components, whose caches are keyed on content and width only. The fix propagates `super.invalidate()` down the subtree when the theme name has changed, and skips the walk on relayouts and background tab-binds where the theme is unchanged.
+
 - The first visit to a tab still re-rendered its whole visible window, so a switch to an
   unvisited tab took 0.1-1.5 s while a repeat visit took 0.05 s. Two causes, both invisible
   without a per-call counter: the tool-display extension re-installs its row adapters while a
