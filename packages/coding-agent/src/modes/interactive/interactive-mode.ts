@@ -2537,11 +2537,13 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Extension UI context for a tab that is not the focused one. The chrome an
+	 * Extension UI context for a tab whose chrome is not mounted yet. The chrome an
 	 * extension installs (widgets, footer and header, statuses, autocomplete
 	 * wrappers, editor component, working message, thinking label) is recorded on the
-	 * tab and mounted when the tab takes focus, and a notice waits there. Dialogs and
-	 * editor text have no per-tab surface and still reach the focused one.
+	 * tab and mounted when the tab takes focus. A notice follows the transcript
+	 * instead: the mounted tab shows it at once, any other tab records it for its next
+	 * mount. Dialogs and editor text have no per-tab surface and still reach the
+	 * focused one.
 	 */
 	private createTabScopedExtensionUIContext(tabId: string): ExtensionUIContext {
 		const live = this.createExtensionUIContext();
@@ -2551,7 +2553,12 @@ export class InteractiveMode {
 				return theme;
 			},
 			notify: (message, type) => {
-				// The notice belongs to this tab's transcript, which is not mounted yet.
+				// A tab that owns the mounted transcript paints the notice at once, like the
+				// startup session. Any other tab has nowhere to put it until its next focus.
+				if (!this.homeSelection.active && this.activeTabIdForUi === tabId) {
+					this.showExtensionNotify(message, type);
+					return;
+				}
 				this.tabExtensionUi(tabId).notices.push({ message, type });
 			},
 			setWorkingMessage: (message) => {

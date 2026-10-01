@@ -390,6 +390,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A tab opened after startup no longer swallows the notifications its extensions raise. Its
+  extensions bind through the tab-scoped UI context, which recorded a notice for that tab's next
+  focus instead of showing it, so the TPS line pi-tps prints at the end of a turn stayed invisible
+  until the tab was switched away and back. The tab that owns the mounted transcript now shows its
+  notifications at once, and only a background tab records them for its next mount.
+
 - Reopening a saved tab layout no longer opens a second tab per session: peer tab sync started
   before the startup restore finished, so its first poll treated the tabs the loader had not built
   yet as missing and opened them again, and the transient startup session was written into the
