@@ -153,6 +153,7 @@ import {
 	readOpenTabs,
 	readTabMeta,
 	readWorkspaces,
+	replaceOpenTabSessionIds,
 	resolveSessionPath,
 } from "../../core/mixcode/multi-tab/mixcode-state.ts";
 import { SharedTabLayout } from "../../core/mixcode/multi-tab/shared-tab-layout.ts";
@@ -207,6 +208,7 @@ import { DefaultPackageManager } from "../../core/package-manager.ts";
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import {
+	getDefaultSessionDir,
 	type SessionEntry,
 	SessionManager,
 	sessionEntryToContextMessages,
@@ -760,8 +762,6 @@ export class InteractiveMode {
 	private readonly toastOverlay = new TransientOverlay();
 	/** Vim user-message preview slot; a newer preview replaces the card on screen. */
 	private readonly userMessagePreviewOverlay = new TransientOverlay();
-	/** Most tabs reopened at startup; the remainder is reported, not restored. */
-	private static readonly RESTORE_TAB_LIMIT = 12;
 
 	/** Set once the startup restore has been attempted; gates layout persistence. */
 	private tabsRestoreAttempted = false;
@@ -1032,6 +1032,9 @@ export class InteractiveMode {
 					if (manager) await this.switchActiveTab(manager.getActive());
 				},
 				disposeTabUi: (id) => this.disposeTabUi(id),
+				// A peer-opened tab is never visited, so binding it is what clears its loading
+				// chip; the restored tabs' worker serializes these binds the same way.
+				onTabOpened: (tab) => this.queueTabBind(tab),
 				onError: (error) => {
 					const msg = error instanceof Error ? error.message : String(error);
 					if (!this.sharedLayoutErrorShown.has(msg)) {
@@ -3953,11 +3956,8 @@ export class InteractiveMode {
 			const meta = readTabMeta(this.tabsWorkdir);
 			const currentId = session.sessionManager.getSessionId();
 			const sessionDir = session.sessionManager.getSessionDir();
-			// Restoring every recorded tab would block startup on a large layout;
-			// the surplus is reported instead of being restored silently.
-			const entries = snapshot.sessionIds
-				.filter((id) => id !== currentId)
-				.slice(0, InteractiveMode.RESTORE_TAB_LIMIT);
+			// The recorded startup session is already open as this instance's first tab.
+			const entries = snapshot.sessionIds.filter((id) => id !== currentId);
 			if (entries.length === 0) return;
 
 			// List the whole persisted layout as loading chips and move to Home before the
@@ -4011,23 +4011,36 @@ export class InteractiveMode {
 		const initialId = manager.getActive().id;
 		const errors: string[] = [];
 		const restoredTabs: Array<{ id: string; title?: string; unread: boolean }> = [];
+		// Recorded ids whose session opened under a different id; the shared set is
+		// rewritten to the real ids before peer polling starts.
+		const renamedSessions: Array<{ from: string; to: string }> = [];
 		try {
 			for (const sessionId of entries) {
 				try {
 					const tabMeta = meta.get(sessionId);
-					const sessionPath = resolveSessionPath(sessionDir, sessionId);
 					const title = tabMeta?.title;
 					const workdir = tabMeta?.workdir ?? this.tabsWorkdir;
-					// The tab id is the persisted session id, so the chip that was waiting for
-					// this tab becomes its own chip instead of a second one.
+					// A tab recorded under another workdir keeps its session in that workdir's
+					// default session dir, the same fallback the peer reconcile uses.
+					const sessionPath =
+						resolveSessionPath(sessionDir, sessionId) ??
+						resolveSessionPath(getDefaultSessionDir(workdir), sessionId);
+					// The tab id is the persisted session id, so the chip already waiting for this
+					// entry becomes the tab's own chip. A missing session file is rebuilt under
+					// that same id, so the shared set keeps one id per tab rather than gaining a
+					// second one the next start would restore as another tab.
 					const tab = sessionPath
 						? await manager.openSessionTab(sessionPath, { title, workdir, id: sessionId })
-						: await manager.createTab({ title, workdir, id: sessionId });
+						: await manager.createTab({ title, workdir, id: sessionId, sessionId });
 					if (tabMeta?.color) manager.setColor(tab.id, tabMeta.color);
 					restoredTabs.push({ id: tab.id, title, unread: tabMeta?.unread ?? false });
 					// Bind before building the next tab: a session build at a time keeps the
 					// memory peak at one, and the bind's walk blocks the loop either way.
 					await this.bindTabExtensions(tab);
+					// The bind can replace the session, and a file whose header id differs from
+					// its name reveals the real id only here.
+					const actualId = tab.runtime.session.sessionManager.getSessionId();
+					if (actualId !== sessionId) renamedSessions.push({ from: sessionId, to: actualId });
 					// Build the transcript here too, so the tab's first visit repaints parked
 					// blocks instead of building and cold-rendering them on the focus path.
 					this.warmTabTranscript(tab);
@@ -4036,12 +4049,21 @@ export class InteractiveMode {
 					errors.push(error instanceof Error ? error.message : String(error));
 				}
 			}
+			// A layout that already records the startup session keeps that session's tab;
+			// closing it would leave the id in the shared set with no tab behind it.
+			const startupInLayout = persistedIds.includes(currentId);
+			if (startupInLayout) {
+				const startupMeta = meta.get(currentId);
+				if (startupMeta?.title) manager.restoreTitle(initialId, startupMeta.title);
+				manager.setColor(initialId, startupMeta?.color);
+				restoredTabs.push({ id: initialId, title: startupMeta?.title, unread: startupMeta?.unread ?? false });
+			}
 			if (restoredTabs.length === 0) {
 				if (errors.length > 0) this.showWarning(`Could not restore tabs: ${errors[0]}`);
 				return;
 			}
-			// Drop the fresh startup tab; the restored layout replaces it.
-			if (manager.size > 1) await manager.closeTab(initialId);
+			// A startup session outside the layout is the transient tab the restore replaces.
+			if (!startupInLayout && manager.size > 1) await manager.closeTab(initialId);
 			this.applyRestoredTabTitles(manager, restoredTabs);
 			// Home stays the surface: the persisted tab becomes the manager's focus and
 			// the selected roster row, not the open transcript.
@@ -4050,16 +4072,22 @@ export class InteractiveMode {
 			manager.activate(target);
 			syncHomeSelectionToTab(this.homeSelection, manager.list(), target);
 			for (const item of restoredTabs) manager.setUnread(item.id, item.unread);
+			// Point the shared membership at the ids the tabs actually hold, so the peer
+			// reconcile cannot open a second tab for a stale recorded id.
+			if (renamedSessions.length > 0) {
+				try {
+					replaceOpenTabSessionIds(this.tabsWorkdir, renamedSessions);
+				} catch (error) {
+					this.showWarning(
+						`Could not update restored tab ids: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				}
+			}
 			// Publish the layout now: sessions created during the restore have new
 			// ids, and the next start must read those instead of the old ones.
 			this.tabsRestoreAttempted = true;
 			this.persistOpenTabs();
-			const skipped = persistedIds.length - entries.length - (persistedIds.includes(currentId) ? 1 : 0);
-			this.showStatus(
-				skipped > 0
-					? `Restored ${restoredTabs.length} tab(s), ${skipped} beyond the restore limit.`
-					: `Restored ${restoredTabs.length} tab(s).`,
-			);
+			this.showStatus(`Restored ${restoredTabs.length} tab(s).`);
 		} catch (error) {
 			// Best-effort restore: fall back to the single fresh tab.
 			this.showWarning(`Could not restore tabs: ${error instanceof Error ? error.message : String(error)}`);

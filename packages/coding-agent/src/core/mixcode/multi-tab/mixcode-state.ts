@@ -167,6 +167,27 @@ export function mutateOpenTabs(
 	});
 }
 
+/**
+ * Point the open-tab membership at the real session id of a tab whose file opened
+ * under a different id: a session file's name and its header disagree after a
+ * repair or a rename, and the header id is the session's own. Each entry keeps its
+ * position, and an id another writer already replaced is left alone.
+ */
+export function replaceOpenTabSessionIds(workdir: string, renames: ReadonlyArray<{ from: string; to: string }>): void {
+	mutateOpenTabs(workdir, (ids) => {
+		for (const { from, to } of renames) {
+			if (!ids.has(from)) continue;
+			const ordered = [...ids].filter((id) => id !== from);
+			if (!ids.has(to)) {
+				const index = [...ids].indexOf(from);
+				ordered.splice(Math.min(index, ordered.length), 0, to);
+			}
+			ids.clear();
+			for (const id of ordered) ids.add(id);
+		}
+	});
+}
+
 // ---------------------------------------------------------------------------
 // mixcode_state.json
 // ---------------------------------------------------------------------------

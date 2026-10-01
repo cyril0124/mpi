@@ -63,6 +63,7 @@ export async function createTabClient(options: {
 	});
 	const errors: unknown[] = [];
 	const closedUi: string[] = [];
+	const openedUi: string[] = [];
 	const status: string[] = [];
 	let displayedTabId = manager.getActive().id;
 	let queue = Promise.resolve();
@@ -84,6 +85,7 @@ export async function createTabClient(options: {
 		enqueue,
 		refreshActiveTab: async () => switchActiveTab(manager.getActive()),
 		disposeTabUi,
+		onTabOpened: (tab) => openedUi.push(tab.id),
 		onError: (error) => {
 			errors.push(error);
 		},
@@ -94,6 +96,7 @@ export async function createTabClient(options: {
 		shared,
 		errors,
 		closedUi,
+		openedUi,
 		status,
 		enqueue,
 		switchActiveTab,

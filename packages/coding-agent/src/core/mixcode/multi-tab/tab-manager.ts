@@ -281,13 +281,18 @@ export class TabManager {
 	 *
 	 * `id` names the tab up front, which a restore needs: the tab bar lists every
 	 * persisted tab before its runtime exists, and the chip has to be the same one
-	 * once it does.
+	 * once it does. `sessionId` names the new session itself; a restore of a
+	 * recorded tab whose session file is gone passes the recorded id, so the tab's
+	 * session id matches the persisted membership instead of appending a second id
+	 * that the next start would restore as an extra tab.
 	 */
-	async createTab(options: { title?: string; workdir?: string; id?: string } = {}): Promise<AgentTab> {
+	async createTab(
+		options: { title?: string; workdir?: string; id?: string; sessionId?: string } = {},
+	): Promise<AgentTab> {
 		const active = this.getActive();
 		const cwd = options.workdir ?? active.runtime.cwd;
 		const sessionDir = active.runtime.session.sessionManager.getSessionDir();
-		const sessionManager = SessionManager.create(cwd, sessionDir);
+		const sessionManager = SessionManager.create(cwd, sessionDir, { id: options.sessionId });
 		const runtime = await createAgentSessionRuntime(this.createRuntime, {
 			cwd,
 			agentDir: this.agentDir,

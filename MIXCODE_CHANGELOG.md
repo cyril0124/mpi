@@ -390,6 +390,19 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Startup restores every recorded tab again. The loader capped the layout at 12 tabs and left the
+  rest to the peer poll, which opened them one by one seconds later, so a large layout grew a tab
+  after it had settled; the cap is removed.
+- Starting on a session that is already part of the recorded layout no longer adds a late extra tab.
+  The restore excluded that id from the tabs it rebuilt and then closed the tab holding it, so the
+  peer poll reopened it once the layout had settled; the startup session now stays that layout's tab.
+- A tab whose file name and session header disagree no longer opens another tab on every poll, and a
+  recorded tab whose session file is gone no longer adds one per launch. Both rebuilt an id instead
+  of adopting the one the session actually holds; the shared set now follows the real id, and a
+  rebuilt session keeps the recorded one.
+- A tab the peer reconcile opens now binds its extensions instead of showing the loading state until
+  its first focus. It goes through the same one-at-a-time bind worker the restored tabs use.
+
 - A tab opened after startup no longer swallows the notifications its extensions raise. Its
   extensions bind through the tab-scoped UI context, which recorded a notice for that tab's next
   focus instead of showing it, so the TPS line pi-tps prints at the end of a turn stayed invisible

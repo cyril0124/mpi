@@ -197,9 +197,9 @@ replaces the shared set and order, so other instances follow that layout on thei
 ## Startup restore
 
 On startup the previous layout is restored only when the starting session is persisted and holds
-no conversation turns — a fresh session, not `-r`/`--continue`. It restores at most 12 tabs
-(`RESTORE_TAB_LIMIT`), reports the surplus instead of dropping it silently, skips session files
-it cannot read, and closes the transient startup tab once the restored layout replaces it.
+no conversation turns — a fresh session, not `-r`/`--continue`. Every recorded tab is restored,
+skipping session files it cannot read, and the transient startup tab closes once the restored
+layout replaces it — unless its id is part of that layout, in which case it stays as that tab.
 Titles and colors are re-applied from `mixcode_state.json`; default-named tabs are renumbered so
 the dropped startup tab does not push them to the next free number.
 

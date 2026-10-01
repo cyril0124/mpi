@@ -10,6 +10,7 @@ import {
 	readOpenTabs,
 	readTabMeta,
 	readWorkspaces,
+	resolveSessionPath,
 	saveTabMeta,
 } from "../../src/core/mixcode/multi-tab/mixcode-state.ts";
 import type { SharedTabLayout } from "../../src/core/mixcode/multi-tab/shared-tab-layout.ts";
@@ -217,6 +218,75 @@ describe("shared tab runtime integration", () => {
 		expect(ids(b.manager)).toEqual(storedIds());
 		expect(b.manager.getActive().runtime.session.sessionManager.getSessionId()).toBe(storedIds()[0]);
 		expect(b.errors).toEqual([]);
+	});
+
+	it("keeps a recorded id stable when its session file is gone, instead of growing the layout", async () => {
+		const a = await createClient();
+		// A recorded id with no session file (a session deleted outside the app, or a
+		// file that was never written).
+		const ghostId = "019f0000-0000-7000-8000-000000000001";
+		mutateOpenTabs(workdir, (ids) => {
+			ids.add(ghostId);
+		});
+		const before = storedIds();
+
+		// The restore rebuilds that tab under its recorded id rather than a fresh id.
+		await a.manager.createTab({ title: "ghost", id: ghostId, sessionId: ghostId });
+		a.shared.publish();
+
+		expect(storedIds()).toEqual(before);
+		expect(resolveSessionPath(sessionDir, ghostId)).toBeDefined();
+		clients.splice(clients.indexOf(a), 1);
+		a.shared.dispose();
+		await a.manager.dispose();
+
+		// The next start restores one tab per recorded id, with no duplicate and no error.
+		const b = await createClient(resolveSessionPath(sessionDir, before[0]!));
+		await b.shared.reconcileNow();
+		expect(ids(b.manager)).toEqual(storedIds());
+		expect(new Set(ids(b.manager)).size).toBe(ids(b.manager).length);
+		expect(b.errors).toEqual([]);
+	});
+
+	it("tells the host to bind a tab it opens for a peer, so its chip leaves the loading state", async () => {
+		const a = await createClient();
+		const b = await createClient(a.manager.getActive().runtime.session.sessionFile);
+		const peer = await b.manager.createTab({ title: "Peer" });
+
+		await a.shared.reconcileNow();
+		expect(a.openedUi).toHaveLength(1);
+		expect(a.manager.get(a.openedUi[0]!)).toBeDefined();
+		expect(peer.runtime.session.sessionManager.getSessionId()).toBe(
+			a.manager.get(a.openedUi[0]!)!.runtime.session.sessionManager.getSessionId(),
+		);
+	});
+
+	it("adopts a session file's real id instead of reopening it on every poll", async () => {
+		const a = await createClient();
+		const realId = "019f0000-0000-7000-8000-00000000000a";
+		const fileId = "019f0000-0000-7000-8000-00000000000b";
+		// A file whose name id and header id disagree (a repaired empty file).
+		const header = SessionManager.create(workdir, sessionDir).getHeader()!;
+		writeFileSync(
+			join(sessionDir, `2026-09-30T00-00-00-000Z_${fileId}.jsonl`),
+			`${JSON.stringify({ ...header, id: realId })}\n`,
+		);
+		mutateOpenTabs(workdir, (ids) => {
+			ids.add(fileId);
+		});
+
+		await a.shared.reconcileNow();
+		expect(ids(a.manager)).toContain(realId);
+		expect(storedIds()).toContain(realId);
+		expect(storedIds()).not.toContain(fileId);
+
+		// The adopted id satisfies the shared set, so later polls open nothing.
+		const settled = a.manager.size;
+		await a.shared.reconcileNow();
+		await a.shared.reconcileNow();
+		expect(a.manager.size).toBe(settled);
+		expect(new Set(ids(a.manager)).size).toBe(ids(a.manager).length);
+		expect(a.errors).toEqual([]);
 	});
 
 	it("retries a peer tab whose session file is not on disk without inventing another session id", async () => {

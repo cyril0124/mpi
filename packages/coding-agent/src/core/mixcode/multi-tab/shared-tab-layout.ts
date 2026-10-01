@@ -3,6 +3,7 @@ import { getDefaultSessionDir } from "../../session-manager.ts";
 import {
 	mutateOpenTabs,
 	readTabMeta,
+	replaceOpenTabSessionIds,
 	resolveSessionPath,
 	saveTabMeta,
 	type TabLayoutEntry,
@@ -24,6 +25,8 @@ export interface SharedTabLayoutOptions {
 	enqueue: (operation: () => Promise<void>) => Promise<void>;
 	refreshActiveTab: () => Promise<void>;
 	disposeTabUi: (id: string) => void;
+	/** Bind a tab opened for a peer in the background, so its chip leaves the loading state. */
+	onTabOpened: (tab: AgentTab) => void;
 	onError: (error: unknown) => void;
 }
 
@@ -70,10 +73,24 @@ export class SharedTabLayout {
 				if (!path) throw new Error(`Shared session is not on disk yet: ${sessionId}`);
 				const previous = manager.getActive().id;
 				const tab = await manager.openSessionTab(path, { title: meta?.title, workdir: meta?.workdir });
+				// This pass asked for the id the file name carries; the session's own id is
+				// in its header. Point the shared set at the real id, or the next pass asks
+				// for the stale one again and opens another tab.
+				const actualId = tab.runtime.session.sessionManager.getSessionId();
+				if (actualId !== sessionId) {
+					try {
+						replaceOpenTabSessionIds(this.options.workdir, [{ from: sessionId, to: actualId }]);
+					} catch (error) {
+						this.options.onError(error);
+					}
+				}
 				if (meta?.title) manager.restoreTitle(tab.id, meta.title);
 				manager.setColor(tab.id, meta?.color);
 				manager.setUnread(tab.id, meta?.unread ?? false);
-				// A background peer opening a tab must not steal the user's editor focus.
+				// A background open binds the tab's extensions, so its chip leaves the loading
+				// state instead of spinning until a first focus.
+				this.options.onTabOpened(tab);
+				// The background open must not steal the user's editor focus.
 				if (manager.get(previous)) manager.activate(previous);
 			},
 			closeTab: async (sessionId) => {
