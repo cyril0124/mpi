@@ -268,6 +268,9 @@ function snapshotEventHandlers(extensions: Extension[], event: ExtensionEvent["t
 	return extensions.map((ext) => ({ ext, handlers: ext.handlers.get(event)?.slice() ?? [] }));
 }
 
+/** Cap on session_start dispatch passes, so a handler that registers another cannot loop. */
+const MAX_SESSION_START_PASSES = 8;
+
 function sameMessages(left: AgentMessage[], right: AgentMessage[]): boolean {
 	return left.length === right.length && left.every((message, index) => message === right[index]);
 }
@@ -990,29 +993,46 @@ export class ExtensionRunner {
 	async emit<TEvent extends RunnerEmitEvent>(event: TEvent): Promise<RunnerEmitResult<TEvent>> {
 		const ctx = this.createContext();
 		let result: SessionBeforeEventResult | undefined;
+		const dispatchedHandlers = new Set<unknown>();
 
-		for (const { ext, handlers } of snapshotEventHandlers(this.extensions, event.type)) {
-			for (const handler of handlers) {
-				try {
-					const handlerResult = await handler(event, ctx);
+		// A handler can register more handlers while it runs. A repeating event defers
+		// those to its next dispatch, which one snapshot per emit gives it; session_start
+		// has no next one, and an extension that loads others from its own session_start
+		// handler registers theirs during this emit, so dispatch until a pass adds none.
+		const maxPasses = event.type === "session_start" ? MAX_SESSION_START_PASSES : 1;
 
-					if (this.isSessionBeforeEvent(event) && handlerResult) {
-						result = handlerResult as SessionBeforeEventResult;
-						if (result.cancel) {
-							return result as RunnerEmitResult<TEvent>;
+		for (let pass = 0; pass < maxPasses; pass++) {
+			let dispatchedAny = false;
+
+			for (const { ext, handlers } of snapshotEventHandlers(this.extensions, event.type)) {
+				for (const handler of handlers) {
+					if (dispatchedHandlers.has(handler)) continue;
+					dispatchedHandlers.add(handler);
+					dispatchedAny = true;
+
+					try {
+						const handlerResult = await handler(event, ctx);
+
+						if (this.isSessionBeforeEvent(event) && handlerResult) {
+							result = handlerResult as SessionBeforeEventResult;
+							if (result.cancel) {
+								return result as RunnerEmitResult<TEvent>;
+							}
 						}
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						const stack = err instanceof Error ? err.stack : undefined;
+						this.emitError({
+							extensionPath: ext.path,
+							event: event.type,
+							error: message,
+							stack,
+						});
 					}
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: event.type,
-						error: message,
-						stack,
-					});
 				}
 			}
+
+			if (!dispatchedAny) break;
 		}
 
 		return result as RunnerEmitResult<TEvent>;

@@ -390,6 +390,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- An extension that another extension loads during `session_start` now receives that event. Emission
+  snapshots its handler list and defers handlers registered while the event runs to a later dispatch,
+  which `session_start` never has, so an extension loaded by model never ran its own `session_start`
+  and the status line it set there stayed absent for the whole session. `session_start` now also
+  dispatches handlers added during it, bounded against self-registration; repeating events keep the
+  deferral.
 - Startup restores every recorded tab again. The loader capped the layout at 12 tabs and left the
   rest to the peer poll, which opened them one by one seconds later, so a large layout grew a tab
   after it had settled; the cap is removed.
