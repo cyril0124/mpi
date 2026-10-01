@@ -2520,10 +2520,11 @@ export class InteractiveMode {
 	 * Extension UI context for a tab whose chrome is not mounted yet. The chrome an
 	 * extension installs (widgets, footer and header, statuses, autocomplete
 	 * wrappers, editor component, working message, thinking label) is recorded on the
-	 * tab and mounted when the tab takes focus. A notice follows the transcript
-	 * instead: the mounted tab shows it at once, any other tab records it for its next
-	 * mount. Dialogs and editor text have no per-tab surface and still reach the
-	 * focused one.
+	 * tab and mounted when the tab takes focus. A surface the tab already owns on
+	 * screen is written live instead, so a background bind does not defer it: a notice
+	 * follows the transcript, and a status replaces the one the footer shows. Any other
+	 * tab records it for its next mount. Dialogs and editor text have no per-tab surface
+	 * and still reach the focused one.
 	 */
 	private createTabScopedExtensionUIContext(tabId: string): ExtensionUIContext {
 		const live = this.createExtensionUIContext();
@@ -2560,6 +2561,9 @@ export class InteractiveMode {
 				const ui = this.tabExtensionUi(tabId);
 				if (text === undefined) ui.statuses.delete(key);
 				else ui.statuses.set(key, text);
+				// The footer keeps its own copy of the statuses and re-reads the tab's record
+				// only on mount, so write the mounted tab's footer as well.
+				if (!this.homeSelection.active && this.activeTabIdForUi === tabId) live.setStatus(key, text);
 			},
 			setWidget: (
 				key: string,

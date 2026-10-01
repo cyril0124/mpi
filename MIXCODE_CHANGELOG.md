@@ -396,6 +396,11 @@ point `## [Unreleased]` at the new tag.
   and the status line it set there stayed absent for the whole session. `session_start` now also
   dispatches handlers added during it, bounded against self-registration; repeating events keep the
   deferral.
+- An extension status set by a tab that is already on screen now reaches the footer. Every tab's
+  extensions bind through the tab-scoped UI context, whose `setStatus` wrote only the tab's record,
+  and the footer re-read that record on mount; the next switch then snapshotted the stale footer back
+  over the record, so a status set after the tab mounted never showed. The startup tab, which binds
+  live, was unaffected.
 - Startup restores every recorded tab again. The loader capped the layout at 12 tabs and left the
   rest to the peer poll, which opened them one by one seconds later, so a large layout grew a tab
   after it had settled; the cap is removed.
