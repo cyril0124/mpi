@@ -9,6 +9,7 @@
 
 import * as fs from "node:fs";
 import type { AgentSession } from "../../../../core/agent-session.ts";
+import { baseContextWindow } from "../../../../core/mixcode/context-limit.ts";
 import {
 	deleteWorkspaceRecord,
 	type MixcodeWorkspace,
@@ -89,7 +90,9 @@ export function saveWorkspaceCommand(host: WorkspaceHost, name: string): void {
 									provider: model.provider,
 									model_id: model.id,
 									display_name: model.name,
-									context_window: model.contextWindow,
+									// The saved window is the model's own capacity: a live
+									// `/context-limit` override must not be recorded as the model's.
+									context_window: baseContextWindow(tab, session),
 									...(typeof model.reasoning === "boolean" ? { reasoning: model.reasoning } : {}),
 									...(model.thinkingLevelMap ? { thinking_level_map: model.thinkingLevelMap } : {}),
 								},

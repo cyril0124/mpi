@@ -37,6 +37,8 @@ export interface ComposerContext {
 	readUsage: () => ContextUsage | undefined;
 	/** Model context window, used when the usage reading carries none. */
 	fallbackContextWindow: number;
+	/** True while the tab in front runs with a `/context-limit` override. */
+	contextLimitOverridden: boolean;
 }
 
 /**
@@ -89,7 +91,7 @@ export function editorCardChrome(context: ComposerContext): EditorCardChrome {
 	const contextWindow = usage?.contextWindow ?? context.fallbackContextWindow;
 	return {
 		title: title ?? "New message",
-		contextText: home ? "" : exactContextUsageText(tokens, contextWindow),
+		contextText: home ? "" : exactContextUsageText(tokens, contextWindow, context.contextLimitOverridden),
 		contextWarning: tokens !== undefined && contextWindow > 0 && tokens >= contextWindow * CONTEXT_WARNING_RATIO,
 		vimMode: context.vimActive,
 		// The badge belongs to the agent surface: Home shows the tab bar again.

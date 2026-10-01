@@ -16,13 +16,14 @@ replaces pi's status footer.
 - The top edge carries the working status while a turn runs, the mode badges (`[VIM]`, `[SHELL]`,
   `[ZEN]`, and `↑ N` when editor rows are scrolled out of view), the tab name, and the exact context
   usage (`12.3k/200k`, or `?/200k` while the count is unknown). A turn in flight and a mode badge
-  share the edge while they fit.
+  share the edge while they fit. A `*` after the limit (`12.3k/32k*`) marks a window set by
+  `/context-limit`; the meter below measures against it.
 - The bottom edge carries `↓ N more` when the draft has rows below the visible window.
 - The frame takes the editor's own border colour, so vim mode, shell mode and the thinking level
   keep the colours they had.
 - The body keeps the card's side borders and holds its text one column off the left border. The
   autocomplete menu stays outside them, indented to the column that text starts in.
-- The context reading switches to the warning colour at 85% of the model's window.
+- The context reading switches to the warning colour at 85% of the window the card reports.
 - An empty composer hints the two keys that act on it besides `@` and `/`: `← Home` opens
   MixCode Home and `→ widgets` toggles the side panel. Both labels follow the configured keybindings,
   and the panel half is left out in TUI modes that do not split the chat.

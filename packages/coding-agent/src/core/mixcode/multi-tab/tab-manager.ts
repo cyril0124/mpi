@@ -17,6 +17,7 @@ import {
 	createAgentSessionRuntime,
 } from "../../agent-session-runtime.ts";
 import { SessionManager } from "../../session-manager.ts";
+import { type ContextLimitOverride, reconcileContextLimit } from "../context-limit.ts";
 import { deleteSessionFile } from "../session-delete.ts";
 import type { ToastNotification } from "../toast/toast.ts";
 import { createVimTabState, transferVimMode, type VimTabState } from "../vim/vim-mode.ts";
@@ -68,6 +69,8 @@ export interface AgentTab {
 	zenMode: boolean;
 	/** Transient toast shown over this tab's transcript; at most one at a time. */
 	toast?: ToastNotification;
+	/** Live `/context-limit` override, or undefined when the model's own window applies. */
+	contextLimit?: ContextLimitOverride;
 
 	readonly runtime: AgentSessionRuntime;
 	unsubscribe: () => void;
@@ -602,10 +605,13 @@ export class TabManager {
 	/**
 	 * Re-subscribe a tab after its runtime replaced its session (e.g. `/clear`,
 	 * `/resume`), since the old subscription died with the old session object.
+	 * The replacement also drops a `/context-limit` override: it belonged to the
+	 * outgoing session's model and settings manager, both now discarded.
 	 */
 	rebind(runtime: AgentSessionRuntime): void {
 		const tab = this.tabs.find((item) => item.runtime === runtime);
 		if (!tab) return;
+		tab.contextLimit = undefined;
 		tab.unsubscribe();
 		tab.unsubscribe = runtime.session.subscribe((event) => this.handleTabEvent(tab, event));
 		const sessionName = runtime.session.sessionManager.getSessionName()?.trim();
@@ -628,6 +634,9 @@ export class TabManager {
 	private handleTabEvent(tab: AgentTab, event: AgentSessionEvent): void {
 		switch (event.type) {
 			case "agent_start":
+				// A settings write or a model swap can invalidate the override between
+				// commands; the budgets matter again for the turn that starts here.
+				reconcileContextLimit(tab, tab.runtime.session);
 				setTabStatus(tab, "running", { restart: true });
 				break;
 			case "turn_start":

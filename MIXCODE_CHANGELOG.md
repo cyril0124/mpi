@@ -18,6 +18,16 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- `/context-limit [tokens|reset]` caps the current agent tab at a context window of its own: `32k`,
+  `32.5k`, `32000` and `reset` are accepted, and the bare command opens a picker offering ¼, ½ and ¾ of
+  the model's window, the full window (= reset) and a free-text row. Two things then carry the limit:
+  the card's `used/limit` reading appends a `*` and the meter below computes its percentage against it,
+  and the live session model reports the window, so Pi's own compaction and extensions reading
+  `ctx.model` agree. The compaction reserve shrinks to fit (`reserveTokens = 10%` of the limit, capped
+  at 16384; `keepRecentTokens = 25%`), and a reset hands both back to the user's settings. A model
+  change — from the selector, `/model`, a cycle key or a provider login — drops the limit, and so does
+  replacing the session (`/new`, `/resume`, fork, import) or `/reload`.
+  See [Input Dock](docs/input-dock.md) for the `*` mark.
 - `ctrl+t` (or `/jump`) opens Tab Jump, a searchable overlay listing MixCode Home and every open
   agent tab: a status glyph, the title and the tab id per row, with the focused tab highlighted
   first. The header row labels the query and reports `matched/total tabs`. `up`/`ctrl+k`/`shift+tab`

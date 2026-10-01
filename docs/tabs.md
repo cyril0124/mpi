@@ -39,6 +39,7 @@ start-up instructions do not name the toggle, and `/hotkeys` reports it with a n
 | `/tab <index\|title>` | Focus an open tab. |
 | `/jump` | Open the Tab Jump switcher. An argument reports `Usage: /jump`. |
 | `/workdir [path]` | Move the current tab onto another working directory. With a path the move happens at once; without one a directory picker opens. See [Workdir](#workdir). |
+| `/context-limit [tokens\|reset]` | Cap the current tab at a context window of its own. Without an argument a picker offers fractions of the model's window and a free-text row. The limit lasts for the session and ends with a model switch, a session replacement or a reload; see [Input Dock](input-dock.md). |
 | `/color [name\|clear]` | Set the current tab's chip color; without an argument or with `clear` the color is removed. |
 | `/group-colored-tabs` | Sort tabs so colored ones lead, aggregated by color in palette order. |
 | `/mark-done` | Flag the current tab as finished in the tab bar. |

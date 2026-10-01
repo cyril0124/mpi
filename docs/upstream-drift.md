@@ -53,6 +53,7 @@ commit that causes it.
 | Hidden thinking | the full reasoning text when hiding is off, the italic `Thinking...` label when it is on | with hiding on, each block renders as a three-row tail that follows the stream: a `Thinking` header whose duration ticks live and freezes when the block stops growing, and the last three visual rows behind a left rail, `…`-marked when earlier content was dropped. An extension `setHiddenThinkingLabel` still replaces the whole block. The `Thinking tail preview` row in `/settings` turns it off, and it defaults to on | the tail keeps the reasoning legible while it streams without giving the block the whole transcript |
 | New-version prompt | checks `pi.dev/api/latest-version` at startup and prints an `Update Available` block with a changelog link, gated by `PI_SKIP_VERSION_CHECK` | no prompt about pi's own releases: the startup check, `checkForNewPiVersion` and `PI_SKIP_VERSION_CHECK` are gone | the fork reports outdated extension packages on [MixCode Home](home.md), and only there |
 | Exit resume hint | prints `To resume this session: pi --session <id>` on interactive quit when the session is persisted | no such line: the print and the `formatResumeCommand` helper behind it are removed | MixCode holds several sessions in one process and reaches them through its own tabs, so pi's `--session` command is not how a session is resumed |
+| Settings overrides | `applyOverrides` layers a value onto the effective settings, and the next recomposition from the scopes (`save`, `reload`, a trust change) drops it | the override layer is kept and re-merged on every recomposition, and `clearOverrides` releases named fields | a tab's `/context-limit` narrows the compaction budgets, and a settings write in the middle of a turn would otherwise restore the full budgets without saying so |
 
 ## Outdated upstream pages and source copy
 
@@ -91,7 +92,9 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
 - `packages/coding-agent/src/core/agent-session.ts`: request-scoped manual compaction model and the steering and follow-up queue splice
-- `packages/coding-agent/src/core/settings-manager.ts`: the fork's fullscreen `tuiMode` default
+- `packages/coding-agent/src/core/settings-manager.ts`: the fork's fullscreen `tuiMode` default and a
+  retained override layer (`applyOverrides` keeps its overrides across scope recompositions, and
+  `clearOverrides` releases named fields)
 - `packages/coding-agent/src/core/extensions/loader.ts`: routes bun-dist extension imports through `virtualModules`
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: forwards the host's copy callback and selection options to the alternate screen
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`, `theme/dark.json`, `theme/light.json`,

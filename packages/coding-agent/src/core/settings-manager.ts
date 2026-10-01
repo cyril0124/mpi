@@ -318,6 +318,8 @@ export class SettingsManager {
 	private globalSettings: Settings;
 	private projectSettings: Settings;
 	private settings: Settings;
+	/** Layers applied on top of the scope settings; re-merged whenever those are rebuilt. */
+	private overrides: Partial<Settings> = {};
 	private projectTrusted: boolean;
 	private modifiedFields = new Set<keyof Settings>(); // Track global fields modified during session
 	private modifiedNestedFields = new Map<keyof Settings, Set<string>>(); // Track global nested field modifications
@@ -347,7 +349,7 @@ export class SettingsManager {
 		this.projectSettingsLoadError = projectLoadError;
 		this.errors = [...initialErrors];
 		this.settingsPaths = settingsPaths;
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.settings = this.mergedSettings();
 	}
 
 	/** Create a SettingsManager that loads from files */
@@ -523,7 +525,7 @@ export class SettingsManager {
 		if (!trusted) {
 			this.projectSettings = {};
 			this.projectSettingsLoadError = null;
-			this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+			this.settings = this.mergedSettings();
 			return;
 		}
 
@@ -533,7 +535,7 @@ export class SettingsManager {
 		if (projectLoad.error) {
 			this.recordError("project", projectLoad.error);
 		}
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.settings = this.mergedSettings();
 	}
 
 	async reload(): Promise<void> {
@@ -561,12 +563,31 @@ export class SettingsManager {
 			this.recordError("project", projectLoad.error);
 		}
 
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.settings = this.mergedSettings();
 	}
 
-	/** Apply additional overrides on top of current settings */
+	/**
+	 * Apply additional overrides on top of current settings.
+	 *
+	 * The override layer is kept and re-merged whenever the scope settings are
+	 * rebuilt (a save, a reload, a trust change), so an override means the same
+	 * thing to every later reader instead of quietly disappearing at the next write.
+	 */
 	applyOverrides(overrides: Partial<Settings>): void {
+		this.overrides = deepMergeSettings(this.overrides, overrides);
 		this.settings = deepMergeSettings(this.settings, overrides);
+	}
+
+	/**
+	 * Release named fields from the override layer, so the scope settings supply
+	 * them again. Without this an override could only be narrowed, never lifted,
+	 * and a later edit to the same setting could never take effect.
+	 */
+	clearOverrides(fields: ReadonlyArray<keyof Settings>): void {
+		const next: Partial<Settings> = { ...this.overrides };
+		for (const field of fields) delete next[field];
+		this.overrides = next;
+		this.settings = this.mergedSettings();
 	}
 
 	/** Mark a global field as modified during this session */
@@ -665,8 +686,13 @@ export class SettingsManager {
 		});
 	}
 
+	/** The effective settings: the scopes first, then the override layer on top. */
+	private mergedSettings(): Settings {
+		return deepMergeSettings(deepMergeSettings(this.globalSettings, this.projectSettings), this.overrides);
+	}
+
 	private save(): void {
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.settings = this.mergedSettings();
 
 		if (this.globalSettingsLoadError) {
 			return;
@@ -684,7 +710,7 @@ export class SettingsManager {
 	private saveProjectSettings(settings: Settings): void {
 		this.assertProjectTrustedForWrite();
 		this.projectSettings = structuredClone(settings);
-		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.settings = this.mergedSettings();
 
 		if (this.projectSettingsLoadError) {
 			return;

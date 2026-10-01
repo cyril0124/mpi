@@ -106,11 +106,12 @@ export function renderInputMeta(data: InputMetaData, width: number): InputMetaRe
 	return { lines, regions: left.regions };
 }
 
-/** Exact compact usage for the card's top edge, e.g. `12.3k/200k`. */
-export function exactContextUsageText(tokens: number | null | undefined, limit: number): string {
+/** Exact compact usage for the card's top edge, e.g. `12.3k/200k` or `12.3k/32k*`. */
+export function exactContextUsageText(tokens: number | null | undefined, limit: number, overridden = false): string {
 	if (!(limit > 0)) return "";
-	if (tokens === null || tokens === undefined) return `?/${formatCompactTokenCount(limit)}`;
-	return `${formatCompactTokenCount(tokens)}/${formatCompactTokenCount(limit)}`;
+	const mark = overridden ? "*" : "";
+	if (tokens === null || tokens === undefined) return `?/${formatCompactTokenCount(limit)}${mark}`;
+	return `${formatCompactTokenCount(tokens)}/${formatCompactTokenCount(limit)}${mark}`;
 }
 
 /** Context meter: the context glyph, then eight cells and the percentage. */

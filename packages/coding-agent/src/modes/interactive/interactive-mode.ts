@@ -104,6 +104,14 @@ import {
 import { resolveOutputEditor } from "../../core/mixcode/console/output-editor.ts";
 import { runWithConsoleTab } from "../../core/mixcode/console-scope.ts";
 import {
+	applyContextLimitToSession,
+	baseContextWindow,
+	type ContextLimitValue,
+	clearContextLimitOverride,
+	isContextLimitActive,
+	parseContextLimitValue,
+} from "../../core/mixcode/context-limit.ts";
+import {
 	type FollowUpHost,
 	flushSteerQueue,
 	popQueuedMessage,
@@ -254,6 +262,7 @@ import {
 	type CommandPaletteEntry,
 } from "./components/mixcode/command-palette/command-palette.ts";
 import { ConsoleNotice, consoleNoticeOverlayOptions } from "./components/mixcode/console/console-notice.ts";
+import { ContextLimitSelectorComponent } from "./components/mixcode/context-limit/context-limit-selector.ts";
 import { DockWidgetBudget } from "./components/mixcode/dock-widgets/dock-widgets.ts";
 import {
 	QueuePreviewComponent,
@@ -3097,7 +3106,18 @@ export class InteractiveMode {
 			// Home composes for a tab it is not attached to, so it shows no context reading.
 			readUsage: () => (this.homeSelection.active ? undefined : this.contextUsage()),
 			fallbackContextWindow: state.model?.contextWindow ?? 0,
+			contextLimitOverridden: this.hasContextLimitOverride(),
 		};
+	}
+
+	/**
+	 * True while the tab in front runs with a live `/context-limit` override. Read
+	 * from the override's own model, so a session model swapped behind it (a
+	 * reload, an extension) reports no override even before the reconcile runs.
+	 */
+	private hasContextLimitOverride(): boolean {
+		const tab = this.tabManager?.activeTab();
+		return tab !== undefined && isContextLimitActive(tab, tab.runtime.session);
 	}
 
 	/**
@@ -5982,6 +6002,12 @@ export class InteractiveMode {
 				this.handleThinkingCommand(searchTerm);
 				return;
 			}
+			if (text === "/context-limit" || text.startsWith("/context-limit ")) {
+				const args = text.startsWith("/context-limit ") ? text.slice("/context-limit ".length).trim() : "";
+				this.editor.setText("");
+				this.handleContextLimitCommand(args);
+				return;
+			}
 			if (text === "/export" || text.startsWith("/export ")) {
 				await this.handleExportCommand(text);
 				this.editor.setText("");
@@ -7624,6 +7650,7 @@ export class InteractiveMode {
 				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
 				this.showStatus(msg);
 			} else {
+				this.dropContextLimitOverride();
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
 				const thinkingStr =
@@ -8584,6 +8611,88 @@ export class InteractiveMode {
 		this.selectThinkingLevel(level, false);
 	}
 
+	/** `/context-limit [tokens|reset]`: apply directly, or open the picker with no argument. */
+	private handleContextLimitCommand(args: string): void {
+		if (args === "") {
+			this.showContextLimitSelector();
+			return;
+		}
+		const value = parseContextLimitValue(args);
+		if (value === undefined) {
+			this.showError(`Invalid context limit: "${args}". Use a number (e.g. 32k, 40000) or "reset".`);
+			return;
+		}
+		this.applyContextLimit(value);
+	}
+
+	/**
+	 * Apply a limit to the tab the tab manager has focused. On the Home surface
+	 * that is the last focused agent tab, the same target `/color` and `/rename`
+	 * use there.
+	 */
+	private applyContextLimit(value: ContextLimitValue): void {
+		const tab = this.activeTab();
+		if (!tab) {
+			this.showWarning("Context limit needs an agent tab; return to an agent first.");
+			return;
+		}
+		try {
+			const toast = applyContextLimitToSession(tab, value, tab.runtime.session);
+			this.notifyToast(toast.type, toast.message);
+			this.footer.invalidate();
+			this.ui.requestRender();
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	/** The picker's fractions are taken from the tab's own model, not the current limit. */
+	private showContextLimitSelector(): void {
+		const tab = this.activeTab();
+		if (!tab) {
+			this.showWarning("Context limit needs an agent tab; return to an agent first.");
+			return;
+		}
+		const modelWindow = baseContextWindow(tab, tab.runtime.session);
+		if (modelWindow <= 0) {
+			this.showWarning("Context limit needs a model in this tab; pick one with /model first.");
+			return;
+		}
+		this.showSelector((done) => {
+			const selector = new ContextLimitSelectorComponent(
+				modelWindow,
+				(value) => {
+					done();
+					this.applyContextLimit(value);
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector };
+		});
+	}
+
+	/**
+	 * A `/context-limit` override belongs to the model it was set on, so a model
+	 * change drops it and gives the compaction budgets back their baseline. A
+	 * reload resolves the session model again and counts as one.
+	 */
+	private dropContextLimitOverride(): void {
+		const tab = this.activeTab();
+		if (!tab) return;
+		clearContextLimitOverride(tab, tab.runtime.session);
+	}
+
+	/**
+	 * The tab every multi-tab command acts on, without the throw an empty tab
+	 * manager would raise mid-teardown.
+	 */
+	private activeTab(): AgentTab | undefined {
+		return this.tabManager?.activeTab();
+	}
+
 	private selectThinkingLevel(level: ThinkingLevel, persist: boolean): void {
 		try {
 			this.session.setThinkingLevel(level, { persist });
@@ -8626,6 +8735,7 @@ export class InteractiveMode {
 		if (model) {
 			try {
 				await this.session.setModel(model, { persist: false });
+				this.dropContextLimitOverride();
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
 				this.showStatus(`Model: ${model.id}`);
@@ -8770,6 +8880,7 @@ export class InteractiveMode {
 			const selectModel = async (model: Model<any>, persist: boolean) => {
 				try {
 					await this.session.setModel(model, { persist });
+					this.dropContextLimitOverride();
 					this.updateAvailableProviderCount();
 					this.footer.invalidate();
 					this.updateEditorBorderColor();
@@ -9642,7 +9753,11 @@ export class InteractiveMode {
 		try {
 			await this.loginProvider(dialog, providerId, "api_key");
 			restoreEditor();
+			const modelBeforeLogin = this.session.model;
 			await this.completeProviderAuthentication(providerId, providerName, "api_key", previousModel);
+			// Login picks a new default model only for a provider it did not know;
+			// otherwise the session keeps its model and a live limit stays with it.
+			if (this.session.model !== modelBeforeLogin) this.dropContextLimitOverride();
 		} catch (error: unknown) {
 			restoreEditor();
 			const errorMsg = error instanceof Error ? error.message : String(error);
@@ -9756,7 +9871,11 @@ export class InteractiveMode {
 		try {
 			await this.loginProvider(dialog, providerId, "oauth");
 			restoreEditor();
+			const modelBeforeLogin = this.session.model;
 			await this.completeProviderAuthentication(providerId, providerName, "oauth", previousModel);
+			// Login picks a new default model only for a provider it did not know;
+			// otherwise the session keeps its model and a live limit stays with it.
+			if (this.session.model !== modelBeforeLogin) this.dropContextLimitOverride();
 		} catch (error: unknown) {
 			restoreEditor();
 			const errorMsg = error instanceof Error ? error.message : String(error);
@@ -9829,6 +9948,7 @@ export class InteractiveMode {
 		try {
 			await this.session.reload({ beforeSessionStart: restoreChatBeforeSessionStart });
 			restoreChatBeforeSessionStart();
+			this.dropContextLimitOverride();
 			this.keybindings.reload();
 			const activeHeader = this.customHeader ?? this.builtInHeader;
 			if (isExpandable(activeHeader)) {

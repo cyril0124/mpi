@@ -52,6 +52,7 @@
 
 | 新版本提示 | 启动时请求 `pi.dev/api/latest-version`，打印带 changelog 链接的 `Update Available` 块，由 `PI_SKIP_VERSION_CHECK` 关闭 | 不再提示 pi 自身的新版本：启动检查、`checkForNewPiVersion` 与 `PI_SKIP_VERSION_CHECK` 均已删除 | 本 fork 改为只在 [MixCode Home](home.zh.md) 报告过期的扩展包 |
 | 退出恢复提示 | 已持久化的会话在交互式退出时打印 `To resume this session: pi --session <id>` | 不再打印该输出，负责拼装它的 `formatResumeCommand` 辅助函数也已删除 | MixCode 在一个进程里保留多个会话并通过自己的标签页进入，pi 的 `--session` 命令不是恢复会话的方式 |
+| 设置覆盖 | `applyOverrides` 把值叠加到生效设置上，下一次从各作用域重新组合（`save`、`reload`、信任状态变化）时就会丢失 | 覆盖层会被保留，并在每次重新组合时重新合并；`clearOverrides` 用于释放指定字段 | 标签页的 `/context-limit` 会收窄压缩预算，否则中途一次设置写入就会在无提示的情况下恢复完整预算 |
 
 ## 已过期的上游页面与源码文案
 
@@ -89,7 +90,7 @@
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
 - `packages/coding-agent/src/core/agent-session.ts`：手动压缩请求独立指定模型，以及 steering 与 follow-up 队列的摘除
-- `packages/coding-agent/src/core/settings-manager.ts`：fork 的 fullscreen `tuiMode` 默认值
+- `packages/coding-agent/src/core/settings-manager.ts`：fork 的 fullscreen `tuiMode` 默认值，以及保留的覆盖层（`applyOverrides` 的覆盖在每次重新组合时都会保留，`clearOverrides` 释放指定字段）
 - `packages/coding-agent/src/core/extensions/loader.ts`：让 bun 发行版的扩展导入走 `virtualModules`
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调与选中选项转发给备用屏幕
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`、`theme/dark.json`、`theme/light.json`、
