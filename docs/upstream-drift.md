@@ -51,8 +51,8 @@ commit that causes it.
 | Mouse drag selection | selects any cell on screen, copies the cells verbatim, paints them with reverse video, and keeps following new output during the drag | scoped to the transcript, the prompt card and the notice panel; the copied text drops a framed surface's border rows, border columns, padding column and key-hint rows; the highlight uses the theme's `selectedBg` and is dropped by a release with copy-on-select on (a release with the setting off keeps it for the copy command), and it underlines the card rows inside a block that carries the pointer cue, whose fill uses the same background; a press holds the transcript so streaming output cannot move the selected rows, and the release leaves it there when the output grew past the viewport or the user scrolled | [Mouse Selection](mouse-selection.md) |
 | Extension module resolution | bun loading the built dist keeps jiti's `tryNative` (native TS import), so an extension's bare `@earendil-works/*` imports resolve from ambient `node_modules` | bun loading the built dist resolves through `virtualModules`, so the specifiers that map lists always come from the running host; bun running the TypeScript source is unchanged | a second copy of `@earendil-works/pi-tui` puts `ToolExecutionComponent.prototype` patching on a class the host never rendered, so renderer extensions silently fell back to the built-in tool rows |
 | Hidden thinking | the full reasoning text when hiding is off, the italic `Thinking...` label when it is on | with hiding on, each block renders as a three-row tail that follows the stream: a `Thinking` header whose duration ticks live and freezes when the block stops growing, and the last three visual rows behind a left rail, `…`-marked when earlier content was dropped. An extension `setHiddenThinkingLabel` still replaces the whole block. The `Thinking tail preview` row in `/settings` turns it off, and it defaults to on | the tail keeps the reasoning legible while it streams without giving the block the whole transcript |
-
 | New-version prompt | checks `pi.dev/api/latest-version` at startup and prints an `Update Available` block with a changelog link, gated by `PI_SKIP_VERSION_CHECK` | no prompt about pi's own releases: the startup check, `checkForNewPiVersion` and `PI_SKIP_VERSION_CHECK` are gone | the fork reports outdated extension packages on [MixCode Home](home.md), and only there |
+| Exit resume hint | prints `To resume this session: pi --session <id>` on interactive quit when the session is persisted | no such line: the print and the `formatResumeCommand` helper behind it are removed | MixCode holds several sessions in one process and reaches them through its own tabs, so pi's `--session` command is not how a session is resumed |
 
 ## Outdated upstream pages and source copy
 
@@ -72,6 +72,7 @@ Deliberately left unpatched:
 | `packages/coding-agent/src/utils/version-check.ts` (source copy) | exports `checkForNewPiVersion`, the startup check that reads `PI_SKIP_VERSION_CHECK` | removed; `getLatestPiRelease` and `isNewerPackageVersion` stay for `pi update --self` |
 | `packages/coding-agent/docs/usage.md:23` | "Press `Ctrl+T` to show or hide thinking blocks" | `ctrl+t` opens Tab Jump; `app.thinking.toggle` keeps the same default but the composer declines it behind the jump handler |
 | `packages/coding-agent/docs/keybindings.md:157` | `app.thinking.toggle` defaults to `ctrl+t` | the same key belongs to `app.tab.jump`, which the composer registers first; the toggle is reachable only after a rebind |
+| `packages/coding-agent/docs/settings.md:79` | `fullscreenExitOutput` set to `resume-hint` selects "only a session resume hint" as the exit output | the value still suppresses the transcript on exit, and nothing is printed in its place |
 
 Those pages also never list the tab keybindings and tab slash commands — `/jump` and its `ctrl+t`
 chord included; [Agent Tabs](tabs.md) is the source of truth for those.
@@ -108,7 +109,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/agent/src/agent.ts`: the steering and follow-up queue APIs
 - `packages/tui/src/layout-node.ts`: the windowed layout node and the scroll line provider
 - `packages/tui/src/components/settings-list.ts`: the optional `section` heading row on `SettingItem`
-- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section entries
+- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section entries, and the `Fullscreen exit output` description
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`: the `getSettingsListTheme` section heading style
 - `packages/tui/src/layout.ts`: windowed scroll child, line provider on the scroll box,
   `getComponentBox` for resolving a component to its committed box, and the `honorOffset` argument
@@ -139,6 +140,8 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/src/utils/version-check.ts`: `checkForNewPiVersion` removed, since the startup prompt was its only caller
 - `scripts/profile-coding-agent-node.mjs`: `--offline` no longer sets the removed `PI_SKIP_VERSION_CHECK`
 - `packages/coding-agent/test/version-check.test.ts`, `packages/coding-agent/test/package-command-paths.test.ts`: the removed check and its env var dropped from the cases
+- `packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts`: the resume-hint case dropped with the hint, leaving the shutdown ordering it was written for
+- `packages/coding-agent/test/format-resume-command.test.ts`: deleted with the `formatResumeCommand` helper it covered
 - `AGENTS.md`, `.gitignore`
 
 The fork also adds keys to upstream's `keybindings.ts` — the `app.workdir.*` bindings the workdir

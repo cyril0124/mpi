@@ -566,3 +566,6 @@ point `## [Unreleased]` at the new tag.
   `Update Available` transcript block with its changelog link, and the `PI_SKIP_VERSION_CHECK`
   environment variable that gated them are removed. The only update notice left is Home's list of
   outdated extension packages.
+- The `To resume this session: pi --session <id>` line printed on interactive quit is gone, and so
+  is the `formatResumeCommand` helper that built it. MixCode resumes through its own tabs, so the
+  hint named a command its users do not need.

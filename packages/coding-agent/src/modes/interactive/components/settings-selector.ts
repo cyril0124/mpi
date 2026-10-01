@@ -709,7 +709,7 @@ export class SettingsSelectorComponent extends Container {
 			{
 				id: "fullscreen-exit-output",
 				label: "Fullscreen exit output",
-				description: "Print the transcript or only a session resume hint when exiting fullscreen mode",
+				description: "Print the transcript on exit, or keep the last fullscreen frame in place",
 				currentValue: config.fullscreenExitOutput,
 				values: ["transcript", "resume-hint"],
 			},

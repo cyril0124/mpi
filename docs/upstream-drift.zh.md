@@ -51,6 +51,7 @@
 | 扩展模块解析 | bun 跑构建产物时保留 jiti 的 `tryNative`（原生 TS 导入），扩展的 `@earendil-works/*` 裸导入因此从环境 `node_modules` 解析 | bun 跑构建产物时改走 `virtualModules`，清单内的 specifier 一律取运行中宿主自己的那份；bun 跑 TypeScript 源码不受影响 | 第二份 `@earendil-works/pi-tui` 会让 `ToolExecutionComponent.prototype` 的补丁打在宿主从未渲染的类上，渲染扩展于是静默退回内置工具行 |
 
 | 新版本提示 | 启动时请求 `pi.dev/api/latest-version`，打印带 changelog 链接的 `Update Available` 块，由 `PI_SKIP_VERSION_CHECK` 关闭 | 不再提示 pi 自身的新版本：启动检查、`checkForNewPiVersion` 与 `PI_SKIP_VERSION_CHECK` 均已删除 | 本 fork 改为只在 [MixCode Home](home.zh.md) 报告过期的扩展包 |
+| 退出恢复提示 | 已持久化的会话在交互式退出时打印 `To resume this session: pi --session <id>` | 不再打印该输出，负责拼装它的 `formatResumeCommand` 辅助函数也已删除 | MixCode 在一个进程里保留多个会话并通过自己的标签页进入，pi 的 `--session` 命令不是恢复会话的方式 |
 
 ## 已过期的上游页面与源码文案
 
@@ -70,6 +71,7 @@
 | `packages/coding-agent/src/utils/version-check.ts`（源码文案） | 导出 `checkForNewPiVersion`，即读取 `PI_SKIP_VERSION_CHECK` 的启动检查 | 已删除；`getLatestPiRelease` 与 `isNewerPackageVersion` 保留供 `pi update --self` 使用 |
 | `packages/coding-agent/docs/usage.md:23` | "Press `Ctrl+T` to show or hide thinking blocks" | `ctrl+t` 打开 Tab Jump；`app.thinking.toggle` 默认键不变，但 composer 在跳转处理器之后不再响应它 |
 | `packages/coding-agent/docs/keybindings.md:157` | `app.thinking.toggle` 默认 `ctrl+t` | 同一个键属于 `app.tab.jump`，composer 先注册跳转处理器；thinking 开关需重新绑定后才可用 |
+| `packages/coding-agent/docs/settings.md:79` | `fullscreenExitOutput` 取 `resume-hint` 时选择 "only a session resume hint" 作为退出输出 | 该取值仍然跳过退出时的对话记录输出，且不再打印任何内容 |
 
 上面这些页面也都没有列出标签页键位和标签页斜杠命令 —— 包括 `/jump` 及其 `ctrl+t`；这些以 [Agent 标签页](tabs.zh.md) 为准。
 
@@ -104,7 +106,7 @@
 - `packages/agent/src/agent.ts`：steering 与 follow-up 队列 API
 - `packages/tui/src/layout-node.ts`：窗口化布局节点与滚动行提供者
 - `packages/tui/src/components/settings-list.ts`：`SettingItem` 的可选 `section` 标题行
-- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`：`MixCode` 分组条目
+- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`：`MixCode` 分组条目，以及 `Fullscreen exit output` 的描述
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`：`getSettingsListTheme` 的分组标题样式
 - `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒上的行提供者、把组件解析到它在已提交帧里盒子的 `getComponentBox`，以及被挂起的滚动视图传给窗口化子组件的 `honorOffset` 参数
 - `packages/tui/src/components/scroll-view.ts`：`setFollowSuspended` / `isFollowSuspended` / `resumeFollowEnd`，让指针手势能钉住它正在选中的那些行
@@ -122,6 +124,8 @@
 - `packages/coding-agent/src/utils/version-check.ts`：删除 `checkForNewPiVersion`，启动提示是它唯一的调用方
 - `scripts/profile-coding-agent-node.mjs`：`--offline` 不再设置已删除的 `PI_SKIP_VERSION_CHECK`
 - `packages/coding-agent/test/version-check.test.ts`、`packages/coding-agent/test/package-command-paths.test.ts`：用例中去掉已删除的检查与对应环境变量
+- `packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts`：随提示一并删掉恢复提示用例，保留它原本要覆盖的退出顺序
+- `packages/coding-agent/test/format-resume-command.test.ts`：随其覆盖的 `formatResumeCommand` 一并删除
 - `AGENTS.md`、`.gitignore`
 
 本 fork 还给 `keybindings.ts` 加了键位绑定 —— 工作目录选择器响应的 `app.workdir.*`、排队消息编辑响应的 `app.queueEdit.*`，以及 Tab Jump 浮层响应的 `app.tab.jump` / `app.tabJump.toggleNonIdle`；`core/mixcode/multi-tab/tab-manager.ts` 与 `tab-state.ts` 是 fork 自有文件。
