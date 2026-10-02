@@ -32,8 +32,9 @@ start-up instructions do not name the toggle, and `/hotkeys` reports it with a n
 | `/new-session [--focus\|--no-focus] [title]` | Open a tab with an optional title. Focuses the new tab unless `--no-focus` is given. An invalid argument reports `Usage: /new-session [--focus\|--no-focus] [title]`. |
 | `/close-session [yes]` | Close the current tab, keeping its session file. `yes` skips the confirmation. |
 | `/close-all-sessions` | Close every tab except the current one, after confirmation. |
-| `/delete-session [yes]` | Close the current tab and delete its session file. `yes` skips the confirmation. |
-| `/delete-all-sessions` | Delete every tab's session file and start fresh, after confirmation. |
+| `/delete-session [yes]` | Close the current tab and move its session file to the trash, where `/resume-trash` can restore it. `yes` skips the confirmation. |
+| `/delete-all-sessions` | Move every tab's session file to the trash and start fresh, after confirmation. |
+| `/resume-trash` | Open the session selector over the trash: restore a deleted session to its original path, or remove it for good. |
 | `/rename <title>` | Rename the current tab and its session. |
 | `/tabs` | List the open tabs. |
 | `/tab <index\|title>` | Focus an open tab. |

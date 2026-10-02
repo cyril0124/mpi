@@ -179,7 +179,7 @@ export async function handleDeleteTabs(
 			}
 			const keepPath = keep.runtime.session.sessionFile;
 			await host.runtimeHost.newSession();
-			if (keepPath) record(deleteOutcome(await deleteSessionFile(keepPath)));
+			if (keepPath) record(deleteOutcome(await deleteSessionFile(keepPath, { title: keep.title })));
 			await host.enqueueTabSwitch(() => host.switchActiveTab(tabManager.getActive()));
 		} else {
 			const closingId = tabManager.getActive().id;
@@ -192,7 +192,7 @@ export async function handleDeleteTabs(
 	await (host.sharedTabLayout?.transaction(runDelete) ?? runDelete());
 
 	if (errors.length > 0) host.showError(`Delete failed: ${errors.join("; ")}`);
-	if (deleted > 0) host.showStatus(`Deleted ${deleted} session file(s).`);
+	if (deleted > 0) host.showStatus(`Removed ${deleted} session file(s).`);
 	else if (errors.length === 0) host.showStatus("No session file to delete.");
 }
 

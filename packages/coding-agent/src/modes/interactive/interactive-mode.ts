@@ -175,6 +175,7 @@ import {
 	type TabColorName,
 	type TabLoadingPhase,
 } from "../../core/mixcode/multi-tab/types.ts";
+import { listTrash, restoreFromTrash, trashDir } from "../../core/mixcode/session-trash.ts";
 import { persistSessionCwd, writeSessionFile } from "../../core/mixcode/session-workdir.ts";
 import { type EditorFlagRequest, parseEditorFlag } from "../../core/mixcode/system-inspection/editor-flag.ts";
 import { getEffectiveSystemPrompt } from "../../core/mixcode/system-inspection/effective-system-prompt.ts";
@@ -6444,6 +6445,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/resume-trash") {
+				this.showTrashSelector();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/quit") {
 				this.editor.setText("");
 				await this.shutdown();
@@ -9488,6 +9494,61 @@ export class InteractiveMode {
 			});
 			return { component: selector, focus: selector };
 		});
+	}
+
+	/**
+	 * `/resume-trash`: the session selector over the trash dir. Picking an entry
+	 * restores its file to the original path before the runtime opens it; a
+	 * `.jsonl` dropped into the trash by hand opens in place.
+	 */
+	private showTrashSelector(): void {
+		const trashRoot = trashDir();
+		this.showSelector((done) => {
+			const selector = new SessionSelectorComponent(
+				(onProgress, signal) => SessionManager.list(this.sessionManager.getCwd(), trashRoot, onProgress, signal),
+				(onProgress, signal) => SessionManager.listAll(trashRoot, onProgress, signal),
+				async (trashPath) => {
+					done();
+					await this.handleResumeSession(await this.restoreTrashedSession(trashPath));
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+				() => {
+					void this.shutdown();
+				},
+				() => this.ui.requestRender(),
+				{
+					renameSession: async (sessionFilePath: string, nextName: string | undefined) => {
+						const next = (nextName ?? "").trim();
+						if (!next) return;
+						SessionManager.open(sessionFilePath).appendSessionInfo(next);
+					},
+					showRenameHint: true,
+					keybindings: this.keybindings,
+				},
+				this.sessionManager.getSessionFile(),
+			);
+			// A trash file can be the open session of a tab (an unindexed file opens in
+			// place), so refuse a delete for a session any tab holds, not only a busy one.
+			selector.setSessionDeleteGuard((sessionPath: string) => {
+				const tab = this.tabManager?.list().find((item) => item.runtime.session.sessionFile === sessionPath);
+				return tab ? `Cannot delete a session open in tab: ${tab.title}` : undefined;
+			});
+			return { component: selector, focus: selector };
+		});
+	}
+
+	/** Restore a trashed session and return the path to open. */
+	private async restoreTrashedSession(trashPath: string): Promise<string> {
+		const entry = (await listTrash()).find((item) => item.trashPath === trashPath);
+		if (!entry) return trashPath;
+		try {
+			return restoreFromTrash(entry.sessionId).originalPath;
+		} catch {
+			return trashPath;
+		}
 	}
 
 	private async handleResumeSession(

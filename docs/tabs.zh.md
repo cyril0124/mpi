@@ -25,8 +25,9 @@
 | `/new-session [--focus\|--no-focus] [title]` | 新建标签页，可选标题。默认聚焦新标签页，`--no-focus` 保持当前标签页聚焦。参数非法时报 `Usage: /new-session [--focus\|--no-focus] [title]`。 |
 | `/close-session [yes]` | 关闭当前标签页，保留会话文件。`yes` 跳过确认。 |
 | `/close-all-sessions` | 关闭除当前标签页外的所有标签页，需确认。 |
-| `/delete-session [yes]` | 关闭当前标签页并删除其会话文件。`yes` 跳过确认。 |
-| `/delete-all-sessions` | 删除所有标签页的会话文件并重新开始，需确认。 |
+| `/delete-session [yes]` | 关闭当前标签页并把会话文件移入回收站，可用 `/resume-trash` 还原。`yes` 跳过确认。 |
+| `/delete-all-sessions` | 把所有标签页的会话文件移入回收站并重新开始，需确认。 |
+| `/resume-trash` | 打开回收站上的会话选择器：把已删除会话还原回原路径，或彻底移除。 |
 | `/rename <title>` | 重命名当前标签页及其会话。 |
 | `/tabs` | 列出已打开的标签页。 |
 | `/tab <index\|title>` | 聚焦指定标签页。 |

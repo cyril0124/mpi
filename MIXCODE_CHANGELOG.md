@@ -18,6 +18,16 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- `/delete-session` moves the session file into `<agent dir>/mixcode-pi/trash/` instead of
+  unlinking it, and records it in `trash-index.jsonl` (`sessionId`, `title`, `deletedAt`,
+  `originalPath`, `trashPath`, `size`). The trash is capped at 2 GiB and evicts the oldest
+  entries first; a session past the cap, or a move that fails, falls back to the system `trash`
+  CLI and then to an unlink, so a delete never leaves the session half-removed. `/resume-trash`
+  opens the session selector over the trash dir — `Current Folder` shows entries deleted from the
+  active workdir, `All` shows every trashed session — restores the picked file to its original
+  path before opening it, and removes a row for good when that row is deleted from that selector.
+  The state directory is the one MixCode shares with mixcode-pi, so both agents read the same
+  trash.
 - A failed model request records its exception's bounded facts as a `[provider-error]` console
   line: `provider`, `model`, `api`, and up to five `{name, code, status}` nodes drawn from the
   exception's `cause` chain and `AggregateError.errors`. Messages, stacks, headers, bodies and

@@ -16,6 +16,7 @@ commit that causes it.
 | `/fork` message selection | replaces the active session | opens a new independent tab after the source, with a unique `-fork` title and the selected message in its editor | the original conversation remains available beside the alternative |
 | `/reset` | no such command; the only way back to the root of a conversation is to navigate there in `/tree` | `/reset` moves the leaf back to the session root in the same file, keeping the tab, its title and every entry, which stay reachable in `/tree` | re-rooting a conversation should not mean opening the tree selector, and the abandoned branches are worth keeping |
 | Session deletion | deletes the selected session file | refuses while the owning tab has a turn in progress | another tab may still be writing that file |
+| Deleted sessions | the file is unlinked | the file is moved to `<agent dir>/mixcode-pi/trash/` and indexed in `trash-index.jsonl` (2 GiB cap, oldest evicted first), with `/resume-trash` restoring a pick back to its original path; a move that fails falls back to the `trash` CLI and then to an unlink | a mis-typed `/delete-session` should be undoable without a backup; the trash dir is the one MixCode shares with mixcode-pi |
 | `app.model.cycleForward` default key | `ctrl+p` | no default key | `ctrl+p` opens the command palette |
 | `app.tab.jump` default key | no such action; `ctrl+t` toggles thinking-block visibility | `ctrl+t` opens the Tab Jump switcher, and `app.thinking.toggle` keeps its `ctrl+t` default but loses the chord to the composer's registration order | jumping to one of several agents should not mean cycling past the others; see [Agent Tabs](tabs.md#tab-jump) |
 | Quit | `ctrl+d` exits, no confirmation | `ctrl+q` (`ctrl+shift+q` on Windows and WSL) asks first; `ctrl+d` unchanged | [Command Palette and Quit Confirmation](command-palette.md) |
@@ -65,6 +66,7 @@ Deliberately left unpatched:
 
 | Page | Upstream text | Reality |
 | --- | --- | --- |
+| `packages/coding-agent/docs/session-format.md:20` | "When available, pi uses the `trash` CLI to avoid permanent deletion" | `/delete-session` and the selector move the file into `<agentDir>/mixcode-pi/trash/`; the `trash` CLI only runs when that move fails |
 | `packages/coding-agent/docs/usage.md:49` | "Press `Shift+Tab` to cycle through supported levels" | the cycle key is `alt+t` |
 | `packages/coding-agent/docs/keybindings.md:155` | `app.thinking.cycle` defaults to `shift+tab` | it defaults to `alt+t` |
 | `packages/coding-agent/src/experimental/micro/README.md:30` | "Shift+Tab: cycle the current model's supported thinking levels" | micro's status line reads the live binding; only this hardcoded text is wrong |

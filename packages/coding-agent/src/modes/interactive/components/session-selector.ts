@@ -821,7 +821,10 @@ export class SessionSelectorComponent extends Container implements Focusable {
 				this.requestRender();
 				return;
 			}
-			const result = await deleteSessionFile(sessionPath);
+			const info = [...(this.currentSessions ?? []), ...(this.allSessions ?? [])].find(
+				(session) => session.path === sessionPath,
+			);
+			const result = await deleteSessionFile(sessionPath, { title: info?.name });
 
 			if (result.ok) {
 				if (this.currentSessions) {
@@ -835,7 +838,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 				const showCwd = this.scope === "all";
 				this.sessionList.setSessions(sessions, showCwd);
 
-				const msg = result.method === "trash" ? "Session moved to trash" : "Session deleted";
+				const msg = result.method === "unlink" ? "Session deleted" : "Session moved to trash";
 				this.header.setStatusMessage({ type: "info", message: msg }, 2000);
 				await this.refreshSessionsAfterMutation();
 			} else {

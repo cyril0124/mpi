@@ -58,7 +58,7 @@ function ensureDir(filePath: string): void {
 	mkdirSync(dirname(filePath), { recursive: true });
 }
 
-function atomicWrite(filePath: string, contents: string): void {
+export function atomicWrite(filePath: string, contents: string): void {
 	ensureDir(filePath);
 	const temp = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
 	writeFileSync(temp, contents, "utf-8");
@@ -538,7 +538,7 @@ const LOCK_WAIT_TIMEOUT_MS = 5_000;
  * Exclusive lock on `<file>.lock`. A live holder is waited for; only a dead or
  * unreadable holder is reclaimed.
  */
-function withStateLock<T>(lockPath: string, fn: () => T): T {
+export function withStateLock<T>(lockPath: string, fn: () => T): T {
 	ensureDir(lockPath);
 	const payload = `${JSON.stringify({ pid: process.pid })}\n`;
 	const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;

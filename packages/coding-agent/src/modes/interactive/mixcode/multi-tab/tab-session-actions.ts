@@ -10,6 +10,7 @@ import type { AgentSession } from "../../../../core/agent-session.ts";
 import type { SharedTabLayout } from "../../../../core/mixcode/multi-tab/shared-tab-layout.ts";
 import type { AgentTab } from "../../../../core/mixcode/multi-tab/tab-manager.ts";
 import { type TabManager, tabBusyReason } from "../../../../core/mixcode/multi-tab/tab-manager.ts";
+import { isInTrash } from "../../../../core/mixcode/session-trash.ts";
 import { handleCloseTab, handleDeleteTabs } from "./tab-lifecycle.ts";
 
 export interface SessionActionHost {
@@ -69,10 +70,12 @@ export async function handleDeleteSession(host: SessionActionHost, args: string)
 		return;
 	}
 	if (mode === "confirm") {
-		const confirmed = await host.showExtensionConfirm(
-			"Delete session",
-			`Permanently delete the session file?\n${filePath}\nThis cannot be undone.`,
-		);
+		// A session file can already sit in the trash (an unindexed file opens in
+		// place), and deleting that one is permanent rather than recoverable.
+		const message = isInTrash(filePath)
+			? `Remove this session from the trash for good?\n${filePath}\nThis cannot be undone.`
+			: `Delete the session file?\n${filePath}\nIt moves to the trash and can be restored with /resume-trash; if that move fails it is deleted for good.`;
+		const confirmed = await host.showExtensionConfirm("Delete session", message);
 		if (!confirmed) return;
 	}
 	try {
@@ -137,7 +140,7 @@ export async function handleDeleteAllSessions(host: SessionActionHost): Promise<
 	const total = tabManager.size;
 	const confirmed = await host.showExtensionConfirm(
 		"Delete all sessions",
-		`Permanently delete the session files of all ${total} tab(s) and start fresh? This cannot be undone.`,
+		`Delete the session files of all ${total} tab(s) and start fresh? They move to the trash and can be restored with /resume-trash; a file already in the trash, or one whose move fails, is deleted for good.`,
 	);
 	if (!confirmed) return;
 	try {

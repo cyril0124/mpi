@@ -403,7 +403,7 @@ export class TabManager {
 		const closed = await this.closeTab(id);
 		if (!closed) return { ok: false, removed: false, error: "Cannot delete the last tab." };
 		if (!sessionPath) return { ok: true, removed: false };
-		const result = await deleteSessionFile(sessionPath);
+		const result = await deleteSessionFile(sessionPath, { title: tab.title });
 		return { ok: result.ok, removed: result.removed, path: sessionPath, error: result.error };
 	}
 
