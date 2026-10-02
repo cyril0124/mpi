@@ -27,6 +27,7 @@ import {
 	nextAvailableAgentTitle,
 	TAB_COLOR_NAMES,
 	type TabColorName,
+	type TabLoadingPhase,
 	type TabStatus,
 	uniquifyTitle,
 } from "./types.ts";
@@ -51,6 +52,8 @@ export interface AgentTab {
 	 * turn. The chip shows a spinner while it holds, and `status` is left untouched.
 	 */
 	loading: boolean;
+	/** What the tab is still doing while `loading` holds; drives the Home chip label. */
+	loadingPhase?: TabLoadingPhase;
 	/** Non-persisted: when this tab last took focus, starting its title shimmer. */
 	activatedAt?: number;
 	workingStartedAt?: string;
@@ -520,6 +523,7 @@ export class TabManager {
 		const tab = this.get(id);
 		if (!tab?.loading) return false;
 		tab.loading = false;
+		tab.loadingPhase = undefined;
 		this.onTabsChanged();
 		return true;
 	}

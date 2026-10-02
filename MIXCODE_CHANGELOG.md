@@ -294,6 +294,11 @@ point `## [Unreleased]` at the new tag.
   in-app block), and both estimate tokens at ~4 characters per token with one token per CJK character.
 ### Changed
 
+- Home's startup restore now shows the whole persisted tab layout from the first frame and labels each
+  card with the phase its tab is in: a persisted tab whose runtime does not exist yet is a placeholder
+  row, and a still-loading tab reports `session`, `resources` or `waiting for input` rather than the
+  generic `loading`. Previously the roster appeared one tab at a time and every not-yet-ready card
+  carried the same chip, so a slow restore read as an empty Home.
 - Tab Jump takes `ctrl+t`, so the composer no longer reaches `app.thinking.toggle` on that key: the
   toggle keeps its `ctrl+t` default but the jump handler is registered first, the start-up instructions
   no longer name it, and `/hotkeys` reports it with a note that its chord is taken. Rebind

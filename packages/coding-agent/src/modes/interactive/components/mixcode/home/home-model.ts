@@ -8,7 +8,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { contentText } from "@earendil-works/pi-ai";
 import { stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { bashExecutionToText } from "../../../../../core/messages.ts";
-import type { TabColorName, TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
+import type { TabColorName, TabLoadingPhase, TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
 import { formatTokens } from "../../../components/footer.ts";
 import { formatSecondCount, padLine } from "../layout-text.ts";
 
@@ -31,6 +31,8 @@ export interface HomeCard {
 	status: TabStatus;
 	unread: boolean;
 	color?: TabColorName;
+	/** What a `loading` card is waiting on; the chip names this phase. */
+	loadingPhase?: TabLoadingPhase;
 	/** ISO stamp of the current run; drives the spinner and `running <elapsed>`. */
 	workingStartedAt?: string;
 	/** ISO stamp of the last finished turn; drives the `Ns ago` meta suffix. */

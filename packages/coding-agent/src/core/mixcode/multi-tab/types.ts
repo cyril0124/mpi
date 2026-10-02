@@ -8,6 +8,13 @@
  */
 export type TabStatus = "loading" | "idle" | "running" | "thinking" | "error" | "done";
 
+/**
+ * What a still-loading tab is doing, shown as its Home card chip. The phases
+ * follow the restore order; `waiting for input` parks a build in an extension
+ * dialog. `undefined` means the generic `loading` label.
+ */
+export type TabLoadingPhase = "session" | "resources" | "waiting for input";
+
 /** Named tab colors offered by `/color`. */
 export const TAB_COLOR_NAMES = ["red", "green", "yellow", "blue", "magenta", "cyan", "white", "gray"] as const;
 

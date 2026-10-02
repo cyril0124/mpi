@@ -209,10 +209,11 @@ layout replaces it — unless its id is part of that layout, in which case it st
 Titles and colors are re-applied from `mixcode_state.json`; default-named tabs are renumbered so
 the dropped startup tab does not push them to the next free number.
 
-The layout is listed in the tab bar before any of it is built: every persisted tab gets a chip
-straight away, showing a spinner until its tab is ready. The tabs are then built one at a time, in
-the recorded order, so one session is in memory at a time and the session that opens is MixCode
-Home — with the tab that was focused last selected in the roster, not opened.
+The layout appears in full before any of it is built: the tab bar gives every persisted tab a chip
+straight away, and Home (the visible surface) lists every persisted tab as a card, each carrying its
+spinner and the phase its tab is in. The tabs are then built one at a time, in the recorded order, so
+one session is in memory at a time and the session that opens is MixCode Home — with the tab that was
+focused last selected in the roster, not opened.
 
 ## Session deletion
 

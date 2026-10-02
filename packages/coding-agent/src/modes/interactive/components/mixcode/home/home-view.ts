@@ -638,8 +638,10 @@ function conversationTail(agent: HomeAgentEntry, width: number, available: numbe
 // Card cells
 // ---------------------------------------------------------------------------
 
-/** `[done]`, `[error]`, or the status word, painted by severity. */
+/** `[done]`, `[error]`, the loading phase, or the status word, painted by severity. */
 function statusChip(card: HomeCard): string {
+	// A tab still coming up names the phase it is on, so the card says what it waits for.
+	if (card.status === "loading") return theme.fg("dim", `[${card.loadingPhase ?? "loading"}]`);
 	if (card.unread && (card.status === "idle" || card.status === "done")) {
 		return theme.fg("toolTitle", "[done]");
 	}

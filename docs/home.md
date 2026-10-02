@@ -40,6 +40,10 @@ the newest assistant (or system, or user) text. The selected card carries the se
 background. The roster windows around the selection and marks the hidden sides with
 `↑ older above` / `↓ newer below`.
 
+While a startup restore is running, the roster lists the whole persisted layout from the first frame.
+A tab whose runtime is not built yet keeps its spinner, and its chip names the phase it is in:
+`session`, `resources` or `waiting for input` (the generic `loading` before a phase is known).
+
 When the startup check finds outdated extension packages, Home lists them above the roster:
 `Package Updates Available`, the instruction line `Package updates are available. Run pi update
 --extensions`, the `Packages:` label, and one line per package. Home is the only place this notice
@@ -98,7 +102,7 @@ dialog resets the capture. Both commands can also be typed into the composer.
 
 Where mixcode-pi's Home page relies on machinery this fork does not have, the fork keeps its own:
 
-- no toast overlay, title shimmer, or loading-phase status chip;
+- no toast overlay or title shimmer;
 - no zen mode; vim mode is a per-tab transcript surface, and Home neither enters it nor hands it on;
 - the empty composer's hint names its own surface rather than mixcode-pi's: Home names the target
   agent, an agent tab reads `Describe your next change...  @ files  / commands`, and vim mode lists

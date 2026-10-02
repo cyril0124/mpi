@@ -133,6 +133,7 @@ import {
 	clampHomeSelectedTabIndex,
 	createHomeSelection,
 	HOME_TAB_ID,
+	type HomeRosterTab,
 	homeSelectedTab,
 	moveHomeSelection,
 	nextTabId,
@@ -172,6 +173,7 @@ import {
 	nextAvailableAgentTitle,
 	TAB_COLOR_NAMES,
 	type TabColorName,
+	type TabLoadingPhase,
 } from "../../core/mixcode/multi-tab/types.ts";
 import { persistSessionCwd, writeSessionFile } from "../../core/mixcode/session-workdir.ts";
 import { type EditorFlagRequest, parseEditorFlag } from "../../core/mixcode/system-inspection/editor-flag.ts";
@@ -662,6 +664,20 @@ interface RestoredTab {
 	unread: boolean;
 }
 
+/**
+ * One Home roster row. A live tab carries `tab`; a persisted tab still being
+ * restored has none yet, so the roster can list the whole layout on the first
+ * frame instead of growing one tab at a time. `HomeRosterTab` is what selection
+ * and the non-idle filter index against.
+ */
+interface HomeRosterEntry extends HomeRosterTab {
+	tab?: AgentTab;
+	loadingPhase?: TabLoadingPhase;
+	/** Persisted title/colour, kept for a placeholder whose tab does not exist yet. */
+	title?: string;
+	color?: TabColorName;
+}
+
 /** Flattened blocks for the windowed transcript, with the child lists they were built from. */
 interface TranscriptBlocksCache {
 	documentChildren: readonly Component[];
@@ -914,9 +930,10 @@ export class InteractiveMode {
 	private bindWorkerRunning = false;
 	/**
 	 * Tabs a startup restore still has to build, in persisted order. The tab bar lists
-	 * them as loading chips before their runtimes exist.
+	 * them as loading chips before their runtimes exist, and Home lists the whole
+	 * layout from the first frame; `phase` is what the in-flight tab is doing.
 	 */
-	private restoringTabs: Array<{ id: string; title: string; color?: TabColorName }> = [];
+	private restoringTabs: Array<{ id: string; title: string; color?: TabColorName; phase?: TabLoadingPhase }> = [];
 	/** Tabs whose startup resources block is still to be painted on their next focus. */
 	private readonly pendingResourcesBlocks = new Set<string>();
 	/** Cached transcript components per tab, reused when the tab is unchanged. */
@@ -986,12 +1003,12 @@ export class InteractiveMode {
 				createRuntime: options.createRuntime,
 				agentDir: runtimeHost.services.agentDir,
 				onTabsChanged: () => {
-					clampHomeSelectedTabIndex(this.homeSelection, this.tabManager?.list() ?? []);
+					clampHomeSelectedTabIndex(this.homeSelection, this.homeRoster());
 					this.ui.requestRender();
 				},
 				onLayoutChanged: () => this.persistOpenTabs(),
 				onTabClosed: (tabId, removedIndex) => {
-					adjustHomeSelectionAfterClose(this.homeSelection, this.tabManager?.list() ?? [], removedIndex);
+					adjustHomeSelectionAfterClose(this.homeSelection, this.homeRoster(), removedIndex);
 					this.homeMessageCache.delete(tabId);
 					clearHomeTabCache(tabId);
 					this.followUpStates.delete(tabId);
@@ -2609,7 +2626,35 @@ export class InteractiveMode {
 				this.tabExtensionUi(tabId).editorFactory = factory;
 			},
 			getToolsExpanded: () => this.tabExtensionUi(tabId).toolsExpanded,
+			// A dialog parks the bind, so the chip names this phase while it is open.
+			select: (title, options, opts) => this.withLoadingPhase(tabId, () => live.select(title, options, opts)),
+			confirm: (title, message, opts) => this.withLoadingPhase(tabId, () => live.confirm(title, message, opts)),
+			input: (title, placeholder, opts) => this.withLoadingPhase(tabId, () => live.input(title, placeholder, opts)),
+			custom: (factory, options) => this.withLoadingPhase(tabId, () => live.custom(factory, options)),
+			editor: (title, prefill) => this.withLoadingPhase(tabId, () => live.editor(title, prefill)),
 		};
+	}
+
+	/**
+	 * Mark a loading tab as parked on an extension dialog while `run` is pending,
+	 * then hand it back to `resources`. A dialog opened outside a loading tab is
+	 * left alone, so the phase never leaks onto a ready tab.
+	 */
+	private withLoadingPhase<T>(tabId: string, run: () => Promise<T>): Promise<T> {
+		const tab = this.tabManager?.get(tabId);
+		if (!tab?.loading) return run();
+		const restore = () => {
+			if (tab.loading) tab.loadingPhase = "resources";
+			this.ui.requestRender();
+		};
+		tab.loadingPhase = "waiting for input";
+		this.ui.requestRender();
+		try {
+			return run().finally(restore);
+		} catch (error) {
+			restore();
+			throw error;
+		}
 	}
 
 	/** The extension-UI record of a tab, created on first use. */
@@ -2876,7 +2921,7 @@ export class InteractiveMode {
 		const manager = this.tabManager;
 		if (!manager) return;
 		const currentId = this.homeSelection.active ? HOME_TAB_ID : manager.getActive().id;
-		const nextId = nextTabId(currentId, this.visibleTabs(), delta);
+		const nextId = nextTabId(currentId, this.homeRoster(), delta);
 		if (nextId === currentId) return;
 		if (nextId === HOME_TAB_ID) {
 			void this.activateHome();
@@ -2921,16 +2966,40 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * The tabs the tab bar shows. While a startup restore is running that is the
-	 * persisted layout, so cycling and the roster cannot reach the transient startup
-	 * tab the bar does not list.
+	 * The Home roster and tab cycle in persisted order. While a startup restore is
+	 * running, a persisted tab without a runtime yet is a placeholder row, so Home
+	 * shows the whole layout from the first frame; the transient startup tab is left
+	 * out. Outside a restore this is just the tab-manager order.
 	 */
-	private visibleTabs(): AgentTab[] {
+	private homeRoster(): HomeRosterEntry[] {
 		const manager = this.tabManager;
 		if (!manager) return [];
-		if (this.restoringTabs.length === 0) return [...manager.list()];
+		if (this.restoringTabs.length === 0) return manager.list().map((tab) => this.homeRosterEntry(tab));
 		const byId = new Map(manager.list().map((tab) => [tab.id, tab]));
-		return this.restoringTabs.map((entry) => byId.get(entry.id)).filter((tab): tab is AgentTab => tab !== undefined);
+		return this.restoringTabs.map((entry) => {
+			const tab = byId.get(entry.id);
+			return tab
+				? this.homeRosterEntry(tab, entry.phase)
+				: {
+						id: entry.id,
+						status: "loading",
+						unread: false,
+						loadingPhase: entry.phase,
+						title: entry.title,
+						color: entry.color,
+					};
+		});
+	}
+
+	/** One live roster row, reading the loading view state rather than the raw status. */
+	private homeRosterEntry(tab: AgentTab, phase?: TabLoadingPhase): HomeRosterEntry {
+		return {
+			id: tab.id,
+			status: tab.loading ? "loading" : tab.status,
+			unread: tab.unread,
+			tab,
+			loadingPhase: tab.loading ? (tab.loadingPhase ?? phase) : undefined,
+		};
 	}
 
 	/** Focus an existing agent tab, restoring its draft and transcript. */
@@ -2973,9 +3042,9 @@ export class InteractiveMode {
 		await this.enqueueTabSwitch(async () => {
 			this.homeActivationQueued = false;
 			manager.setDraft(manager.getActive().id, this.editorText());
-			syncHomeSelectionToTab(this.homeSelection, manager.list(), manager.getActive().id);
+			syncHomeSelectionToTab(this.homeSelection, this.homeRoster(), manager.getActive().id);
 			// Entering Home from an agent the filter hides must still select a visible row.
-			clampHomeSelectedTabIndex(this.homeSelection, manager.list());
+			clampHomeSelectedTabIndex(this.homeSelection, this.homeRoster());
 			this.homeSelection.active = true;
 			// Vim is a modal surface over an agent transcript; Home is a different
 			// surface, so the composer must not stay locked behind it.
@@ -3259,20 +3328,37 @@ export class InteractiveMode {
 	}
 
 	private getHomeViewModel(): HomeViewModel {
-		const tabs = this.visibleTabs();
+		const roster = this.homeRoster();
 		return {
 			version: this.version,
 			workdir: this.displayWorkdir(this.tabsWorkdir),
-			workingCount: tabs.filter((tab) => isWorkingStatus(tab.status)).length,
-			agents: tabs.map((tab) => {
-				const snapshot = this.homeSnapshotFor(tab);
-				return { card: this.homeCardFor(tab, snapshot), messages: snapshot.messages };
+			workingCount: roster.filter((entry) => isWorkingStatus(entry.status)).length,
+			agents: roster.map((entry) => {
+				// A persisted tab whose runtime does not exist yet has no transcript to
+				// preview; its card carries the loading phase instead.
+				if (!entry.tab) return { card: this.homePlaceholderCard(entry), messages: [] };
+				const snapshot = this.homeSnapshotFor(entry.tab);
+				return { card: this.homeCardFor(entry.tab, snapshot), messages: snapshot.messages };
 			}),
 			packageUpdates: this.packageUpdates,
 			selectedIndex: this.homeSelection.selectedIndex,
 			nonIdleOnly: this.homeSelection.nonIdleOnly,
 			// A dialog that opens over the page must drop any captured button press.
 			overlayOpen: this.ui.hasOverlay(),
+		};
+	}
+
+	/** Card for a persisted tab still being restored: no model, tokens, or transcript yet. */
+	private homePlaceholderCard(entry: HomeRosterEntry): HomeCard {
+		return {
+			id: entry.id,
+			title: entry.title ?? entry.id,
+			status: "loading",
+			unread: false,
+			color: entry.color,
+			loadingPhase: entry.loadingPhase,
+			tokens: null,
+			contextWindow: 0,
 		};
 	}
 
@@ -3286,6 +3372,7 @@ export class InteractiveMode {
 			status: tab.loading ? "loading" : tab.status,
 			unread: tab.unread,
 			color: tab.color,
+			loadingPhase: tab.loading ? tab.loadingPhase : undefined,
 			workingStartedAt: tab.workingStartedAt,
 			lastWorkedAt: tab.lastWorkedAt,
 			workdir: this.displayWorkdir(tab.runtime.cwd),
@@ -3354,8 +3441,8 @@ export class InteractiveMode {
 		try {
 			// Slash commands run against the bound session, so the selected tab is
 			// attached first, the same routing the composer's commands use.
-			const selected = homeSelectedTab(this.homeSelection, manager.list());
-			if (selected && manager.getActive().id !== selected.id) await this.activateTab(selected);
+			const selected = homeSelectedTab(this.homeSelection, this.homeRoster());
+			if (selected?.tab && manager.getActive().id !== selected.id) await this.activateTab(selected.tab);
 			await this.defaultEditor.onSubmit?.(`/${action}`);
 		} finally {
 			this.homeView?.setActionPending(false);
@@ -3369,10 +3456,11 @@ export class InteractiveMode {
 		const manager = this.tabManager;
 		if (!manager || !this.homeSelection.active || this.ui.hasOverlay()) return false;
 		if (isShowingAutocomplete(this.editor)) return false;
-		if (manager.list().length === 0) return false;
+		const roster = this.homeRoster();
+		if (roster.length === 0) return false;
 		// A multi-line composer needs the arrows for its caret, as on an agent tab.
 		if (this.editorText().includes("\n")) return false;
-		moveHomeSelection(this.homeSelection, manager.list(), delta);
+		moveHomeSelection(this.homeSelection, roster, delta);
 		this.ui.requestRender();
 		return true;
 	}
@@ -3381,8 +3469,9 @@ export class InteractiveMode {
 		const manager = this.tabManager;
 		if (!manager || !this.homeSelection.active || this.ui.hasOverlay()) return false;
 		if (isShowingAutocomplete(this.editor)) return false;
-		if (manager.list().length === 0) return false;
-		toggleHomeNonIdleOnly(this.homeSelection, manager.list());
+		const roster = this.homeRoster();
+		if (roster.length === 0) return false;
+		toggleHomeNonIdleOnly(this.homeSelection, roster);
 		this.ui.requestRender();
 		return true;
 	}
@@ -3393,10 +3482,12 @@ export class InteractiveMode {
 		if (!manager || !this.homeSelection.active || this.ui.hasOverlay()) return false;
 		if (isShowingAutocomplete(this.editor)) return false;
 		if (this.editorText().length > 0) return false;
-		if (this.homeSelectionIsHidden(manager.list())) return true;
-		const selected = homeSelectedTab(this.homeSelection, manager.list());
+		const roster = this.homeRoster();
+		if (this.homeSelectionIsHidden(roster)) return true;
+		const selected = homeSelectedTab(this.homeSelection, roster);
 		if (!selected) return false;
-		void this.activateTab(selected);
+		// A persisted tab still loading has no runtime to attach to yet.
+		if (selected.tab) void this.activateTab(selected.tab);
 		return true;
 	}
 
@@ -3418,28 +3509,31 @@ export class InteractiveMode {
 		if (!manager || !this.homeSelection.active || this.ui.hasOverlay()) return false;
 		if (isShowingAutocomplete(this.editor)) return false;
 		if (data === "\n") return false;
-		const tabs = manager.list();
-		if (tabs.length === 0) return false;
+		const roster = this.homeRoster();
+		if (roster.length === 0) return false;
 		const text = (this.editor.getExpandedText?.() ?? this.editorText()).trim();
 		if (!text) return true;
-		if (this.homeSelectionIsHidden(tabs)) return true;
-		const selected = homeSelectedTab(this.homeSelection, tabs);
+		if (this.homeSelectionIsHidden(roster)) return true;
+		const selected = homeSelectedTab(this.homeSelection, roster);
 		if (!selected) return false;
+		// A persisted tab still loading has no session to receive the message yet.
+		const tab = selected.tab;
+		if (!tab) return true;
 		this.setEditorText("");
 		this.editor.addToHistory?.(text);
 		if (InteractiveMode.isHomeCommandInput(text)) {
 			void (async () => {
-				await this.activateTab(selected);
+				await this.activateTab(tab);
 				this.setEditorText(text);
 				await this.defaultEditor.onSubmit?.(text);
 			})();
 			return true;
 		}
-		const session = selected.runtime.session;
+		const session = tab.runtime.session;
 		// A streaming agent takes the message as steering. A compacting one errors instead:
 		// the composer's queue belongs to the bound session, not to an arbitrary roster tab.
 		const options = session.isStreaming ? { streamingBehavior: "steer" as const } : undefined;
-		runInTabConsole(selected, () => session.prompt(text, options)).then(
+		runInTabConsole(tab, () => session.prompt(text, options)).then(
 			() => this.ui.requestRender(),
 			(error: unknown) => {
 				// Put the message back so the user can retry after fixing the cause.
@@ -3462,7 +3556,7 @@ export class InteractiveMode {
 	}
 
 	/** True when the non-idle filter hides the selected row, so Home cannot act on it. */
-	private homeSelectionIsHidden(tabs: readonly AgentTab[]): boolean {
+	private homeSelectionIsHidden(tabs: readonly HomeRosterTab[]): boolean {
 		if (!this.homeSelection.nonIdleOnly) return false;
 		return !visibleRosterIndices(this.homeSelection.nonIdleOnly, tabs).includes(this.homeSelection.selectedIndex);
 	}
@@ -3686,6 +3780,7 @@ export class InteractiveMode {
 					// the next focus try the bind again.
 					if (this.tabManager?.get(tab.id)) {
 						tab.loading = false;
+						tab.loadingPhase = undefined;
 						tab.status = "error";
 						this.ui.requestRender();
 					}
@@ -4039,6 +4134,7 @@ export class InteractiveMode {
 		const renamedSessions: Array<{ from: string; to: string }> = [];
 		try {
 			for (const sessionId of entries) {
+				const restoring = this.restoringTabs.find((item) => item.id === sessionId);
 				try {
 					const tabMeta = meta.get(sessionId);
 					const title = tabMeta?.title;
@@ -4048,6 +4144,8 @@ export class InteractiveMode {
 					const sessionPath =
 						resolveSessionPath(sessionDir, sessionId) ??
 						resolveSessionPath(getDefaultSessionDir(workdir), sessionId);
+					// While the session is read, the placeholder chip names this phase.
+					if (restoring) restoring.phase = "session";
 					// The tab id is the persisted session id, so the chip already waiting for this
 					// entry becomes the tab's own chip. A missing session file is rebuilt under
 					// that same id, so the shared set keeps one id per tab rather than gaining a
@@ -4059,6 +4157,8 @@ export class InteractiveMode {
 					restoredTabs.push({ id: tab.id, title, unread: tabMeta?.unread ?? false });
 					// Bind before building the next tab: a session build at a time keeps the
 					// memory peak at one, and the bind's walk blocks the loop either way.
+					tab.loadingPhase = "resources";
+					if (restoring) restoring.phase = "resources";
 					await this.bindTabExtensions(tab);
 					// The bind can replace the session, and a file whose header id differs from
 					// its name reveals the real id only here.
@@ -4093,7 +4193,7 @@ export class InteractiveMode {
 			const active = restoredTabs.find((item) => item.id === activeSessionId)?.id;
 			const target = active ?? manager.list()[0]?.id ?? manager.getActive().id;
 			manager.activate(target);
-			syncHomeSelectionToTab(this.homeSelection, manager.list(), target);
+			syncHomeSelectionToTab(this.homeSelection, this.homeRoster(), target);
 			for (const item of restoredTabs) manager.setUnread(item.id, item.unread);
 			// Point the shared membership at the ids the tabs actually hold, so the peer
 			// reconcile cannot open a second tab for a stale recorded id.
@@ -4228,7 +4328,7 @@ export class InteractiveMode {
 		const manager = this.tabManager;
 		if (!manager) return [];
 		const activeId = manager.getActive().id;
-		return this.visibleTabs().map((tab, index) => ({
+		return manager.list().map((tab, index) => ({
 			index: index + 1,
 			title: tab.title,
 			description: tab.id === activeId ? `${tab.status} · active` : tab.status,

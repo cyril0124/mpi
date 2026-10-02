@@ -34,6 +34,8 @@ MixCode Home 是本 fork 的起始页面：一页列出所有已打开的 agent 
 
 每张卡片占三行加一个空行：标题与状态标签、`模型 · 上下文 · 最近时间`、以及最新的一条 assistant（其次 system、user）文本。选中的卡片带选中背景。列表会围绕选中项开窗，并在隐藏的两侧标记 `↑ older above` / `↓ newer below`。
 
+启动恢复期间，列表从第一帧就列出整个持久化布局。运行时尚不存在的标签页保留 spinner，状态标签改报所处阶段：`session`、`resources` 或 `waiting for input`（阶段未知时显示通用的 `loading`）。
+
 启动检查发现扩展包有更新时，Home 会在名册上方列出：`Package Updates Available`、说明行 `Package updates are available. Run pi update --extensions`、`Packages:` 标签，以及每个包一行。该提示只在 Home 出现：chat 记录里没有它，pi 也不会提示自身的版本更新。视口放不下时保留开头几条，并在末尾显示 `… more package updates · pi update --extensions`。
 
 Home 上不画 footer：工作目录、用量与模型行、扩展状态以及编辑器上下的扩展 widget 都属于某个 agent，因此工作指示器同样隐藏；附着到 agent 后全部恢复。
@@ -64,7 +66,7 @@ Home 上不画 footer：工作目录、用量与模型行、扩展状态以及�
 
 凡是 mixcode-pi 的 Home 依赖、而本 fork 没有的机制，本 fork 都保留自己的做法：
 
-- 没有 toast 浮层、标题 shimmer、加载阶段状态标签；
+- 没有 toast 浮层、标题 shimmer；
 - 没有 zen 模式；vim 模式是"每个标签页的对话区"状态，Home 既不进入它也不传递它；
 - 空输入框的提示按各自界面来写，而不是照抄 mixcode-pi：Home 写出目标 agent，agent 标签页是
   `Describe your next change...  @ files  / commands`，Vim 模式列出它的导航键位；
