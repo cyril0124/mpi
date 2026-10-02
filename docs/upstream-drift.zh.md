@@ -55,6 +55,7 @@
 | 新版本提示 | 启动时请求 `pi.dev/api/latest-version`，打印带 changelog 链接的 `Update Available` 块，由 `PI_SKIP_VERSION_CHECK` 关闭 | 不再提示 pi 自身的新版本：启动检查、`checkForNewPiVersion` 与 `PI_SKIP_VERSION_CHECK` 均已删除 | 本 fork 改为只在 [MixCode Home](home.zh.md) 报告过期的扩展包 |
 | 退出恢复提示 | 已持久化的会话在交互式退出时打印 `To resume this session: pi --session <id>` | 不再打印该输出，负责拼装它的 `formatResumeCommand` 辅助函数也已删除 | MixCode 在一个进程里保留多个会话并通过自己的标签页进入，pi 的 `--session` 命令不是恢复会话的方式 |
 | 设置覆盖 | `applyOverrides` 把值叠加到生效设置上，下一次从各作用域重新组合（`save`、`reload`、信任状态变化）时就会丢失 | 覆盖层会被保留，并在每次重新组合时重新合并；`clearOverrides` 用于释放指定字段 | 标签页的 `/context-limit` 会收窄压缩预算，否则中途一次设置写入就会在无提示的情况下恢复完整预算 |
+| Batch 自动化 | 没有 `/batch` 命令，也没有 `--batch` / `--batch-dry-run`；`--` 始终收集消息与 `@file` 参数 | `/batch <script> [-- <args...>]`、`--batch`、`--batch-dry-run` 运行 Lua 或 TypeScript 脚本以打开 agent 标签页；带 `--batch` 时 `--` 传递脚本参数而不是消息，并新增 `fengari` 作为 coding-agent 依赖 | 用脚本铺开一批 agent 标签页需要一个统一入口，且参数必须原样到达脚本；见 [Batch 脚本](batch-scripts.zh.md) |
 
 ## 已过期的上游页面与源码文案
 

@@ -18,6 +18,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- Batch scripts run Lua or TypeScript/JavaScript plans that open named agent tabs and dispatch
+  prompts into them, from the CLI (`--batch`, `--batch-dry-run`) or the interactive `/batch`
+  command. A request carries its workdir, model, thinking level, context limit, and either one
+  prompt or an ordered `prompts` sequence; requests with the same name run in order and different
+  names run concurrently. See [Batch scripts](docs/batch-scripts.md).
+
 - `/reset` moves the active conversation back to its session root in the same file: the leaf drops to
   the point before the first entry, so the next prompt starts a new root, while the entries already
   written stay in `/tree`, the tab stays where it is and keeps its title, and extensions see a
@@ -606,6 +612,16 @@ point `## [Unreleased]` at the new tag.
 - The tab bar's wrapped rows indented past the first agent chip, so a second row started under
   the second chip and left the first chip's column empty as if it were a continuation of the
   pinned Home chrome. They now line up under the first agent chip.
+- A batch tab now applies its requested model, thinking level and context limit before its
+  extensions bind, requires the bind to succeed before it persists the requested name and shows
+  the tab, and switches the visible tab through the serialized switch queue. Previously the tab
+  was named and focused before its extensions bound, so a `session_start` plugin's commands and
+  widgets were missing, and a failed bind still looked like a ready tab.
+- Batch `prompts` now queue as owner-scoped follow-up rounds instead of awaiting one
+  `session.prompt` per entry, and a queued command (`/color`, a plugin command, a template) is
+  dispatched into the tab that queued it rather than whichever tab is focused when the round runs.
+  A batch that opens one tab and runs `/color` in another no longer paints the wrong tab, and a
+  plugin command no longer lands in the focused tab's session.
 
 ### Removed
 

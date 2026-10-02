@@ -108,6 +108,31 @@ describe("tab title after a session replacement", () => {
 		expect(counters.layoutChanges).toBe(before);
 	});
 
+	it("keeps a batch-owned title when the session is replaced", () => {
+		const { runtime, replaceSession } = replaceableRuntime();
+		const { manager } = createManager(runtime);
+		manager.lockTitle(manager.getActive().id, "A");
+
+		replaceSession("B");
+		manager.rebind(runtime);
+
+		expect(manager.getActive().title).toBe("A");
+	});
+	it("does not let a later automatic session name replace an explicit tab title", () => {
+		const runtime = stubRuntime();
+		let listener: ((event: unknown) => void) | undefined;
+		runtime.session.subscribe = ((next: (event: unknown) => void) => {
+			listener = next;
+			return () => {};
+		}) as never;
+		const { manager } = createManager(runtime);
+		manager.rename(manager.getActive().id, "A");
+
+		listener?.({ type: "session_info_changed", name: "B" });
+
+		expect(manager.getActive().title).toBe("A");
+	});
+
 	it("follows the session name when the replacement carries one", () => {
 		const { runtime, replaceSession } = replaceableRuntime();
 		const { manager } = createManager(runtime);

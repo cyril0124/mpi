@@ -46,6 +46,9 @@ export interface Args {
 	noThemes?: boolean;
 	noContextFiles?: boolean;
 	listModels?: string | true;
+	batchScript?: string;
+	batchDryRun?: boolean;
+	batchArgs?: string[];
 	offline?: boolean;
 	tuiMode?: TuiMode;
 	verbose?: boolean;
@@ -72,6 +75,7 @@ export function parseArgs(args: string[]): Args {
 	const result: Args = {
 		messages: [],
 		fileArgs: [],
+		batchArgs: [],
 		unknownFlags: new Map(),
 		diagnostics: [],
 	};
@@ -80,6 +84,11 @@ export function parseArgs(args: string[]): Args {
 		const arg = args[i];
 
 		if (arg === "--") {
+			// A batch script takes everything after `--` as its own arguments.
+			if (result.batchScript !== undefined) {
+				result.batchArgs = args.slice(i + 1);
+				break;
+			}
 			for (const positionalArg of args.slice(i + 1)) {
 				if (positionalArg.startsWith("@")) {
 					result.fileArgs.push(positionalArg.slice(1));
@@ -92,6 +101,20 @@ export function parseArgs(args: string[]): Args {
 			result.help = true;
 		} else if (arg === "--version" || arg === "-v") {
 			result.version = true;
+		} else if (arg === "--batch") {
+			const script = args[i + 1];
+			if (script === undefined || script.startsWith("-")) {
+				result.diagnostics.push({ type: "error", message: "--batch requires a script path" });
+			} else {
+				result.batchScript = script;
+				i++;
+			}
+		} else if (arg.startsWith("--batch=")) {
+			const script = arg.slice("--batch=".length);
+			if (!script) result.diagnostics.push({ type: "error", message: "--batch requires a script path" });
+			else result.batchScript = script;
+		} else if (arg === "--batch-dry-run") {
+			result.batchDryRun = true;
 		} else if (arg === "--mode") {
 			const mode = args[i + 1];
 			if (mode === undefined || mode.startsWith("-")) {
@@ -291,6 +314,8 @@ ${chalk.bold("Options:")}
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
   --mode <mode>                  Output mode: text (default), json, or rpc
+  --batch <script>               Run a Lua or TypeScript batch script
+  --batch-dry-run                Validate and print a batch plan without applying it
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume

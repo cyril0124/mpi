@@ -93,7 +93,7 @@ describe("open_tabs.json", () => {
 });
 
 describe("mixcode_state.json", () => {
-	it("writes the six shared keys and leaves a generated position title out", () => {
+	it("writes the shared keys and leaves a generated position title out", () => {
 		writeOpenTabs(workdir, ["s1", "s2"], "s2");
 		saveTabMeta(workdir, [
 			{ sessionId: "s1", title: "Agent-01", autoTitle: true, workdir },
@@ -104,6 +104,7 @@ describe("mixcode_state.json", () => {
 			"children",
 			"startup_workdir",
 			"tab_colors",
+			"tab_title_locked",
 			"tab_titles",
 			"unseen_done",
 			"workdirs",

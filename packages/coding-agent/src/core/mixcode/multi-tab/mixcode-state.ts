@@ -197,6 +197,7 @@ export interface MixcodeTabMeta {
 	title?: string;
 	color?: TabColorName;
 	workdir?: string;
+	titleLocked?: boolean;
 	unread: boolean;
 }
 
@@ -229,6 +230,7 @@ export function readTabMeta(workdir: string): Map<string, MixcodeTabMeta> {
 	const state = readStateJson(workdir);
 	const titles = asRecord(state.tab_titles);
 	const colors = asRecord(state.tab_colors);
+	const titleLocks = asRecord(state.tab_title_locked);
 	const workdirs = asRecord(state.workdirs);
 	const unseen = new Set(Array.isArray(state.unseen_done) ? state.unseen_done.map(String) : []);
 	// Membership comes from open_tabs.json (authoritative for which tabs are open);
@@ -249,11 +251,13 @@ export function readTabMeta(workdir: string): Map<string, MixcodeTabMeta> {
 		const storedColor = colors[sessionId];
 		const color = isTabColorName(storedColor) ? storedColor : undefined;
 		const tabWorkdir = typeof workdirs[sessionId] === "string" ? (workdirs[sessionId] as string) : undefined;
+		const titleLocked = titleLocks[sessionId] === true;
 		meta.set(sessionId, {
 			sessionId,
 			...(title ? { title } : {}),
 			...(color ? { color } : {}),
 			...(tabWorkdir ? { workdir: tabWorkdir } : {}),
+			...(titleLocked ? { titleLocked: true } : {}),
 			unread: unseen.has(sessionId),
 		});
 	}
@@ -270,6 +274,7 @@ export type TabLayoutEntry = Omit<MixcodeTabMeta, "workdir" | "unread"> & {
 	workdir: string;
 	unread?: boolean;
 	autoTitle?: boolean;
+	titleLocked?: boolean;
 };
 
 /** A metadata patch: omitted fields are preserved, explicit undefined clears a value. */
@@ -287,10 +292,15 @@ export function saveTabMeta(workdir: string, tabs: readonly TabMetaUpdate[]): vo
 		const mergedTitles = { ...asRecord(existing.tab_titles) };
 		const mergedColors = { ...asRecord(existing.tab_colors) };
 		const mergedWorkdirs = { ...asRecord(existing.workdirs) };
+		const mergedTitleLocks = { ...asRecord(existing.tab_title_locked) };
 		for (const tab of tabs) {
 			if ("title" in tab || "autoTitle" in tab) {
 				if (tab.title?.trim() && !tab.autoTitle) mergedTitles[tab.sessionId] = tab.title.trim();
 				else delete mergedTitles[tab.sessionId];
+			}
+			if ("titleLocked" in tab) {
+				if (tab.titleLocked) mergedTitleLocks[tab.sessionId] = true;
+				else delete mergedTitleLocks[tab.sessionId];
 			}
 			if ("color" in tab) {
 				if (tab.color) mergedColors[tab.sessionId] = tab.color;
@@ -321,6 +331,7 @@ export function saveTabMeta(workdir: string, tabs: readonly TabMetaUpdate[]): vo
 			workdirs: mergedWorkdirs,
 			tab_titles: mergedTitles,
 			tab_colors: mergedColors,
+			tab_title_locked: mergedTitleLocks,
 			startup_workdir: normalizeWorkdir(workdir),
 			unseen_done: [...unseen].filter((id) => children.includes(id)),
 		};

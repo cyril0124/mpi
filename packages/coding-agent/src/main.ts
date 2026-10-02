@@ -45,6 +45,7 @@ import { AuthStorage, ReadOnlyAuthStorage } from "./core/auth-storage.ts";
 import { exportFromFile } from "./core/export-html/index.ts";
 import type { InlineExtension } from "./core/extensions/types.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
+import { loadBatchDryRunPlan } from "./core/mixcode/batch/batch-cli.ts";
 import { installConsoleTuiBridge } from "./core/mixcode/console/console-tui-bridge.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import { ModelRuntime } from "./core/model-runtime.ts";
@@ -647,6 +648,11 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(0);
 	}
 
+	if (parsed.batchDryRun && parsed.batchScript === undefined) {
+		console.error(chalk.red("Error: --batch-dry-run requires --batch <script>"));
+		process.exit(1);
+	}
+
 	let appMode = resolveAppMode(parsed, process.stdin.isTTY, process.stdout.isTTY);
 	const shouldTakeOverStdout = appMode !== "interactive" && !isPlainRuntimeMetadataCommand(parsed);
 	if (shouldTakeOverStdout) {
@@ -909,6 +915,29 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(0);
 	}
 
+	if (parsed.batchScript && parsed.batchDryRun) {
+		const request = {
+			workdir: sessionManager.getCwd(),
+			scriptPath: parsed.batchScript,
+			args: parsed.batchArgs ?? [],
+			session,
+		};
+		try {
+			console.log(await loadBatchDryRunPlan(request));
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			console.error(chalk.red(message.startsWith("Error:") ? message : `Error: ${message}`));
+			process.exitCode = 1;
+		}
+		return;
+	}
+
+	if (parsed.batchScript && !parsed.batchDryRun && appMode !== "interactive") {
+		console.error(chalk.red("Error: --batch needs an interactive terminal; use --batch-dry-run to validate"));
+		process.exitCode = 1;
+		return;
+	}
+
 	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
 	let stdinContent: string | undefined;
 	if (appMode !== "rpc") {
@@ -978,6 +1007,10 @@ export async function main(args: string[], options?: MainOptions) {
 			initialMessage,
 			initialImages,
 			initialMessages: parsed.messages,
+			initialBatch:
+				parsed.batchScript && !parsed.batchDryRun
+					? { script: parsed.batchScript, args: parsed.batchArgs ?? [] }
+					: undefined,
 			verbose: parsed.verbose,
 			tuiMode: parsed.tuiMode,
 			initialThemeSetting: parsed.useTheme,

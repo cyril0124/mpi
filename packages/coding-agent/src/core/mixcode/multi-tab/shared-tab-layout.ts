@@ -84,7 +84,7 @@ export class SharedTabLayout {
 						this.options.onError(error);
 					}
 				}
-				if (meta?.title) manager.restoreTitle(tab.id, meta.title);
+				if (meta?.title) manager.restoreTitle(tab.id, meta.title, { titleLocked: meta.titleLocked });
 				manager.setColor(tab.id, meta?.color);
 				manager.setUnread(tab.id, meta?.unread ?? false);
 				// A background open binds the tab's extensions, so its chip leaves the loading
@@ -117,7 +117,7 @@ export class SharedTabLayout {
 				for (const tab of manager.list()) {
 					const stored = meta.get(tab.runtime.session.sessionManager.getSessionId());
 					if (!stored) continue;
-					if (stored.title) manager.restoreTitle(tab.id, stored.title);
+					if (stored.title) manager.restoreTitle(tab.id, stored.title, { titleLocked: stored.titleLocked });
 					manager.setColor(tab.id, stored.color);
 					manager.setUnread(tab.id, stored.unread);
 				}
@@ -173,6 +173,7 @@ export class SharedTabLayout {
 				sessionId: tab.runtime.session.sessionManager.getSessionId(),
 				title: tab.title,
 				autoTitle: tab.autoTitle,
+				titleLocked: tab.titleLocked,
 				workdir: tab.runtime.cwd,
 				color: tab.color,
 				unread: tab.unread,
@@ -251,8 +252,10 @@ export class SharedTabLayout {
 				if (!previous || replace || previous.sessionId !== meta.sessionId) return meta;
 				return {
 					sessionId: meta.sessionId,
-					...(meta.title !== previous.title || meta.autoTitle !== previous.autoTitle
-						? { title: meta.title, autoTitle: meta.autoTitle }
+					...(meta.title !== previous.title ||
+					meta.autoTitle !== previous.autoTitle ||
+					meta.titleLocked !== previous.titleLocked
+						? { title: meta.title, autoTitle: meta.autoTitle, titleLocked: meta.titleLocked }
 						: {}),
 					...(meta.color !== previous.color ? { color: meta.color } : {}),
 					...(meta.workdir !== previous.workdir ? { workdir: meta.workdir } : {}),

@@ -38,6 +38,9 @@ merge. Every place where this fork's behavior and upstream's documentation disag
   context usage on its top edge, and the meta row that replaces pi's status footer.
 - **[Icons](icons.md)**: the glyph set of the dock meta row, the `ui.icons.mode` setting
   (`nerd`, `ascii`, `auto`), and the terminals `auto` recognises.
+- **[Batch Scripts](batch-scripts.md)**: a Lua or TypeScript script that opens a fleet of agent
+  tabs and dispatches prompts into them, from the CLI (`--batch`, `--batch-dry-run`) or the
+  interactive `/batch` command.
 
 ## Fork Mechanics
 

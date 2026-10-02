@@ -68,6 +68,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 		description: "Manually compact the session context, optionally using a given model for the summary",
 		argumentHint: "[provider/modelId] [instructions]",
 	},
+	{ name: "batch", description: "Run a Lua or TypeScript batch script", argumentHint: "<script> [-- <args...>]" },
 	{
 		name: "follow-up",
 		description: "Queue a follow-up round, or resume queued follow-ups",

@@ -346,6 +346,11 @@ import { TrustSelectorComponent } from "./components/trust-selector.ts";
 import { splitOversizedUserMessage, UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import { type ExternalEditorResult, editInExternalEditor } from "./external-editor.ts";
+import {
+	type BatchCommandHost,
+	handleBatchCommand as runBatchCommand,
+	runBatchFile as runBatchScript,
+} from "./mixcode/batch/batch-command.ts";
 import { type CommandSource, collectSlashCommands, type TabArgumentOption } from "./mixcode/command-list.ts";
 import { responseModelNoticeText } from "./mixcode/model-mismatch/notice.ts";
 import {
@@ -575,6 +580,8 @@ export interface InteractiveModeOptions {
 	autoTrustOnReloadCwd?: string;
 	/** Initial message to send on startup (can include @file content) */
 	initialMessage?: string;
+	/** Batch script to execute after the TUI is initialized. */
+	initialBatch?: { script: string; args: string[] };
 	/** Images to attach to the initial message */
 	initialImages?: ImageContent[];
 	/** Additional messages to send after the initial message */
@@ -661,6 +668,7 @@ function isUserMessageBlock(block: Component): block is UserMessageComponent {
 interface RestoredTab {
 	id: string;
 	title?: string;
+	titleLocked?: boolean;
 	unread: boolean;
 }
 
@@ -1699,6 +1707,11 @@ export class InteractiveMode {
 		}
 
 		void this.maybeWarnAboutAnthropicSubscriptionAuth();
+
+		if (this.options.initialBatch) {
+			const batch = this.options.initialBatch;
+			await runBatchScript(this.batchCommandHost(), batch.script, batch.args);
+		}
 
 		// Process initial messages
 		if (initialMessage) {
@@ -4128,7 +4141,7 @@ export class InteractiveMode {
 		const { entries, meta, sessionDir, currentId, persistedIds, activeSessionId } = options;
 		const initialId = manager.getActive().id;
 		const errors: string[] = [];
-		const restoredTabs: Array<{ id: string; title?: string; unread: boolean }> = [];
+		const restoredTabs: RestoredTab[] = [];
 		// Recorded ids whose session opened under a different id; the shared set is
 		// rewritten to the real ids before peer polling starts.
 		const renamedSessions: Array<{ from: string; to: string }> = [];
@@ -4154,7 +4167,12 @@ export class InteractiveMode {
 						? await manager.openSessionTab(sessionPath, { title, workdir, id: sessionId })
 						: await manager.createTab({ title, workdir, id: sessionId, sessionId });
 					if (tabMeta?.color) manager.setColor(tab.id, tabMeta.color);
-					restoredTabs.push({ id: tab.id, title, unread: tabMeta?.unread ?? false });
+					restoredTabs.push({
+						id: tab.id,
+						title,
+						titleLocked: tabMeta?.titleLocked,
+						unread: tabMeta?.unread ?? false,
+					});
 					// Bind before building the next tab: a session build at a time keeps the
 					// memory peak at one, and the bind's walk blocks the loop either way.
 					tab.loadingPhase = "resources";
@@ -4177,9 +4195,15 @@ export class InteractiveMode {
 			const startupInLayout = persistedIds.includes(currentId);
 			if (startupInLayout) {
 				const startupMeta = meta.get(currentId);
-				if (startupMeta?.title) manager.restoreTitle(initialId, startupMeta.title);
+				if (startupMeta?.title)
+					manager.restoreTitle(initialId, startupMeta.title, { titleLocked: startupMeta.titleLocked });
 				manager.setColor(initialId, startupMeta?.color);
-				restoredTabs.push({ id: initialId, title: startupMeta?.title, unread: startupMeta?.unread ?? false });
+				restoredTabs.push({
+					id: initialId,
+					title: startupMeta?.title,
+					titleLocked: startupMeta?.titleLocked,
+					unread: startupMeta?.unread ?? false,
+				});
 			}
 			if (restoredTabs.length === 0) {
 				if (errors.length > 0) this.showWarning(`Could not restore tabs: ${errors[0]}`);
@@ -4230,6 +4254,7 @@ export class InteractiveMode {
 	 */
 	private applyRestoredTabTitles(manager: TabManager, restoredTabs: readonly RestoredTab[]): void {
 		const explicitTitles = new Map(restoredTabs.map((item) => [item.id, item.title]));
+		const lockedTitles = new Map(restoredTabs.map((item) => [item.id, item.titleLocked]));
 		const used = new Set<string>();
 		for (const tab of manager.list()) {
 			const explicit = explicitTitles.get(tab.id);
@@ -4239,7 +4264,7 @@ export class InteractiveMode {
 		for (const tab of manager.list()) {
 			const explicit = explicitTitles.get(tab.id);
 			if (explicit) {
-				manager.restoreTitle(tab.id, explicit);
+				manager.restoreTitle(tab.id, explicit, { titleLocked: lockedTitles.get(tab.id) });
 				continue;
 			}
 			// Only generated names renumber; a title the user typed as `Agent-03`
@@ -6102,6 +6127,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/batch" || text.startsWith("/batch ")) {
+				this.editor.setText("");
+				await this.handleBatchCommand(text.slice("/batch".length).trim());
+				return;
+			}
 			if (text === "/follow-up" || text.startsWith("/follow-up ")) {
 				this.editor.setText("");
 				await this.handleFollowUpCommand(text.slice("/follow-up".length));
@@ -7626,6 +7656,32 @@ export class InteractiveMode {
 				this.showError(`Failed to send queued messages: ${error instanceof Error ? error.message : String(error)}`);
 			});
 		return true;
+	}
+
+	/** `/batch <script> [-- <args...>]`: run a batch script against the tab fleet. */
+	private async handleBatchCommand(rawArgs: string): Promise<void> {
+		await runBatchCommand(this.batchCommandHost(), rawArgs);
+	}
+
+	/** The batch adapter's view of this instance; the mode owns no batch logic itself. */
+	private batchCommandHost(): BatchCommandHost {
+		return {
+			tabManager: this.tabManager,
+			homeActive: this.homeSelection.active,
+			homeWorkdir: this.tabsWorkdir,
+			followUpStates: this.followUpStates,
+			boundSessions: this.boundSessions,
+			compactionClaimed: this.compactionClaimed,
+			bindTabExtensions: (tab) => this.bindTabExtensions(tab),
+			showTab: (tab) => this.enqueueTabSwitch(() => this.switchActiveTab(tab)),
+			withTabConsole: (tab, run) => runInTabConsole(tab, run),
+			requestRender: () => {
+				this.updatePendingMessagesDisplay();
+				this.ui.requestRender();
+			},
+			showError: (message) => this.showError(message),
+			showStatus: (message) => this.showStatus(message),
+		};
 	}
 
 	/** `/follow-up [--batch] [message]`: queue a round, or resume paused rounds. */

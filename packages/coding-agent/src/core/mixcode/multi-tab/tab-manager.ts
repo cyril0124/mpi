@@ -43,6 +43,8 @@ export interface AgentTab {
 	title: string;
 	/** True while `title` is a generated `Agent-NN`; cleared once a caller picks a name. */
 	autoTitle?: boolean;
+	/** True when a batch request owns the title across session replacement events. */
+	titleLocked?: boolean;
 	color?: TabColorName;
 	status: TabStatus;
 	/** True when a background tab finished a turn the user has not viewed yet. */
@@ -419,6 +421,12 @@ export class TabManager {
 		this.onTabsChanged();
 	}
 
+	/** Mark a title as owned by a batch request across session replacement events. */
+	lockTitle(id: string, title: string): void {
+		this.rename(id, title);
+		const tab = this.get(id);
+		if (tab) tab.titleLocked = true;
+	}
 	/**
 	 * Stash a tab's editor text. An unknown id is ignored: a draft save can race
 	 * a tab closing, and losing the draft of a gone tab is harmless.
@@ -492,12 +500,13 @@ export class TabManager {
 	 * than chosen. An unknown id is ignored: the restore pass also names tabs
 	 * that have since closed.
 	 */
-	restoreTitle(id: string, title: string, options: { autoTitle?: boolean } = {}): void {
+	restoreTitle(id: string, title: string, options: { autoTitle?: boolean; titleLocked?: boolean } = {}): void {
 		const tab = this.get(id);
 		if (!tab) return;
 		const clean = title.trim();
 		if (!clean) return;
 		tab.autoTitle = options.autoTitle ?? false;
+		tab.titleLocked = options.titleLocked ?? false;
 		if (clean === tab.title) return;
 		tab.title = clean;
 		this.notifyLayoutChanged();
@@ -620,8 +629,8 @@ export class TabManager {
 		tab.unsubscribe();
 		tab.unsubscribe = runtime.session.subscribe((event) => this.handleTabEvent(tab, event));
 		const sessionName = runtime.session.sessionManager.getSessionName()?.trim();
-		if (sessionName) this.applySessionTitle(tab, sessionName);
-		else this.resetToGeneratedTitle(tab);
+		if (sessionName && !tab.titleLocked) this.applySessionTitle(tab, sessionName);
+		else if (!tab.titleLocked) this.resetToGeneratedTitle(tab);
 	}
 
 	/** Adopt a session name as the tab title, uniquified against the other tabs. */
@@ -684,6 +693,7 @@ export class TabManager {
 				break;
 			}
 			case "session_info_changed": {
+				if (tab.titleLocked || !tab.autoTitle) return;
 				const name = event.name?.trim();
 				if (!name) return;
 				this.applySessionTitle(tab, name);
