@@ -40,6 +40,7 @@ start-up instructions do not name the toggle, and `/hotkeys` reports it with a n
 | `/jump` | Open the Tab Jump switcher. An argument reports `Usage: /jump`. |
 | `/workdir [path]` | Move the current tab onto another working directory. With a path the move happens at once; without one a directory picker opens. See [Workdir](#workdir). |
 | `/context-limit [tokens\|reset]` | Cap the current tab at a context window of its own. Without an argument a picker offers fractions of the model's window and a free-text row. The limit lasts for the session and ends with a model switch, a session replacement or a reload; see [Input Dock](input-dock.md). |
+| `/reset` | Move the active tab's session leaf back to its root. The session file, its title and every entry stay, and the abandoned branches remain reachable in `/tree`. Refused while a turn or a bash command is running. See [Reset](#reset). |
 | `/color [name\|clear]` | Set the current tab's chip color; without an argument or with `clear` the color is removed. |
 | `/group-colored-tabs` | Sort tabs so colored ones lead, aggregated by color in palette order. |
 | `/mark-done` | Flag the current tab as finished in the tab bar. |
@@ -217,3 +218,11 @@ Home — with the tab that was focused last selected in the roster, not opened.
 
 `/delete-session`, `/delete-all-sessions`, and the session selector refuse to delete a session
 file whose tab has a turn in progress, and report why: another tab may still be writing it.
+
+## Reset
+
+`/reset` moves the active conversation back to its session root: the leaf moves back to before the
+first entry, so the next prompt starts a new root. The file, the entries already written, the tab and
+its title all stay, and `/tree` still lists the branches the conversation left behind. `/new` is the
+other direction, replacing the session with a fresh file. Reset reports that there is nothing to do
+when the leaf is already the root, and is refused while a turn or a bash command is running.

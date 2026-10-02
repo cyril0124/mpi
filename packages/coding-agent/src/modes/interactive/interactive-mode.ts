@@ -6278,6 +6278,11 @@ export class InteractiveMode {
 				await this.handleClearCommand();
 				return;
 			}
+			if (text === "/reset") {
+				this.editor.setText("");
+				await this.handleResetCommand();
+				return;
+			}
 			if (text === "/compact" || text.startsWith("/compact ")) {
 				const args = text.startsWith("/compact ") ? text.slice(9).trim() : "";
 				this.editor.setText("");
@@ -10422,6 +10427,30 @@ export class InteractiveMode {
 			this.ui.requestRender();
 		} catch (error: unknown) {
 			await this.handleFatalRuntimeError("Failed to create session", error);
+		}
+	}
+
+	/**
+	 * `/reset`: move the leaf back to the session root in the same tab, file and title, leaving the
+	 * abandoned branches in `/tree`.
+	 */
+	private async handleResetCommand(): Promise<void> {
+		if (this.session.isBashRunning) {
+			this.showWarning("A bash command is already running. Press Esc to cancel it first.");
+			return;
+		}
+		try {
+			const result = await this.session.resetLeafToRoot();
+			if (result.noop) {
+				this.showStatus("Already at session root (nothing to reset).");
+				return;
+			}
+			this.chatContainer.clear();
+			this.renderInitialMessages();
+			this.showStatus("Reset to session root. Earlier branches are in /tree.");
+			void this.flushCompactionQueue({ willRetry: false });
+		} catch (error: unknown) {
+			this.showError(error instanceof Error ? error.message : String(error));
 		}
 	}
 

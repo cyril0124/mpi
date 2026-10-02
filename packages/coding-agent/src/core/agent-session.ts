@@ -3824,6 +3824,37 @@ export class AgentSession {
 	}
 
 	/**
+	 * Move the leaf back to the session root. The file, its entries and the session name stay; the
+	 * abandoned branches remain reachable in `/tree`. Reports `noop: true` when the leaf is already
+	 * the root, and throws while a turn or a compaction is running.
+	 */
+	async resetLeafToRoot(): Promise<{ noop: boolean }> {
+		if (this.isStreaming) {
+			throw new Error("Wait for the current response to finish before resetting the session.");
+		}
+		if (this.isCompacting) {
+			throw new Error("Wait for the current compaction to finish before resetting the session.");
+		}
+
+		const oldLeafId = this.sessionManager.getLeafId();
+		if (oldLeafId === null) {
+			return { noop: true };
+		}
+
+		this.sessionManager.resetLeaf();
+		this._refreshFinalizedContext();
+		this._restoreToolsFromTranscript();
+
+		await this._extensionRunner.emit({
+			type: "session_tree",
+			newLeafId: this.sessionManager.getLeafId(),
+			oldLeafId,
+		});
+
+		return { noop: false };
+	}
+
+	/**
 	 * Get all user messages from session for fork selector.
 	 */
 	getUserMessagesForForking(): Array<{ entryId: string; text: string }> {

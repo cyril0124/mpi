@@ -14,6 +14,7 @@ commit that causes it.
 | `app.thinking.cycle` default key | `shift+tab` | `alt+t` | `shift+tab` became `app.tab.previous` |
 | Agent tabs | one session per terminal | several concurrent tabs, each with its own `AgentSessionRuntime` | [Agent Tabs](tabs.md) |
 | `/fork` message selection | replaces the active session | opens a new independent tab after the source, with a unique `-fork` title and the selected message in its editor | the original conversation remains available beside the alternative |
+| `/reset` | no such command; the only way back to the root of a conversation is to navigate there in `/tree` | `/reset` moves the leaf back to the session root in the same file, keeping the tab, its title and every entry, which stay reachable in `/tree` | re-rooting a conversation should not mean opening the tree selector, and the abandoned branches are worth keeping |
 | Session deletion | deletes the selected session file | refuses while the owning tab has a turn in progress | another tab may still be writing that file |
 | `app.model.cycleForward` default key | `ctrl+p` | no default key | `ctrl+p` opens the command palette |
 | `app.tab.jump` default key | no such action; `ctrl+t` toggles thinking-block visibility | `ctrl+t` opens the Tab Jump switcher, and `app.thinking.toggle` keeps its `ctrl+t` default but loses the chord to the composer's registration order | jumping to one of several agents should not mean cycling past the others; see [Agent Tabs](tabs.md#tab-jump) |
@@ -92,7 +93,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
-- `packages/coding-agent/src/core/agent-session.ts`: request-scoped manual compaction model and the steering and follow-up queue splice
+- `packages/coding-agent/src/core/agent-session.ts`: request-scoped manual compaction model, the steering and follow-up queue splice, and `resetLeafToRoot()` for `/reset`
 - `packages/coding-agent/src/core/settings-manager.ts`: the fork's fullscreen `tuiMode` default and a
   retained override layer (`applyOverrides` keeps its overrides across scope recompositions, and
   `clearOverrides` releases named fields)

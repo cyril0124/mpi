@@ -18,6 +18,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- `/reset` moves the active conversation back to its session root in the same file: the leaf drops to
+  the point before the first entry, so the next prompt starts a new root, while the entries already
+  written stay in `/tree`, the tab stays where it is and keeps its title, and extensions see a
+  `session_tree` event. It reports that there is nothing to reset when the leaf is already the root,
+  and refuses while a turn or a bash command is running. Upstream has no such command, so re-rooting
+  meant opening `/tree` and navigating by hand. See [Agent Tabs](docs/tabs.md#reset).
 - When an extension replaces the prompt editor (`ctx.ui.setEditorComponent`), the agent chrome moves
   from the card's top edge to the rule under the tab bar: the tab name and the `[VIM]`/`[ZEN]` badges
   are right- and left-anchored there, and the exact context reading appears while `/context-limit`
