@@ -606,7 +606,8 @@ export class TabManager {
 	 * Re-subscribe a tab after its runtime replaced its session (e.g. `/clear`,
 	 * `/resume`), since the old subscription died with the old session object.
 	 * The replacement also drops a `/context-limit` override: it belonged to the
-	 * outgoing session's model and settings manager, both now discarded.
+	 * outgoing session's model and settings manager, both now discarded. A custom
+	 * title is dropped too: it named the conversation that just went away.
 	 */
 	rebind(runtime: AgentSessionRuntime): void {
 		const tab = this.tabs.find((item) => item.runtime === runtime);
@@ -616,6 +617,7 @@ export class TabManager {
 		tab.unsubscribe = runtime.session.subscribe((event) => this.handleTabEvent(tab, event));
 		const sessionName = runtime.session.sessionManager.getSessionName()?.trim();
 		if (sessionName) this.applySessionTitle(tab, sessionName);
+		else this.resetToGeneratedTitle(tab);
 	}
 
 	/** Adopt a session name as the tab title, uniquified against the other tabs. */
@@ -623,6 +625,21 @@ export class TabManager {
 		const others = this.tabs.filter((item) => item.id !== tab.id).map((item) => item.title);
 		tab.title = uniquifyTitle(name, others);
 		tab.autoTitle = false;
+		this.notifyLayoutChanged();
+		this.onTabsChanged();
+	}
+
+	/**
+	 * Give a tab back its generated title when the replacement session carries no
+	 * name (`/new`, `/resume` onto a session nobody named). `/rename` keeps the
+	 * title and the session name in step, so a kept title would claim a name the
+	 * session no longer has. An existing `Agent-NN` stays put.
+	 */
+	private resetToGeneratedTitle(tab: AgentTab): void {
+		if (tab.autoTitle) return;
+		const others = this.tabs.filter((item) => item.id !== tab.id).map((item) => item.title);
+		tab.title = nextAvailableAgentTitle(others);
+		tab.autoTitle = true;
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
 	}

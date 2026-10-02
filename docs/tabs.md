@@ -158,6 +158,10 @@ A tab opened without a title is named `Agent-01`, `Agent-02`, and so on, skippin
 in use. A title that is already taken gets `-1`, `-2`, … appended, and the uniquified name is
 persisted.
 
+The title names the session behind it: `/rename` writes that name into the session, and replacing
+the session with an unnamed one (`/new`, or `/resume` onto a session nobody named) drops a custom
+title back to a free `Agent-NN`. A title that was already generated keeps its number.
+
 ## Persistence
 
 Tab state is per working directory, in the directory mixcode-pi (`mpi`) also uses:

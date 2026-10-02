@@ -405,6 +405,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A tab whose session is replaced by one that carries no name — `/new`, or `/resume` onto a session
+  nobody named — drops a custom title and falls back to the next free `Agent-NN`. `/rename` keeps
+  the title and the session name in step, so keeping the title left the tab announcing a
+  conversation that was gone and claiming a name its session no longer had; the title is dropped
+  from persisted state as well, since the generated flag returns. A title that was already
+  generated keeps its number.
 - An extension that another extension loads during `session_start` now receives that event. Emission
   snapshots its handler list and defers handlers registered while the event runs to a later dispatch,
   which `session_start` never has, so an extension loaded by model never ran its own `session_start`
