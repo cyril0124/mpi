@@ -18,12 +18,21 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- A failed model request records its exception's bounded facts as a `[provider-error]` console
+  line: `provider`, `model`, `api`, and up to five `{name, code, status}` nodes drawn from the
+  exception's `cause` chain and `AggregateError.errors`. Messages, stacks, headers, bodies and
+  credential fields are never recorded. The built-in text adapters accept a new
+  `onProviderError(error, model)` stream option (`StreamOptions` and `SimpleStreamOptions`, forwarded
+  by `streamSimple`) and call it with the raw exception before formatting the message a user sees,
+  and the interactive app installs an observer on its shared `ModelRuntime`, so agent turns and
+  compaction are covered. The provider's own message is what a user acts on, and what actually
+  failed was otherwise unrecoverable once the process ended. See
+  [Provider Error Diagnostics](docs/provider-errors.md).
 - Batch scripts run Lua or TypeScript/JavaScript plans that open named agent tabs and dispatch
   prompts into them, from the CLI (`--batch`, `--batch-dry-run`) or the interactive `/batch`
   command. A request carries its workdir, model, thinking level, context limit, and either one
   prompt or an ordered `prompts` sequence; requests with the same name run in order and different
   names run concurrently. See [Batch scripts](docs/batch-scripts.md).
-
 - `/reset` moves the active conversation back to its session root in the same file: the leaf drops to
   the point before the first entry, so the next prompt starts a new root, while the entries already
   written stay in `/tree`, the tab stays where it is and keeps its title, and extensions see a

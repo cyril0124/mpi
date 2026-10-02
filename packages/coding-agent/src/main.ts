@@ -47,6 +47,7 @@ import type { InlineExtension } from "./core/extensions/types.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
 import { loadBatchDryRunPlan } from "./core/mixcode/batch/batch-cli.ts";
 import { installConsoleTuiBridge } from "./core/mixcode/console/console-tui-bridge.ts";
+import { configureProviderErrorDiagnostics } from "./core/mixcode/provider-error-diagnostics.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import { ModelRuntime } from "./core/model-runtime.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
@@ -748,6 +749,9 @@ export async function main(args: string[], options?: MainOptions) {
 				modelsPath: expandTildePath(`${targetAgentDir}/models.json`),
 				signal: AbortSignal.timeout(15_000),
 			});
+			// Instrument the shared runtime before any tab can issue a request through it. A rejected
+			// creation is reported by the catch below, so the rejection branch here stays empty.
+			void runtime.then(configureProviderErrorDiagnostics, () => {});
 			// Evict a failure so a retry does not get the rejected promise.
 			runtime.catch(() => modelRuntimes.delete(key));
 			modelRuntimes.set(key, runtime);

@@ -54,6 +54,7 @@ import { normalizeProviderError } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { providerHeadersToRecord } from "../utils/headers.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
+import { notifyProviderError } from "../utils/mixcode/provider-error.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
@@ -343,6 +344,7 @@ export const stream: StreamFunction<"bedrock-converse-stream", BedrockOptions> =
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
 		} catch (error) {
+			notifyProviderError(options.onProviderError, error, model);
 			for (const block of output.content) {
 				finalizeStreamingBlock(block as Block);
 			}

@@ -28,6 +28,9 @@ merge. Every place where this fork's behavior and upstream's documentation disag
 - **[Console History](console-history.md)**: console output is painted into a notice panel
   instead of the raw tty, and `/console-history` opens the last 1,000 captured lines in the
   external editor with their timestamps and emitting tab.
+- **[Provider Error Diagnostics](provider-errors.md)**: a failed model request records bounded
+  `[provider-error]` facts in the console history, and `onProviderError` lets a caller observe the
+  raw exception behind the formatted message.
 - **[Inline Widgets](inline-widgets.md)**: extension widgets in the chat tail instead of the
   editor dock — the setting, the per-tab toggle, the row budget, and `/widgets`.
 - **[Thinking Tail Preview](thinking-tail-preview.md)**: hidden thinking as a three-row tail with

@@ -57,6 +57,7 @@ commit that causes it.
 | Exit resume hint | prints `To resume this session: pi --session <id>` on interactive quit when the session is persisted | no such line: the print and the `formatResumeCommand` helper behind it are removed | MixCode holds several sessions in one process and reaches them through its own tabs, so pi's `--session` command is not how a session is resumed |
 | Settings overrides | `applyOverrides` layers a value onto the effective settings, and the next recomposition from the scopes (`save`, `reload`, a trust change) drops it | the override layer is kept and re-merged on every recomposition, and `clearOverrides` releases named fields | a tab's `/context-limit` narrows the compaction budgets, and a settings write in the middle of a turn would otherwise restore the full budgets without saying so |
 | Batch automation | no `/batch` command and no `--batch` / `--batch-dry-run` flags; `--` always collects messages and `@file` arguments | `/batch <script> [-- <args...>]`, `--batch`, and `--batch-dry-run` run a Lua or TypeScript script that opens agent tabs; with `--batch`, `--` carries the script's arguments instead of messages, and `fengari` becomes a coding-agent dependency | scripting a fleet of agent tabs needs one entry point, and the script's arguments must reach it unparsed; see [Batch Scripts](batch-scripts.md) |
+| Provider failure diagnostics | a failed request keeps only the provider-formatted `errorMessage`, so the raw exception is gone once the process ends and nothing captures its type, code or HTTP status | every built-in text adapter accepts `StreamOptions.onProviderError` and calls it with the raw exception at its terminal catch, and the interactive app installs an observer on the shared `ModelRuntime` that writes one bounded `[provider-error]` line (`provider`, `model`, `api`, up to five `{name, code, status}` nodes) into the console history | the provider's own message is what a user acts on, and what actually failed was otherwise only visible with a debugger attached; see [Provider Error Diagnostics](provider-errors.md) |
 
 ## Outdated upstream pages and source copy
 
@@ -69,6 +70,7 @@ Deliberately left unpatched:
 | `packages/coding-agent/src/experimental/micro/README.md:30` | "Shift+Tab: cycle the current model's supported thinking levels" | micro's status line reads the live binding; only this hardcoded text is wrong |
 | `packages/coding-agent/docs/keybindings.md:152` | `app.model.cycleForward` defaults to `ctrl+p` | no default key; `ctrl+p` is `app.palette` |
 | `packages/coding-agent/docs/models.md:33` | "`Ctrl+P` cycles through available models" | `ctrl+p` opens the command palette; only `shift+ctrl+p` still cycles, and only back to the previous model |
+| `packages/coding-agent/docs/custom-provider.md:102-105` | the custom-provider instrumentation checklist names `options.onPayload`, `options.onResponse` and the abort signal only | a provider that catches a request failure must also call `options.onProviderError(error, model)`; see [Provider Error Diagnostics](provider-errors.md) |
 | `packages/coding-agent/src/cli/args.ts:303` (source copy) | the `--models` help says "patterns for Ctrl+P cycling" | `ctrl+p` opens the command palette; the cycle key is `shift+ctrl+p` (`alt+p` on Windows and WSL) |
 | `packages/coding-agent/docs/slash-commands.md:30` | `/compact [instructions]` | the fork also accepts a leading `provider/modelId` that runs only the summary on that model |
 | `packages/coding-agent/docs/compaction.md:41` | "trigger manually with `/compact [instructions]`" | same: the summary model can be named before the instructions |
@@ -109,6 +111,9 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: underlines the jump-to-end label while the pointer is over it
 - `packages/coding-agent/src/modes/interactive/components/tool-execution.ts`, `assistant-message.ts`,
   `compaction-summary-message.ts`, `branch-summary-message.ts`, `skill-invocation-message.ts`: clickable regions use the fork's `HoverRegion`, since the bundled `MouseRegion` draws no highlight
+- `packages/ai/src/types.ts`, `packages/ai/src/api/simple-options.ts`, the ten `packages/ai/src/api/*`
+  text adapters and `packages/ai/src/providers/faux.ts`: the `onProviderError` stream option, its
+  `streamSimple` forwarding, and the one-line `notifyProviderError` call at each terminal catch
 - `packages/coding-agent/src/modes/interactive/components/user-message.ts`: the send time at the right end of a message's first row
 - `packages/ai/src/api/openai-responses-shared.ts`: records the model name the server reports in a
   Responses stream onto `AssistantMessage.responseModel`

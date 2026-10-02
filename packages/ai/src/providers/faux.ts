@@ -19,6 +19,7 @@ import type {
 	Usage,
 } from "../types.ts";
 import { createAssistantMessageEventStream } from "../utils/event-stream.ts";
+import { notifyProviderError } from "../utils/mixcode/provider-error.ts";
 import { getSystemMessageText } from "../utils/text.ts";
 
 const DEFAULT_API = "faux";
@@ -554,6 +555,7 @@ export function createFauxCore(options: RegisterFauxProviderOptions) {
 				const message = await resolveResponse(step, context, streamOptions, requestModel);
 				await streamWithDeltas(outer, message, minTokenSize, maxTokenSize, tokensPerSecond, streamOptions?.signal);
 			} catch (error) {
+				notifyProviderError(streamOptions?.onProviderError, error, requestModel);
 				const message = createErrorMessage(error, api, provider, requestModel.id);
 				outer.push({ type: "error", reason: "error", error: message });
 				outer.end(message);

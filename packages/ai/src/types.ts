@@ -189,6 +189,16 @@ export interface StreamOptions extends ProviderRequestOptions<Model<Api>> {
 	 * its body stream is consumed.
 	 */
 	onResponse?: (response: ProviderResponse, model: Model<Api>) => void | Promise<void>;
+	/**
+	 * Optional observer for the original exception a built-in text adapter caught, called before
+	 * the adapter formats its error and emits the terminal event. Called once per terminal failure,
+	 * including a caught abort; a retry that recovers and an error result produced without a thrown
+	 * exception do not call it. `error` and `model` are borrowed references: treat both as
+	 * read-only. The call is synchronous and its return value is not awaited; a throw or rejection
+	 * is swallowed, so the observer cannot replace the provider's failure. Redacting and storing
+	 * the raw values is the observer's job.
+	 */
+	onProviderError?: (error: unknown, model: Model<Api>) => void;
 	temperature?: number;
 	/**
 	 * Arbitrary sampling parameters merged into the request body as-is, after the named request

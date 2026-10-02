@@ -14,6 +14,7 @@
 - **[鼠标拖拽选中](mouse-selection.zh.md)**：全屏拖动可以选中哪些区域、复制出的文本去掉了什么、选区如何着色。
 - **[MixCode Home](home.zh.md)**：列出所有已打开 agent 的起始页面，展示所选 agent 的对话预览，并可新建或恢复会话。
 - **[控制台历史](console-history.zh.md)**：控制台输出画进 Notice 弹窗而不是写到终端，`/console-history` 把最近 1000 行交给外部编辑器打开，带时间戳与产生它的标签页。
+- **[模型请求错误诊断](provider-errors.zh.md)**：失败的模型请求把有界的 `[provider-error]` 事实记进控制台历史，`onProviderError` 让调用方拿到格式化消息背后的原始异常。
 - **[内联组件](inline-widgets.zh.md)**：把扩展组件放到对话流末尾而不是编辑器坞区 —— 设置项、单标签页开关、行预算与 `/widgets`。
 - **[Thinking 尾窗预览](thinking-tail-preview.zh.md)**：隐藏的 thinking 渲染为 3 行尾窗，耗时实时后冻结；含 `ui.boxedHiddenThinking` 设置项与标签覆盖。
 - **[组件布局](widget-layout.zh.md)**：坞区如何限制组件堆叠、单组件行数上限，以及把挂件移到对话旁边的 `→` 侧栏。
