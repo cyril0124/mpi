@@ -99,8 +99,10 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
   `clearOverrides` releases named fields)
 - `packages/coding-agent/src/core/extensions/loader.ts`: routes bun-dist extension imports through `virtualModules`
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: forwards the host's copy callback and selection options to the alternate screen
-- `packages/coding-agent/src/modes/interactive/theme/theme.ts`, `theme/dark.json`, `theme/light.json`,
-  `theme/theme-json.ts`, `theme/theme-schema.json`: the `panelBg` background used to fill framed cards
+- `packages/coding-agent/src/modes/interactive/theme/theme.ts`, `theme/theme-json.ts`,
+  `theme/theme-schema.json`: the `panelBg` background used to fill framed cards, with
+  `withThemeColorFallbacks` defaulting it to `toolPendingBg`, which leaves the built-in theme files
+  unmodified
 - `packages/coding-agent/test/extensions-runner.test.ts`
 - `packages/coding-agent/test/interactive-tui.test.ts`: the copy confirmation now asserts a toast
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: underlines the jump-to-end label while the pointer is over it

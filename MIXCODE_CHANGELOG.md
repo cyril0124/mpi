@@ -411,6 +411,10 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The built-in `dark` and `light` themes no longer carry a `panelBg` key. Both restated the value
+  `withThemeColorFallbacks` already derives from `toolPendingBg`, so the fork no longer edits two theme
+  files upstream also churns, and both match upstream again. `panelBg` itself stays, so a user theme
+  may still override the panel background.
 - A tab whose session is replaced by one that carries no name — `/new`, or `/resume` onto a session
   nobody named — drops a custom title and falls back to the next free `Agent-NN`. `/rename` keeps
   the title and the session name in step, so keeping the title left the tab announcing a
