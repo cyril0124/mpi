@@ -3221,13 +3221,13 @@ export class InteractiveMode {
 
 	/**
 	 * Environment override that pins one displayed field, or undefined when unset.
-	 * The three `MIXCODE_DISPLAY_*` variables are read only here.
+	 * The three `MPI_DISPLAY_*` variables are read only here.
 	 */
 	private displayOverride(field: "model" | "thinking" | "workdir"): string | undefined {
 		const raw = {
-			model: process.env.MIXCODE_DISPLAY_MODEL,
-			thinking: process.env.MIXCODE_DISPLAY_THINKING,
-			workdir: process.env.MIXCODE_DISPLAY_WORKDIR,
+			model: process.env.MPI_DISPLAY_MODEL,
+			thinking: process.env.MPI_DISPLAY_THINKING,
+			workdir: process.env.MPI_DISPLAY_WORKDIR,
 		}[field];
 		return raw?.trim() || undefined;
 	}

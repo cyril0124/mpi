@@ -225,7 +225,7 @@ point `## [Unreleased]` at the new tag.
 - MixCode Home names the target of the next message in the empty composer
   (`Send to <agent>...  @ files  / commands`, or `Select an agent...` with an empty roster) and frames
   the composer in the neutral thinking colour, since Home has no agent of its own.
-- `MIXCODE_DISPLAY_WORKDIR` and `MIXCODE_DISPLAY_MODEL` mask the workdir and model shown on
+- `MPI_DISPLAY_WORKDIR` and `MPI_DISPLAY_MODEL` mask the workdir and model shown on
   MixCode Home, so a recording can hide the real paths and provider.
 - Response model mismatch notice: when a provider answers with a model other than the one
   requested, the transcript says so under that reply

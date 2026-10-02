@@ -54,7 +54,7 @@ Home 上不画 footer：工作目录、用量与模型行、扩展状态以及�
 
 ## 在 Home 上发送
 
-输入框是临时的：进入 Home 会清空它，其中的文本也永远不会变成标签页草稿。为空时它会写出这条消息将发给谁（`Send to <agent>...  @ files  / commands`，名册为空时为 `Select an agent...`），并且 Home 上的输入框使用中性的 thinking 边框色，而不是当前绑定会话的颜色。`enter` 发普通文本时直接提交到所选标签页的会话，Home 保持焦点，因此不用附着就能给某个 agent 派活；发给正在工作的 agent 会作为 steer 处理。`/命令` 与 `!shell` 作用于当前绑定的会话，所以会先附着到所选标签页，再走正常分发。`MIXCODE_DISPLAY_WORKDIR` 会替换 masthead 与每张卡片上的工作目录，`MIXCODE_DISPLAY_MODEL` 替换模型标签，便于录制时隐藏真实路径与提供方；两者默认不设置。发送不会清除目标标签页的未读标记，只有附着才会。
+输入框是临时的：进入 Home 会清空它，其中的文本也永远不会变成标签页草稿。为空时它会写出这条消息将发给谁（`Send to <agent>...  @ files  / commands`，名册为空时为 `Select an agent...`），并且 Home 上的输入框使用中性的 thinking 边框色，而不是当前绑定会话的颜色。`enter` 发普通文本时直接提交到所选标签页的会话，Home 保持焦点，因此不用附着就能给某个 agent 派活；发给正在工作的 agent 会作为 steer 处理。`/命令` 与 `!shell` 作用于当前绑定的会话，所以会先附着到所选标签页，再走正常分发。`MPI_DISPLAY_WORKDIR` 会替换 masthead 与每张卡片上的工作目录，`MPI_DISPLAY_MODEL` 替换模型标签，便于录制时隐藏真实路径与提供方；两者默认不设置。发送不会清除目标标签页的未读标记，只有附着才会。
 
 ## 动作按钮
 

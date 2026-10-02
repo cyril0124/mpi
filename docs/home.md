@@ -84,8 +84,8 @@ working is taken as steering. A `/command` or a `!shell` line acts on the bound 
 attaches to the selected tab first and then submits through the normal dispatcher. Sending does
 not clear the target tab's unread badge; only attaching does.
 
-`MIXCODE_DISPLAY_WORKDIR` replaces the workdir shown in the masthead and on each card, and
-`MIXCODE_DISPLAY_MODEL` replaces the model label, so a recording can hide the real paths and
+`MPI_DISPLAY_WORKDIR` replaces the workdir shown in the masthead and on each card, and
+`MPI_DISPLAY_MODEL` replaces the model label, so a recording can hide the real paths and
 provider. Both are unset by default.
 
 ## Actions
