@@ -21,7 +21,8 @@ import { type HoverTarget, PointerHover } from "../hover/pointer-hover.ts";
 import { applyActiveTabShimmer, COLORED_SHIMMER_STYLES, THEME_SHIMMER_STYLES } from "../tab-shimmer.ts";
 import { reopenAfterSgr } from "../terminal-text.ts";
 import { RULE_CHAR, TAB_STATUS_GLYPHS, tabStatusGlyph, tabStatusPaint } from "./tab-glyphs.ts";
-import { renderZenStatusSeparator, type ZenStatusMarker } from "./zen-status.ts";
+import { renderTabRuleChrome, type TabRuleChrome } from "./tab-rule-chrome.ts";
+import { renderZenStatusSeparator, type ZenStatusMarker, zenStatusCluster } from "./zen-status.ts";
 
 export interface TabBarItem {
 	id: string;
@@ -56,7 +57,16 @@ export interface TabBarModel {
 	 * agents' statuses instead. Absent while the bar shows its chips.
 	 */
 	zen?: { statusMarkers: readonly ZenStatusMarker[] };
+	/**
+	 * Agent labels the separator rule carries while an extension's editor skin is
+	 * in front (`setEditorComponent`): the chip that names the agent has no card of
+	 * its own to label, so the rule does it. Absent for the default card editor.
+	 */
+	agentChrome?: TabRuleChrome;
 }
+
+/** Columns the labels keep at least when the zen dots share the rule with them. */
+const ZEN_CHROME_MIN_WIDTH = 12;
 
 /** Visible cells of one chip in the last rendered frame, in zero-based coordinates. */
 interface ChipRect {
@@ -319,8 +329,17 @@ export class TabBar implements Component {
 		const markPainter = model.rulePainter ?? ((text: string) => theme.fg("borderMuted", text));
 		// Zen keeps one row where the chips were: the separator, carrying what the
 		// chips still had to report. Nothing is hit-testable, so a click falls
-		// through to whatever occupies the freed rows.
-		if (model.zen) return [renderZenStatusSeparator(width, model.zen.statusMarkers, markPainter)];
+		// through to whatever occupies the freed rows. A replaced editor's labels
+		// join the same row, right-aligned, unless the dots leave them too little
+		// room.
+		if (model.zen) {
+			if (!model.agentChrome) return [renderZenStatusSeparator(width, model.zen.statusMarkers, markPainter)];
+			const cluster = zenStatusCluster(model.zen.statusMarkers, markPainter, width);
+			if (!cluster || width - cluster.width < ZEN_CHROME_MIN_WIDTH) {
+				return [renderTabRuleChrome(width, model.agentChrome, markPainter)];
+			}
+			return [`${cluster.painted}${renderTabRuleChrome(width - cluster.width, model.agentChrome, markPainter)}`];
+		}
 		if (model.tabs.length === 0 && !model.home) return [];
 		const chips: Chip[] = model.tabs.map((item) => ({
 			id: item.id,
@@ -438,7 +457,13 @@ export class TabBar implements Component {
 			if (isLast && rightHint !== undefined) line += theme.fg("dim", rightHint);
 			lines.push(truncateToWidth(line, width, ""));
 		}
-		lines.push(markPainter(RULE_CHAR.repeat(width)));
+		// The rule closes the bar. A replaced editor's labels sit on it instead of a
+		// bare dash row.
+		lines.push(
+			model.agentChrome
+				? renderTabRuleChrome(width, model.agentChrome, markPainter)
+				: markPainter(RULE_CHAR.repeat(width)),
+		);
 		return lines;
 	}
 

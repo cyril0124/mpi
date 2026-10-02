@@ -32,6 +32,16 @@ The card needs ten columns. Below that the plain editor is used, so a working st
 somewhere to go. The status degrades from its message to the spinner to a truncated spinner, the
 badges give way to it, and it takes the tab name's place before it would disappear.
 
+## Replaced editors
+
+An extension can replace the prompt editor with a component of its own
+(`ctx.ui.setEditorComponent`). The card and its top edge are gone with it, so the rule under the
+tab bar carries the labels instead: the tab name and any context override on the right, `[VIM]` and
+`[ZEN]` on the left. The exact context reading appears only while `/context-limit` set the window,
+because the meta row below already has the meter. As the row narrows, the labels drop in the card's
+own order and it ends as a plain rule. Home keeps the plain rule, since its composer targets a tab
+it is not attached to.
+
 ## The meta row
 
 ```

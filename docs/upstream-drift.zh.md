@@ -42,6 +42,7 @@
 | 空输入框 | 不显示任何内容 | agent 标签页提示 `Describe your next change...  @ files  / commands  ← Home · → widgets`，Vim 标签页列出导航键位，Home 上写出目标 agent 并用中性的 thinking 边框色 | 名册明确了目标；Home 自身没有 thinking 等级；输入框也说明它能接受什么。两个按键提示取自实际键位绑定，在不会分栏的 TUI 模式下不显示侧栏那一半 |
 | 交互模式下的控制台输出 | `console.log` 等方法直接写到终端 | 画进底部居中的 `Notice` 弹窗（不进对话记录）；`/console-history` 把最近 1000 行交给外部编辑器打开，带时间戳与产生它的标签页 | [控制台历史](console-history.zh.md) |
 | 输入框边框 | 输入框上下各一条平直的分隔线 | 圆角卡片，上边框承载工作状态、模式徽标、标签页名与精确上下文用量，卡片内文字与左边框之间空出一格 | 输入区无需额外表头即可说明当前 agent 与上下文；见 [输入坞区](input-dock.zh.md) |
+| 编辑器被替换后的 chrome | 无标签栏；扩展替换的编辑器自行绘制边框，不显示 agent 标签 | 当 `setEditorComponent` 提供编辑器时，标签栏下方的分隔线承载标签页名、`[VIM]`/`[ZEN]` 徽标与 `/context-limit` 覆写读数 | 原本承载 agent 名与上下文的卡片随编辑器一同消失，而分隔线每帧都会绘制；见 [输入坞区](input-dock.zh.md) |
 | 编辑器坞区页脚 | 两行：工作目录与会话名，然后是 token 与费用合计加 `percent (auto)`，同一行右侧是模型名与 thinking 等级；注册了扩展状态时再加一行 | 一行 meta：模型、thinking 与工作目录、八格上下文进度条与 git 分支，再接扩展状态行；模型、thinking 与工作目录都可点击，按下即打开各自的选择器 | 标签页名与精确 token 数已由卡片上边框承载，模型标签带 provider，进度条也比百分比更易读；见 [输入坞区](input-dock.zh.md) |
 | meta 行图标 | 页脚以文字写出模型与 thinking 等级，其他内容不带任何字形 | meta 行的两种完整布局给模型与 thinking 各加一个 Nerd Font 图标，上下文进度条与 git 分支同样带图标；`ui.icons.mode`（`nerd`、`ascii`、`auto`）选择字形集，`auto` 会探测终端 | 图标让字段一眼可辨；ASCII 回退保证没有该字体的终端不会画出方框。见 [图标](icons.zh.md) |
 | 工作目录 | 启动时确定：`--workdir` 或进程 cwd；会话整个生命周期都用它 | `/workdir [path]` 把活动标签页切到另一个目录，meta 行上的工作目录徽标打开同一个选择器 | 把标签页指向另一个项目不该意味着重启 agent；见 [工作目录](tabs.zh.md#工作目录) |

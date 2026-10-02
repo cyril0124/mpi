@@ -18,6 +18,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- When an extension replaces the prompt editor (`ctx.ui.setEditorComponent`), the agent chrome moves
+  from the card's top edge to the rule under the tab bar: the tab name and the `[VIM]`/`[ZEN]` badges
+  are right- and left-anchored there, and the exact context reading appears while `/context-limit`
+  supplies the window. The card that normally carries them leaves with the replaced editor, and the
+  rule is painted every frame anyway. Labels drop in the card's own order as the row narrows, and Home
+  keeps the plain rule. See [Input Dock](docs/input-dock.md#replaced-editors).
 - `/context-limit [tokens|reset]` caps the current agent tab at a context window of its own: `32k`,
   `32.5k`, `32000` and `reset` are accepted, and the bare command opens a picker offering ¼, ½ and ¾ of
   the model's window, the full window (= reset) and a free-text row. Two things then carry the limit:
@@ -280,7 +286,6 @@ point `## [Unreleased]` at the new tag.
   what a tool definition actually sends (name, description, parameter schema). Both open in the
   read-only external editor (`/system-tools` also takes `--editor=<cmd>` and `--editor=false` for the
   in-app block), and both estimate tokens at ~4 characters per token with one token per CJK character.
-
 ### Changed
 
 - Tab Jump takes `ctrl+t`, so the composer no longer reaches `app.thinking.toggle` on that key: the

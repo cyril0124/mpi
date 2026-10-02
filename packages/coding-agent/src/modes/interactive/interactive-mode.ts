@@ -296,6 +296,7 @@ import { TabBar, type TabBarItem, type TabBarModel } from "./components/mixcode/
 import { bindWorkingIndicatorRedraw } from "./components/mixcode/multi-tab/tab-glyphs.ts";
 import { TabJumpComponent, type TabJumpEntry } from "./components/mixcode/multi-tab/tab-jump.ts";
 import { bindTabLoadingRedraw } from "./components/mixcode/multi-tab/tab-loading.ts";
+import type { TabRuleChrome } from "./components/mixcode/multi-tab/tab-rule-chrome.ts";
 import { zenStatusMarkers } from "./components/mixcode/multi-tab/zen-status.ts";
 import { QuitConfirmComponent } from "./components/mixcode/quit-confirm/quit-confirm.ts";
 import {
@@ -2796,6 +2797,7 @@ export class InteractiveMode {
 			this.restoringTabs.length > 0
 				? this.restoringTabBarItems(activeId)
 				: manager.list().map((tab) => this.tabBarItem(tab, activeId));
+		const agentChrome = this.tabRuleChrome();
 		return {
 			tabs,
 			activeId,
@@ -2807,6 +2809,26 @@ export class InteractiveMode {
 			// Home is a different surface and brings the whole bar back, so zen only
 			// applies to the agent whose chrome it hides.
 			...(zenAgent ? { zen: { statusMarkers: zenStatusMarkers(manager.list(), zenAgent.id) } } : {}),
+			...(agentChrome ? { agentChrome } : {}),
+		};
+	}
+
+	/**
+	 * Labels the tab-bar rule carries while an extension's editor skin is in
+	 * front: the agent name and, only for an overridden context limit, the exact
+	 * reading. The default card paints its own top edge, so this is empty there,
+	 * and on Home, which composes for a tab it is not attached to.
+	 */
+	private tabRuleChrome(): TabRuleChrome | undefined {
+		if (this.editorComponentFactory === undefined || this.homeSelection.active) return undefined;
+		const chrome = editorCardChrome(this.composerContext());
+		return {
+			title: chrome.title,
+			// The card always shows the reading; the rule shows it only when it adds
+			// the override mark, because the dock meta row already has the meter.
+			contextText: this.hasContextLimitOverride() ? chrome.contextText : undefined,
+			vimMode: chrome.vimMode,
+			zenMode: chrome.zenMode,
 		};
 	}
 

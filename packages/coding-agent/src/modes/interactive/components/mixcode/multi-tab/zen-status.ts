@@ -64,20 +64,19 @@ export function zenStatusMarkers(tabs: readonly AgentTab[], activeId: string): Z
 }
 
 /**
- * Separator rule of exactly `width` columns. With no markers it is a plain rule;
- * otherwise it leads with `── <dots> ` and fills the rest with dashes in the
- * frame colour. `[+N]` counts the markers past the cap, and is dropped, then the
- * whole cluster, before the rule would ever be truncated.
+ * Left cluster `── <dots> [+N] ` of the zen rule, at most `maxWidth` cells wide.
+ *
+ * `undefined` when there are no markers, or when even the bare dots do not fit.
+ * The tab bar reuses this cluster as the prefix of the agent chrome a replaced
+ * editor puts on the rule.
  */
-export function renderZenStatusSeparator(
-	width: number,
+export function zenStatusCluster(
 	markers: readonly ZenStatusMarker[],
 	frame: (text: string) => string,
+	maxWidth: number,
 	now = Date.now(),
-): string {
-	if (width <= 0) return "";
-	const plain = () => frame(RULE_CHAR.repeat(width));
-	if (markers.length === 0) return plain();
+): { painted: string; width: number } | undefined {
+	if (markers.length === 0) return undefined;
 
 	const shown = markers.slice(0, MARKER_CAP);
 	const overflow = markers.length - shown.length;
@@ -87,10 +86,27 @@ export function renderZenStatusSeparator(
 	// Richest fit first: the dots with the overflow count, then the dots alone.
 	const candidates = overflow > 0 ? [`${dots} ${theme.fg(overflowColor, `[+${overflow}]`)}`, dots] : [dots];
 	for (const painted of candidates) {
-		const clusterWidth = visibleWidth(`${CLUSTER_LEAD} ${painted} `);
-		if (clusterWidth <= width) {
-			return `${frame(CLUSTER_LEAD)} ${painted} ${frame(RULE_CHAR.repeat(width - clusterWidth))}`;
-		}
+		const text = `${frame(CLUSTER_LEAD)} ${painted} `;
+		const width = visibleWidth(text);
+		if (width <= maxWidth) return { painted: text, width };
 	}
-	return plain();
+	return undefined;
+}
+
+/**
+ * Separator rule of exactly `width` columns. With no markers it is a plain rule;
+ * otherwise it leads with the status cluster and fills the rest with dashes in
+ * the frame colour. `[+N]` counts the markers past the cap, and is dropped, then
+ * the whole cluster, before the rule would ever be truncated.
+ */
+export function renderZenStatusSeparator(
+	width: number,
+	markers: readonly ZenStatusMarker[],
+	frame: (text: string) => string,
+	now = Date.now(),
+): string {
+	if (width <= 0) return "";
+	const cluster = zenStatusCluster(markers, frame, width, now);
+	if (!cluster) return frame(RULE_CHAR.repeat(width));
+	return `${cluster.painted}${frame(RULE_CHAR.repeat(width - cluster.width))}`;
 }
