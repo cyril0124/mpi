@@ -11,6 +11,7 @@ commit that causes it.
 | Area | Upstream | This fork | Reason |
 | --- | --- | --- | --- |
 | `install.sh` | release archives via `scripts/build-binaries.sh` | installs a standalone runtime in `<prefix>/lib/<name>/` and a wrapper at `<prefix>/bin/<name>`; `<name>` defaults to `mpi` and supports `--name` or `MIXCODE_INSTALL_NAME` | single-machine installs can use a custom command name while keeping the runtime and wrapper names aligned |
+| Distribution name | the app is `pi`; `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are derived from `APP_NAME`, and the debug log is `pi-debug.log` | `piConfig.name` is `mpi`, so `--help`, the package-command help, the terminal title and runtime messages say `mpi`; `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` are pinned to their upstream names in `config.ts`, and the unsupported `update` command is not listed in `--help` | the fork installs and ships as `mpi` (see `install.sh`) without moving users' agent-dir env vars or the shared `.pi` directory |
 | `app.thinking.cycle` default key | `shift+tab` | `alt+t` | `shift+tab` became `app.tab.previous` |
 | Agent tabs | one session per terminal | several concurrent tabs, each with its own `AgentSessionRuntime` | [Agent Tabs](tabs.md) |
 | `/fork` message selection | replaces the active session | opens a new independent tab after the source, with a unique `-fork` title and the selected message in its editor | the original conversation remains available beside the alternative |
@@ -67,6 +68,8 @@ Deliberately left unpatched:
 | Page | Upstream text | Reality |
 | --- | --- | --- |
 | `packages/coding-agent/docs/session-format.md:20` | "When available, pi uses the `trash` CLI to avoid permanent deletion" | `/delete-session` and the selector move the file into `<agentDir>/mixcode-pi/trash/`; the `trash` CLI only runs when that move fails |
+| `packages/coding-agent/docs/usage.md:92` | `/debug` writes its output to `pi-debug.log` | the file is `mpi-debug.log`, since the debug log name follows `APP_NAME` |
+| `packages/coding-agent/docs/cli-integration.md:95` | `piConfig.name` affects "the CLI banner, configuration paths, and derived environment variable names" | the fork pins the env var names to `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR`, so `piConfig.name` no longer changes them |
 | `packages/coding-agent/docs/usage.md:49` | "Press `Shift+Tab` to cycle through supported levels" | the cycle key is `alt+t` |
 | `packages/coding-agent/docs/keybindings.md:155` | `app.thinking.cycle` defaults to `shift+tab` | it defaults to `alt+t` |
 | `packages/coding-agent/src/experimental/micro/README.md:30` | "Shift+Tab: cycle the current model's supported thinking levels" | micro's status line reads the live binding; only this hardcoded text is wrong |

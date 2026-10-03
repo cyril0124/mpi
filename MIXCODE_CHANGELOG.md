@@ -319,6 +319,11 @@ point `## [Unreleased]` at the new tag.
   in-app block), and both estimate tokens at ~4 characters per token with one token per CJK character.
 ### Changed
 
+- The CLI presents itself as `mpi`: `piConfig.name` in `packages/coding-agent/package.json` is
+  `mpi`, so `--help`, the package-command help, the terminal title and runtime messages name the
+  tool `mpi`. `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are pinned to their upstream `PI_CODING_AGENT_DIR` /
+  `PI_CODING_AGENT_SESSION_DIR` names in `config.ts`, so external tooling and the shared `.pi` agent
+  dir keep working; the debug log becomes `mpi-debug.log`.
 - Home's startup restore now shows the whole persisted tab layout from the first frame and labels each
   card with the phase its tab is in: a persisted tab whose runtime does not exist yet is a placeholder
   row, and a still-loading tab reports `session`, `resources` or `waiting for input` rather than the
@@ -644,6 +649,8 @@ point `## [Unreleased]` at the new tag.
 
 ### Removed
 
+- The `update` command is no longer listed in `--help`: this fork installs as a standalone `mpi`
+  with no supported self-update path. Its handler and sub-help stay in place.
 - pi's own version-update prompt is gone: the startup check against the release endpoint, the
   `Update Available` transcript block with its changelog link, and the `PI_SKIP_VERSION_CHECK`
   environment variable that gated them are removed. The only update notice left is Home's list of
