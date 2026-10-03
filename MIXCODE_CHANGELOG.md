@@ -463,6 +463,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `install.sh` builds the runtime tree beside the live one and renames it into place, rather than
+  deleting the runtime directory first. Reinstalling while the installed binary was still running
+  aborted with `Device or resource busy` wherever the filesystem refuses to unlink an open file, and
+  a failure partway through the copy left the runtime directory incomplete. The swap never deletes
+  the live tree, and the displaced one is removed best-effort, kept for a later run when still in
+  use.
 - A prompt typed in one tab reaches that tab even while another tab's turn is running. The main loop
   runs one prompt at a time, so a submit received while a turn was in flight was parked in a single
   shared queue and drained to whichever tab was focused when that turn ended: the tab that received

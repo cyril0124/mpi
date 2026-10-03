@@ -145,7 +145,7 @@ bun run build:offline || error "Package build failed"
 # --- Compile ---
 
 BUILD_TMPDIR=$(mktemp -d)
-trap 'rm -rf "$BUILD_TMPDIR"' EXIT
+trap 'rm -rf "${BUILD_TMPDIR:-}" "${STAGE_DIR:-}"' EXIT
 
 info "Compiling standalone binary..."
 # Mirrors scripts/build-binaries.sh: the worker must be an explicit entrypoint to
@@ -164,30 +164,51 @@ fi
 
 info "Installing to $BIN_DIR/$INSTALL_NAME (runtime files in $LIB_DIR)..."
 
-rm -rf "$LIB_DIR"
-mkdir -p "$LIB_DIR" "$BIN_DIR"
+# Assemble the runtime tree in a sibling directory and rename it into place instead of
+# writing into LIB_DIR directly. The installed binary is usually still running while it is
+# being replaced, and deleting a file a process holds open is what filesystems refuse:
+# the unlink either fails outright or leaves the file undeletable until that process exits.
+# Renaming a directory inside its parent always succeeds, so the swap never depends on
+# deleting the live tree, and the displaced tree is removed best-effort.
+STAGE_DIR="$LIB_DIR.new.$$"
+OLD_DIR=""
+# A displaced tree an earlier run could not delete because it was still in use.
+rm -rf "$LIB_DIR".old.* 2>/dev/null || true
+rm -rf "$STAGE_DIR"
+mkdir -p "$STAGE_DIR" "$BIN_DIR"
 
 # The compiled binary resolves runtime files relative to itself, so it lives in
 # LIB_DIR and the bin entry is a wrapper that execs it.
-mv -f "$BUILD_TMPDIR/$INSTALL_NAME" "$LIB_DIR/$INSTALL_NAME" 2>/dev/null \
-  || cp "$BUILD_TMPDIR/$INSTALL_NAME" "$LIB_DIR/$INSTALL_NAME"
-chmod +x "$LIB_DIR/$INSTALL_NAME"
+mv -f "$BUILD_TMPDIR/$INSTALL_NAME" "$STAGE_DIR/$INSTALL_NAME" 2>/dev/null \
+  || cp "$BUILD_TMPDIR/$INSTALL_NAME" "$STAGE_DIR/$INSTALL_NAME"
+chmod +x "$STAGE_DIR/$INSTALL_NAME"
 
 # Runtime files read from the binary's directory (set mirrors scripts/build-binaries.sh).
-cp package.json README.md CHANGELOG.md "$LIB_DIR/"
-cp "$REPO_DIR/node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm" "$LIB_DIR/"
-mkdir -p "$LIB_DIR/theme" "$LIB_DIR/assets"
-cp dist/modes/interactive/theme/*.json "$LIB_DIR/theme/"
-cp dist/modes/interactive/assets/* "$LIB_DIR/assets/"
-cp -R dist/core/export-html "$LIB_DIR/export-html"
-cp -R docs "$LIB_DIR/docs"
-cp -R examples "$LIB_DIR/examples"
+cp package.json README.md CHANGELOG.md "$STAGE_DIR/"
+cp "$REPO_DIR/node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm" "$STAGE_DIR/"
+mkdir -p "$STAGE_DIR/theme" "$STAGE_DIR/assets"
+cp dist/modes/interactive/theme/*.json "$STAGE_DIR/theme/"
+cp dist/modes/interactive/assets/* "$STAGE_DIR/assets/"
+cp -R dist/core/export-html "$STAGE_DIR/export-html"
+cp -R docs "$STAGE_DIR/docs"
+cp -R examples "$STAGE_DIR/examples"
 
 # Native pi-tui platform helper for this machine's architecture.
 NATIVE_OS="${PLATFORM%%-*}"
 NATIVE_PREBUILDS="native/$NATIVE_OS/prebuilds"
-mkdir -p "$LIB_DIR/$NATIVE_PREBUILDS"
-cp -R "$REPO_DIR/packages/tui/$NATIVE_PREBUILDS/$PLATFORM" "$LIB_DIR/$NATIVE_PREBUILDS/"
+mkdir -p "$STAGE_DIR/$NATIVE_PREBUILDS"
+cp -R "$REPO_DIR/packages/tui/$NATIVE_PREBUILDS/$PLATFORM" "$STAGE_DIR/$NATIVE_PREBUILDS/"
+
+if [ -d "$LIB_DIR" ]; then
+  OLD_DIR="$LIB_DIR.old.$$"
+  rm -rf "$OLD_DIR"
+  mv "$LIB_DIR" "$OLD_DIR"
+fi
+mv "$STAGE_DIR" "$LIB_DIR"
+if [ -n "$OLD_DIR" ]; then
+  rm -rf "$OLD_DIR" 2>/dev/null \
+    || warn "Left the previous install at $OLD_DIR; it is still in use and can be removed once that $INSTALL_NAME exits."
+fi
 
 # Bin wrapper: exec the real binary so process.execPath points next to its runtime files.
 WRAPPER="$BIN_DIR/$INSTALL_NAME"
