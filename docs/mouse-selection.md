@@ -32,7 +32,7 @@ Pressing the mouse in the transcript pins it for as long as the button is down. 
 meanwhile is painted below the pinned rows instead of scrolling them away, so the drag keeps selecting
 the text it started on. Releasing leaves the transcript where you left it when output arrived during the
 press or you scrolled it; a press that moved nothing follows again. Either way, the `↓ Jump to latest`
-label, `End`, or a wheel scroll back to the bottom return to the end.
+label or a wheel scroll back to the bottom returns to the end.
 
 ## Copied text
 

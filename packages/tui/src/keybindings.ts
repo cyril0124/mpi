@@ -156,7 +156,10 @@ export const TUI_KEYBINDINGS = {
 		defaultKeys: ["escape", "ctrl+c"],
 		description: "Cancel selection",
 	},
-	// These intentionally shadow the unmodified editor bindings in fullscreen mode.
+	// pageUp/pageDown intentionally shadow the unmodified editor bindings in fullscreen
+	// mode. The top/bottom actions keep no default: plain `home`/`end` must reach the
+	// focused editor, and vim mode's own `app.vim.top`/`app.vim.bottom` still answer them
+	// on the transcript.
 	"tui.altScreen.pageUp": {
 		defaultKeys: "pageUp",
 		description: "Scroll viewport up one page",
@@ -205,8 +208,8 @@ export const TUI_KEYBINDINGS = {
 		defaultKeys: "escape",
 		description: "Close transcript search",
 	},
-	"tui.altScreen.top": { defaultKeys: "home", description: "Scroll viewport to top" },
-	"tui.altScreen.bottom": { defaultKeys: "end", description: "Scroll viewport to bottom" },
+	"tui.altScreen.top": { defaultKeys: [], description: "Scroll viewport to top" },
+	"tui.altScreen.bottom": { defaultKeys: [], description: "Scroll viewport to bottom" },
 } as const satisfies KeybindingDefinitions;
 
 export interface KeybindingConflict {

@@ -463,6 +463,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `home` and `end` move the composer's caret to the line start/end again in fullscreen mode. The
+  alternate screen answered both keys for its transcript top/bottom actions before the focused editor
+  saw them, so the keys stopped working the moment the fork defaulted to fullscreen. `tui.altScreen.top`
+  and `tui.altScreen.bottom` now carry no default key and can be rebound in `keybindings.json`;
+  `pageUp`/`pageDown`, the prompt jumps and the `↓ Jump to latest` label keep the transcript reachable,
+  and vim mode still jumps to either end because `app.vim.top`/`app.vim.bottom` also default to
+  `home`/`end` and run inside the editor.
 - A restored tab that parks in an extension dialog no longer holds up the tabs behind it. `session_start`
   handlers run while the tabs restore one at a time, so a handler that opened a dialog left that bind
   pending until the user answered and every later tab stayed unbuilt. The restore queue now moves on

@@ -1,8 +1,10 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
+import { Editor } from "../src/components/editor.ts";
 import { ScrollView } from "../src/components/scroll-view.ts";
 import { Text } from "../src/components/text.ts";
 import { VStack } from "../src/components/v-stack.ts";
+import { getKeybindings, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "../src/keybindings.ts";
 import { WINDOWED_NODE, type WindowedLayoutNode } from "../src/mixcode/windowed-node.ts";
 import {
 	type Component,
@@ -12,6 +14,7 @@ import {
 	type TuiSelectionOptions,
 } from "../src/tui.ts";
 import { type ClipboardResult, TuiAltScreen } from "../src/tui-alt-screen.ts";
+import { defaultEditorTheme } from "./test-themes.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /** Read one cell's background and underline state off the terminal's own screen buffer. */
@@ -966,5 +969,86 @@ describe("what a press leaves behind", () => {
 			"line 24",
 		);
 		tui.stop();
+	});
+});
+
+/** `home`/`end` belong to the focused editor in fullscreen mode; the viewport top/bottom actions carry no default key. */
+describe("fullscreen composer caret keys", () => {
+	function composerTui(): { terminal: VirtualTerminal; tui: TuiAltScreen; transcript: ScrollView; editor: Editor } {
+		const terminal = new VirtualTerminal(40, 8);
+		const tui = new TuiAltScreen(terminal);
+		const transcript = new ScrollView(
+			new Text(Array.from({ length: 40 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
+			{ follow: "end", primary: true },
+		);
+		const editor = new Editor(tui, defaultEditorTheme);
+		editor.setText("first\nsecond");
+		tui.setLayoutRoot(
+			new VStack([
+				{ component: transcript, basis: 0, grow: 1, minSize: 1 },
+				{ component: editor, basis: "auto", minSize: 3 },
+			]),
+		);
+		tui.setFocus(editor);
+		return { terminal, tui, transcript, editor };
+	}
+
+	it("gives home and end to the focused editor without moving the transcript", async () => {
+		const { terminal, tui, transcript, editor } = composerTui();
+		tui.start();
+		try {
+			await terminal.waitForRender();
+
+			// Wheel up first: a `home` that reached the viewport would jump to the top.
+			terminal.sendInput("\x1b[<64;1;1M");
+			await terminal.waitForRender();
+			const scrolledTop = transcript.scrollTop;
+			assert.ok(scrolledTop > 0, "the wheel must scroll the transcript for the test to mean anything");
+
+			terminal.sendInput("\x1b[H");
+			await terminal.waitForRender();
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 0 });
+			assert.strictEqual(transcript.scrollTop, scrolledTop, "home must not reach the viewport");
+
+			terminal.sendInput("\x1b[F");
+			await terminal.waitForRender();
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 6 });
+			assert.strictEqual(transcript.scrollTop, scrolledTop, "end must not reach the viewport");
+
+			// pageUp keeps its default and still shadows the editor.
+			terminal.sendInput("\x1b[5~");
+			await terminal.waitForRender();
+			assert.ok(transcript.scrollTop < scrolledTop, "pageUp still pages the transcript");
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 6 });
+		} finally {
+			tui.stop();
+		}
+	});
+
+	it("scrolls the transcript to either end when the top and bottom actions are rebound", async () => {
+		const previousKeybindings = getKeybindings();
+		setKeybindings(
+			new KeybindingsManager(TUI_KEYBINDINGS, {
+				"tui.altScreen.top": "ctrl+shift+home",
+				"tui.altScreen.bottom": "ctrl+shift+end",
+			}),
+		);
+		const { terminal, tui, transcript } = composerTui();
+		tui.start();
+		try {
+			await terminal.waitForRender();
+
+			terminal.sendInput("\x1b[1;6H");
+			await terminal.waitForRender();
+			assert.strictEqual(transcript.scrollTop, 0);
+			assert.strictEqual(transcript.isFollowingEnd, false);
+
+			terminal.sendInput("\x1b[1;6F");
+			await terminal.waitForRender();
+			assert.strictEqual(transcript.isFollowingEnd, true);
+		} finally {
+			tui.stop();
+			setKeybindings(previousKeybindings);
+		}
 	});
 });

@@ -23,7 +23,7 @@
 | `app.tab.jump` 默认键 | 无此动作；`ctrl+t` 切换 thinking 块显示 | `ctrl+t` 打开 Tab Jump 切换浮层，`app.thinking.toggle` 保留 `ctrl+t` 默认值但在 composer 中按注册顺序把该键让给跳转 | 有多个 agent 时应当直接跳过去，而不是逐个循环；见 [Agent 标签页](tabs.zh.md#标签页跳转) |
 | 退出 | `ctrl+d` 直接退出，不询问 | `ctrl+q`（Windows 与 WSL 为 `ctrl+shift+q`）先询问；`ctrl+d` 不变 | [命令面板与退出确认](command-palette.zh.md) |
 | 全屏对话区渲染 | 每帧渲染全部消息组件再裁剪到视口 | 只渲染可见窗口（上下各 20 行余量），未测块按 4 行估算 | 否则帧开销随整段对话增长 |
-| 对话区滚动键 | 仅 `tui.altScreen.*` | 全屏模式下另有模态界面（`/vim`、`j`/`k`/`gg`/`G`、提问跳转） | 长对话免鼠标阅读 |
+| 对话区滚动键 | 仅 `tui.altScreen.*` | 全屏模式下另有模态界面（`/vim`、`j`/`k`/`gg`/`G`、提问跳转）；`tui.altScreen.top`/`bottom` 无默认键，`home`/`end` 留给输入框，Vim 模式用它们跳到对话区两端 | 长对话免鼠标阅读 |
 | 默认 TUI 模式 | `regular` | `fullscreen`；`settings.json` 里显式写 `tuiMode: "regular"` 仍会回到普通对话区 | 本 fork 的阅读功能（窗口化对话区、Vim、鼠标选中）只存在于备选屏幕；上游 `packages/coding-agent/docs/settings.md` 的默认值仍写作 `"regular"` |
 | 模态下的输入框边框 | thinking/bash 边框色 | 强调色边框，输入与提交被锁定 | Vim 模式独占输入 |
 | Zen 专注模式 | 无此模式；上游没有可隐藏的标签栏 | `/toggle-zen-mode` 去掉标签块，只留分隔线继续显示其他 agent 的状态圆点；agent 标签页处于 zen 时 `tab`/`shift+tab` 不再切换标签页 | 标签块占用的那一行要让给对话区，而标签栏仍需汇报其他 agent 的动向；见 [Zen 专注模式](zen-mode.zh.md) |
