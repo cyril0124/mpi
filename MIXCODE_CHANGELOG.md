@@ -463,6 +463,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- An unread badge no longer returns after the tab is focused. Focusing cleared `unread` in memory
+  only, so the persisted `unseen_done` kept the session and the periodic peer layout poll restored the
+  badge from disk a moment later. Focusing a tab now persists the cleared badge through the tab
+  manager.
+- `/mark-done` survives a restart that resumes a session. Such a start skips the layout restore, so
+  the first publish wrote the tab's default badge over the recorded one. The shared layout adopts the
+  stored badge before its first publish, and `/mark-done` persists through the tab manager.
 - `install.sh` builds the runtime tree beside the live one and renames it into place, rather than
   deleting the runtime directory first. Reinstalling while the installed binary was still running
   aborted with `Device or resource busy` wherever the filesystem refuses to unlink an open file, and

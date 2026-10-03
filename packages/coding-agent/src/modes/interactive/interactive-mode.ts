@@ -4437,7 +4437,6 @@ export class InteractiveMode {
 		}
 		try {
 			manager.markDone(manager.getActive().id);
-			this.persistOpenTabs();
 			this.showStatus("Tab marked done.");
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));

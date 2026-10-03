@@ -32,9 +32,10 @@ function replaceableRuntime(): {
 
 /**
  * `onLayoutChanged` is what writes `open_tabs.json`. That writer is synchronous
- * and lands on the user's agent directory, so a focus change must not report one:
- * focusing a tab is not a layout change, and every switch used to pay for a write
- * plus a lock it did not need.
+ * and lands on the user's agent directory, so a plain focus change must not report
+ * one: focusing a tab is not a layout change, and reporting it would cost a write
+ * plus a lock. Clearing an unread badge is the exception, because that badge is
+ * persisted state.
  */
 function createManager(initialRuntime: AgentSessionRuntime = stubRuntime()): {
 	manager: TabManager;
@@ -63,6 +64,34 @@ describe("tab layout persistence", () => {
 		manager.activate(manager.getActive().id);
 		expect(counters.layoutChanges).toBe(0);
 		expect(counters.tabsChanges).toBe(1);
+	});
+
+	it("reports a layout change when a focus clears an unread badge", () => {
+		const { manager, counters } = createManager();
+		const tab = manager.getActive();
+		manager.markLoaded(tab.id);
+		manager.markDone(tab.id);
+		expect(tab.unread).toBe(true);
+		const before = counters.layoutChanges;
+
+		manager.activate(tab.id);
+
+		expect(tab.unread).toBe(false);
+		// The cleared badge has to reach disk, or the peer layout poll restores it.
+		expect(counters.layoutChanges).toBe(before + 1);
+	});
+
+	it("reports a layout change when a tab is marked done", () => {
+		const { manager, counters } = createManager();
+		const tab = manager.getActive();
+		manager.markLoaded(tab.id);
+		const before = counters.layoutChanges;
+
+		manager.markDone(tab.id);
+
+		expect(tab.unread).toBe(true);
+		// The badge is persisted state, so the mark has to reach disk by itself.
+		expect(counters.layoutChanges).toBe(before + 1);
 	});
 
 	it("reports a layout change when the title or the color changes", () => {

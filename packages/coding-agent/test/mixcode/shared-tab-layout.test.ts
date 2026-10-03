@@ -174,6 +174,41 @@ describe("shared tab runtime integration", () => {
 		expect(b.manager.list().map((tab) => tab.color)).toEqual(["red", "blue"]);
 	});
 
+	it("keeps a focused tab's cleared badge cleared when the layout is reconciled", async () => {
+		const a = await createClient();
+		const tab = a.manager.getActive();
+		const sessionId = ids(a.manager)[0]!;
+		// A finished background turn publishes the badge to the shared state.
+		a.manager.setUnread(tab.id, true);
+		a.shared.publish();
+		expect(readTabMeta(workdir).get(sessionId)?.unread).toBe(true);
+
+		// Focusing clears the badge in memory and in the shared state; the reconcile
+		// below must not read the old badge back out of the file.
+		a.manager.activate(tab.id);
+		expect(tab.unread).toBe(false);
+		expect(readTabMeta(workdir).get(sessionId)?.unread).toBe(false);
+
+		await a.shared.reconcileNow();
+		expect(tab.unread).toBe(false);
+	});
+
+	it("keeps a marked tab's badge when a restart skips the layout restore", async () => {
+		const a = await createClient();
+		const tab = a.manager.getActive();
+		const sessionId = ids(a.manager)[0]!;
+		a.manager.markLoaded(tab.id);
+		a.manager.markDone(tab.id);
+		const sessionPath = tab.runtime.session.sessionFile!;
+		expect(readTabMeta(workdir).get(sessionId)?.unread).toBe(true);
+
+		// The restart opens the same session as its first tab and never runs the layout
+		// restore, so the shared layout has to adopt the badge before its first publish.
+		const b = await createClient(sessionPath);
+		expect(b.manager.getActive().unread).toBe(true);
+		expect(readTabMeta(workdir).get(sessionId)?.unread).toBe(true);
+	});
+
 	it("does not erase a peer rename or unread badge when an unchanged local layout publishes", async () => {
 		const a = await createClient();
 		const sharedId = ids(a.manager)[0]!;

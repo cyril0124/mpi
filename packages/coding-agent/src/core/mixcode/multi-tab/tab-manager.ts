@@ -178,19 +178,23 @@ export class TabManager {
 	/**
 	 * Focus a tab, clearing its unread badge and a `done` status. An error status
 	 * survives focus so the failure stays visible until the next run. Focus is not a
-	 * layout change, so the persisted layout is left to the callers that alter it.
+	 * layout change, so the persisted layout is left to the callers that alter it;
+	 * clearing a badge is the exception, because `unread` is persisted state that a
+	 * peer poll would otherwise restore from disk.
 	 */
 	activate(id: string): AgentTab {
 		const tab = this.get(id);
 		if (!tab) throw new Error(`Unknown tab: ${id}`);
 		const previous = this.get(this.activeId);
 		this.setActive(tab);
+		const wasUnread = tab.unread;
 		tab.unread = false;
 		if (tab.status === "done") tab.status = "idle";
 		// Vim mode is a per-tab modal surface and follows focus to the tab being shown.
 		if (previous && previous !== tab) transferVimMode(previous.vim, tab.vim);
 		if (previous) this.transferZenMode(previous, tab);
 		this.noteRecent(id);
+		if (wasUnread) this.notifyLayoutChanged();
 		this.onTabsChanged();
 		return tab;
 	}
@@ -491,6 +495,7 @@ export class TabManager {
 		}
 		setTabStatus(tab, "done");
 		tab.unread = true;
+		this.notifyLayoutChanged();
 		this.onTabsChanged();
 	}
 

@@ -48,6 +48,8 @@ export class SharedTabLayout {
 	start(): void {
 		if (this.started || this.disposed) return;
 		if (!this.options.manager.getActive().runtime.session.sessionManager.isPersisted()) return;
+		// Must precede the first publish; publishing before adopting overwrites the record.
+		this.adoptStoredTabMeta();
 		this.started = true;
 		this.publish();
 		this.sync = startPeerTabSync({
@@ -113,17 +115,27 @@ export class SharedTabLayout {
 					return tab ? [tab.id] : [];
 				});
 				manager.reorder(tabIds);
-				const meta = readTabMeta(this.options.workdir);
-				for (const tab of manager.list()) {
-					const stored = meta.get(tab.runtime.session.sessionManager.getSessionId());
-					if (!stored) continue;
-					if (stored.title) manager.restoreTitle(tab.id, stored.title, { titleLocked: stored.titleLocked });
-					manager.setColor(tab.id, stored.color);
-					manager.setUnread(tab.id, stored.unread);
-				}
+				this.adoptStoredTabMeta();
 			},
 			onError: this.options.onError,
 		});
+	}
+
+	/**
+	 * Adopt the stored title, color and badge for every local tab. A start that does not
+	 * run the layout restore leaves the tabs at their defaults, so the first publish would
+	 * write those defaults over the recorded state and drop a badge the previous run saved.
+	 */
+	private adoptStoredTabMeta(): void {
+		const manager = this.options.manager;
+		const meta = readTabMeta(this.options.workdir);
+		for (const tab of manager.list()) {
+			const stored = meta.get(tab.runtime.session.sessionManager.getSessionId());
+			if (!stored) continue;
+			if (stored.title) manager.restoreTitle(tab.id, stored.title, { titleLocked: stored.titleLocked });
+			manager.setColor(tab.id, stored.color);
+			manager.setUnread(tab.id, stored.unread);
+		}
 	}
 
 	/** Persist only the deltas since the previous local mutation; report failures for retry. */
