@@ -26,6 +26,15 @@ point `## [Unreleased]` at the new tag.
   over. A failed launch leaves the draft untouched, and an argument reports `Usage: /editor`. The
   command is listed in the `/` autocomplete and in the palette, where it sits next to `/jump`. See
   [Input Dock](docs/input-dock.md#external-editor).
+- `MPI_PROJECT_SKILLS_ONLY` restricts skill discovery to the session's workdir. With it on, the
+  resource loader drops two kinds of skill: any skill it hands the filter with `user` scope (in
+  practice the whole `<agent dir>/skills` root) and any skill whose file lives outside the workdir.
+  That covers `~/.agents/skills` and the ancestor `.agents/skills` directories above the workdir; a
+  skill from `~/.agents/skills` survives only when that directory falls inside the workdir. The
+  filter runs inside the loader's `skillsOverride` hook, so the system prompt and every surface built
+  from the loaded skills (the interactive startup panel, `/skill:<name>`, `--rpc`) agree; an embedder
+  that builds its own loader is not gated. Off when unset, empty or set to `0`/`false`/`off`/`no`;
+  any other non-empty value counts as on. See [Skill Isolation](docs/skill-isolation.md).
 - `/delete-session` moves the session file into `<agent dir>/mixcode-pi/trash/` instead of
   unlinking it, and records it in `trash-index.jsonl` (`sessionId`, `title`, `deletedAt`,
   `originalPath`, `trashPath`, `size`). The trash is capped at 2 GiB and evicts the oldest

@@ -47,6 +47,7 @@ import type { InlineExtension } from "./core/extensions/types.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
 import { loadBatchDryRunPlan } from "./core/mixcode/batch/batch-cli.ts";
 import { installConsoleTuiBridge } from "./core/mixcode/console/console-tui-bridge.ts";
+import { projectSkillsOnlyOverride } from "./core/mixcode/project-skills-only.ts";
 import { configureProviderErrorDiagnostics } from "./core/mixcode/provider-error-diagnostics.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import { ModelRuntime } from "./core/model-runtime.ts";
@@ -813,6 +814,7 @@ export async function main(args: string[], options?: MainOptions) {
 					}
 				: undefined,
 			resourceLoaderOptions: {
+				skillsOverride: projectSkillsOnlyOverride(cwd),
 				additionalExtensionPaths: resolvedExtensionPaths,
 				additionalSkillPaths: resolvedSkillPaths,
 				additionalPromptTemplatePaths: resolvedPromptTemplatePaths,

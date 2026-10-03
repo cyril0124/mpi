@@ -61,6 +61,7 @@
 | 设置覆盖 | `applyOverrides` 把值叠加到生效设置上，下一次从各作用域重新组合（`save`、`reload`、信任状态变化）时就会丢失 | 覆盖层会被保留，并在每次重新组合时重新合并；`clearOverrides` 用于释放指定字段 | 标签页的 `/context-limit` 会收窄压缩预算，否则中途一次设置写入就会在无提示的情况下恢复完整预算 |
 | Batch 自动化 | 没有 `/batch` 命令，也没有 `--batch` / `--batch-dry-run`；`--` 始终收集消息与 `@file` 参数 | `/batch <script> [-- <args...>]`、`--batch`、`--batch-dry-run` 运行 Lua 或 TypeScript 脚本以打开 agent 标签页；带 `--batch` 时 `--` 传递脚本参数而不是消息，并新增 `fengari` 作为 coding-agent 依赖 | 用脚本铺开一批 agent 标签页需要一个统一入口，且参数必须原样到达脚本；见 [Batch 脚本](batch-scripts.zh.md) |
 | 模型失败诊断 | 失败的请求只保留 provider 格式化后的 `errorMessage`，原始异常在进程结束后就没了，类型、错误码与 HTTP 状态都无迹可循 | 每个内置文本适配器接受 `StreamOptions.onProviderError`，在自己的终止 catch 里把原始异常交给它；交互模式再把观察者装到共享 `ModelRuntime` 上，向控制台历史写入一行有界的 `[provider-error]`（`provider`、`model`、`api`，以及最多五个 `{name, code, status}` 节点） | 用户能行动的是 provider 自己的那句话，而真正失败的原因以前只有挂着调试器才看得到；见[模型请求错误诊断](provider-errors.zh.md) |
+| Skill 发现 | 每个会话都会把项目根（`<workdir>/.pi/skills` 与从 workdir 到 git 根的 `.agents/skills` 目录）同用户根（`<agent dir>/skills`、`~/.agents/skills`）合并 | `MPI_PROJECT_SKILLS_ONLY` 在加载器的 `skillsOverride` 里丢弃过滤器接收时作用域为 `user` 的 skill（`<agent dir>/skills`），以及文件位于 workdir 之外的 skill，使系统提示词与 `/skill:<name>` 列表保持一致；未设置时不改动发现行为 | 共享机器、评测或每仓库一份检出时，需要能把个人 skill 挡在项目提示词之外；见 [Skill 隔离](skill-isolation.zh.md) |
 
 ## 已过期的上游页面与源码文案
 

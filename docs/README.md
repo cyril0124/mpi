@@ -44,6 +44,8 @@ merge. Every place where this fork's behavior and upstream's documentation disag
 - **[Batch Scripts](batch-scripts.md)**: a Lua or TypeScript script that opens a fleet of agent
   tabs and dispatches prompts into them, from the CLI (`--batch`, `--batch-dry-run`) or the
   interactive `/batch` command.
+- **[Skill Isolation](skill-isolation.md)**: `MPI_PROJECT_SKILLS_ONLY` keeps a session on the skills
+  its workdir ships, dropping the user roots and the ancestor `.agents/skills` directories.
 
 ## Fork Mechanics
 
