@@ -113,19 +113,24 @@
   `AssistantMessage.responseModel`
 - `packages/ai/src/api/anthropic-messages.ts`、`packages/ai/src/api/openai-completions.ts`：与 Responses 适配器共用同一个助手记录服务端报告的模型，让覆盖规则只有一处定义
 - `packages/agent/src/agent.ts`：steering 与 follow-up 队列 API
-- `packages/tui/src/layout-node.ts`：窗口化布局节点与滚动行提供者
+- `packages/tui/src/layout-node.ts`：`LayoutNode` 联合里的 `WindowedLayoutNode` 分支
+- `packages/tui/src/mixcode/windowed-node.ts`：窗口化布局状态与滚动行提供者
 - `packages/tui/src/components/settings-list.ts`：`SettingItem` 的可选 `section` 标题行
 - `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`：`MixCode` 分组条目，以及 `Fullscreen exit output` 的描述
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`：`getSettingsListTheme` 的分组标题样式
-- `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒上的行提供者、把组件解析到它在已提交帧里盒子的 `getComponentBox`，以及被挂起的滚动视图传给窗口化子组件的 `honorOffset` 参数
+- `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒携带的行提供者，以及被挂起的滚动视图传给窗口化子组件的 `honorOffset` 参数
+- `packages/tui/src/mixcode/layout-queries.ts`：`getComponentBox`、滚动行提供者查询与物化整行的查询
 - `packages/tui/src/components/scroll-view.ts`：`setFollowSuspended` / `isFollowSuspended` / `resumeFollowEnd`，让指针手势能钉住它正在选中的那些行
-- `packages/tui/src/tui.ts`：浮层鼠标派发会返回命中的浮层，以便区分“在浮层外”与“在浮层上”；`TuiSelectionOptions` 契约（含 `clearOnRelease` 与带绘制行信息的 `highlight`）、把某一行解析到画出它的组件的 `Container.componentAtRow`、`hasCapturingOverlay`，以及区域解析所需的浮层矩形查询
+- `packages/tui/src/tui.ts`：浮层鼠标派发会返回命中的浮层，以便区分“在浮层外”与“在浮层上”；把某一行解析到画出它的组件的 `Container.componentAtRow`、`hasCapturingOverlay`，以及区域解析所需的浮层矩形查询
+- `packages/tui/src/mixcode/selection-types.ts`：`TuiSelectionOptions` 契约（含 `clearOnRelease` 与带绘制行信息的 `highlight`）
+- `packages/tui/src/mixcode/child-at-row.ts`：`Container` 与 `Box` 共用的行到子组件命中测试
+- `packages/tui/src/mixcode/settings-sections.ts`：列表渲染与命中测试共用的分组标题行计划
 - `packages/tui/src/components/box.ts`：`componentAtRow`，让带内缩的卡片里的行也能解析到画出它的子组件
 - `packages/tui/src/tui-alt-screen.ts`：经提供者读取内容行；`scrollToPrompt` 改为公开；
   `onCopyResult` 选项让宿主自行确认复制结果，替代该屏幕自带的一行 flash，并按 grapheme 数报告复制长度；
   跟踪被 hover 的组件，以便后续移动到别处、打开浮层或指针被捕获时向其发送 leave 事件；
   `scrollToEndIndicator` 会收到指针是否在标签上；`selection` 选项把拖拽限定到宿主公布的区域，并交给宿主做文本清洗、着色，以及在复制那次松手时清除高亮
-- `packages/tui/src/utils.ts`：`countGraphemes` 从备选屏幕移到这里，让 coding-agent 的 toast 能用同一单位报告复制长度
+- `packages/tui/src/mixcode/text-metrics.ts`：`countGraphemes`，让 coding-agent 的 toast 能用同一单位报告复制长度
 - `packages/tui/src/index.ts`：导出窗口化节点、鼠标派发、grapheme 计数器与图片行判定，以及选中选项
 - `packages/coding-agent/src/cli/args.ts`：`--tui-mode` 帮助行写出 fork 的默认值
 - `packages/coding-agent/test/settings-manager.test.ts`：TUI 模式断言改为 fork 的 fullscreen 默认值

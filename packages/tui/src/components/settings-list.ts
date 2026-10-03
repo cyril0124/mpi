@@ -1,5 +1,6 @@
 import { fuzzyFilter } from "../fuzzy.ts";
 import { getKeybindings } from "../keybindings.ts";
+import { settingsListRows } from "../mixcode/settings-sections.ts";
 import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../tui.ts";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
 import { Input } from "./input.ts";
@@ -36,33 +37,6 @@ export interface SettingsListTheme {
 	hint: (text: string) => string;
 	/** Section heading style; falls back to the label style when the theme omits it. */
 	section?: (text: string) => string;
-}
-
-/** A rendered list row: a section heading, a spacer, or a setting. */
-type SettingsListRow = { kind: "header"; title: string } | { kind: "gap" } | { kind: "item"; itemIndex: number };
-
-/**
- * Rows for one visible window. A heading is emitted where a section starts, so a
- * window that opens in the middle of a section does not repeat its heading.
- */
-function settingsListRows(
-	items: readonly SettingItem[],
-	startIndex: number,
-	endIndex: number,
-	showSectionHeaders: boolean,
-): SettingsListRow[] {
-	const rows: SettingsListRow[] = [];
-	for (let index = startIndex; index < endIndex; index += 1) {
-		const item = items[index];
-		if (!item) continue;
-		const startsSection = index === 0 || items[index - 1]?.section !== item.section;
-		if (showSectionHeaders && startsSection && item.section) {
-			if (rows.length > 0) rows.push({ kind: "gap" });
-			rows.push({ kind: "header", title: item.section });
-		}
-		rows.push({ kind: "item", itemIndex: index });
-	}
-	return rows;
 }
 
 export interface SettingsListOptions {

@@ -3,13 +3,9 @@ import { describe, it } from "node:test";
 import { ScrollView, type ScrollViewScrollbar } from "../src/components/scroll-view.ts";
 import { Text } from "../src/components/text.ts";
 import { VStack } from "../src/components/v-stack.ts";
-import {
-	getScrollbarGeometry,
-	materializeScrollLines,
-	renderLayoutFrame,
-	WINDOW_OVERSCAN_LINES,
-} from "../src/layout.ts";
-import { WINDOWED_NODE, type WindowedLayoutNode } from "../src/layout-node.ts";
+import { getScrollbarGeometry, renderLayoutFrame, WINDOW_OVERSCAN_LINES } from "../src/layout.ts";
+import { materializeScrollLines } from "../src/mixcode/layout-queries.ts";
+import { WINDOWED_NODE, type WindowedLayoutNode } from "../src/mixcode/windowed-node.ts";
 import type { Component } from "../src/tui.ts";
 import { TuiAltScreen } from "../src/tui-alt-screen.ts";
 import { stripTerminalSequences } from "../src/utils.ts";

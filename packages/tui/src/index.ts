@@ -75,6 +75,7 @@ export {
 } from "./keys.ts";
 // LaTeX rendering
 export { type RenderLatexOptions, renderLatex } from "./latex.ts";
+export { countGraphemes } from "./mixcode/text-metrics.ts";
 // Windowed layout content (components that render only a line window)
 export {
 	getWindowedNode,
@@ -83,7 +84,7 @@ export {
 	type WindowedLayoutComponent,
 	type WindowedLayoutNode,
 	type WindowedLayoutState,
-} from "./layout-node.ts";
+} from "./mixcode/windowed-node.ts";
 // Native platform integration
 export { getNativeClipboard, type NativeClipboard } from "./native-platform.ts";
 // Input buffering for batch splitting
@@ -162,7 +163,6 @@ export { type ClipboardResult, TuiAltScreen, type TuiAltScreenOptions } from "./
 export { TuiMainScreen, type TuiMainScreenRenderState } from "./tui-main-screen.ts";
 // Utilities
 export {
-	countGraphemes,
 	getOsc8LinkAtColumn,
 	sliceByColumn,
 	stripTerminalSequences,

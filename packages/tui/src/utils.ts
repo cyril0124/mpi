@@ -12,14 +12,6 @@ export function getGraphemeSegmenter(): Intl.Segmenter {
 }
 
 /**
- * Number of grapheme clusters in `text`: what a terminal paints as one
- * character, so an emoji or a combining sequence counts once.
- */
-export function countGraphemes(text: string): number {
-	return [...graphemeSegmenter.segment(text)].length;
-}
-
-/**
  * Get the shared word segmenter instance.
  */
 export function getWordSegmenter(): Intl.Segmenter {

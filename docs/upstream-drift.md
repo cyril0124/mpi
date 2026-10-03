@@ -122,30 +122,36 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/ai/src/api/anthropic-messages.ts`, `packages/ai/src/api/openai-completions.ts`: record the
   reported model through the same helper as the Responses adapter, so the overwrite rule has one definition
 - `packages/agent/src/agent.ts`: the steering and follow-up queue APIs
-- `packages/tui/src/layout-node.ts`: the windowed layout node and the scroll line provider
+- `packages/tui/src/layout-node.ts`: the `WindowedLayoutNode` arm of the `LayoutNode` union
+- `packages/tui/src/mixcode/windowed-node.ts`: the windowed layout state and the scroll line provider
 - `packages/tui/src/components/settings-list.ts`: the optional `section` heading row on `SettingItem`
 - `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section entries, and the `Fullscreen exit output` description
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`: the `getSettingsListTheme` section heading style
-- `packages/tui/src/layout.ts`: windowed scroll child, line provider on the scroll box,
-  `getComponentBox` for resolving a component to its committed box, and the `honorOffset` argument
-  a suspended scroll view passes to its windowed child
+- `packages/tui/src/layout.ts`: windowed scroll child, the line provider carried on a scroll box, and
+  the `honorOffset` argument a suspended scroll view passes to its windowed child
+- `packages/tui/src/mixcode/layout-queries.ts`: `getComponentBox`, the scroll line provider lookup, and
+  the materialized-line query
 - `packages/tui/src/components/scroll-view.ts`: `setFollowSuspended` / `isFollowSuspended` /
   `resumeFollowEnd`, so a pointer gesture can hold the rows it is selecting over
 - `packages/tui/src/components/box.ts`: `componentAtRow`, so a row inside a padded card resolves to the
   child that painted it (the descent a host walks to find the component a transcript row belongs to)
 - `packages/tui/src/tui.ts`: the overlay mouse dispatch reports the overlay it hit, so a point
-  outside it can be told from a point on it; the `TuiSelectionOptions` contract (including
-  `clearOnRelease` and a `highlight` handed the painted line), `Container.componentAtRow` so a host
-  can resolve a row to the component that painted it, `hasCapturingOverlay`,
-  and the overlay rect lookup the surface resolver needs
+  outside it can be told from a point on it; `Container.componentAtRow` so a host can resolve a row to
+  the component that painted it, `hasCapturingOverlay`, and the overlay rect lookup the surface
+  resolver needs
+- `packages/tui/src/mixcode/selection-types.ts`: the `TuiSelectionOptions` contract (including
+  `clearOnRelease` and a `highlight` handed the painted line)
+- `packages/tui/src/mixcode/child-at-row.ts`: the row-to-child hit test `Container` and `Box` share
+- `packages/tui/src/mixcode/settings-sections.ts`: the section-heading row plan the list renders and
+  hit-tests against
 - `packages/tui/src/tui-alt-screen.ts`: reads content lines through the provider; public `scrollToPrompt`;
   an `onCopyResult` option lets the host confirm a clipboard write instead of the screen's own flash,
   and reports the copied text as a grapheme count; tracks the hovered component so the next move
   elsewhere, an overlay, or a pointer capture can send it a leave event; `scrollToEndIndicator`
   receives whether the pointer is over the label; a `selection` option scopes the drag to host surfaces
   and takes the host's text cleanup, style and release clearing
-- `packages/tui/src/utils.ts`: `countGraphemes`, moved there from the alternate screen so the
-  coding-agent toast can report a copy in the same unit
+- `packages/tui/src/mixcode/text-metrics.ts`: `countGraphemes`, so the coding-agent toast can report
+  a copy in the same unit
 - `packages/tui/src/index.ts`: exports for the windowed node, mouse dispatch, the grapheme counter and
   the image-line predicate, and the selection options
 - `packages/coding-agent/src/cli/args.ts`: the `--tui-mode` help line names the fork's default

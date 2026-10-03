@@ -1,10 +1,5 @@
-import {
-	type Component,
-	childAtRow,
-	dispatchMouseEvent,
-	type TuiMouseDispatchResult,
-	type TuiMouseEvent,
-} from "../tui.ts";
+import { childAtRow } from "../mixcode/child-at-row.ts";
+import { type Component, dispatchMouseEvent, type TuiMouseDispatchResult, type TuiMouseEvent } from "../tui.ts";
 import { applyBackgroundToLine, visibleWidth } from "../utils.ts";
 
 type RenderCache = {

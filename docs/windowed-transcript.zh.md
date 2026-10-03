@@ -10,7 +10,7 @@
 
 1. 对话区视口是 `VStack[ScrollView(对话区), 停靠区]`，挂在标签栏之下；它的滚动子组件是
    `WindowedTranscript`（`packages/coding-agent/src/modes/interactive/components/mixcode/windowed-chat/`）。
-2. 布局引擎向它索取行数，以及当前视口需要的行（`packages/tui/src/layout-node.ts` 的
+2. 布局引擎向它索取行数，以及当前视口需要的行（`packages/tui/src/mixcode/windowed-node.ts` 的
    `WindowedLayoutState`）。
 3. 已经滚动过的块保留上次测得的真实高度；从未渲染过的块贡献一个估计值（4 行）。两者之和构成滚动
    范围，因此滚动条与 `G` / `End` 仍能到达最新输出。

@@ -1,6 +1,7 @@
 import type { ScrollView } from "./components/scroll-view.ts";
 import { allocateStackSizes, visibleStackEntries } from "./components/stack.ts";
-import { getLayoutNode, getWindowedNode, type ScrollLineProvider } from "./layout-node.ts";
+import { getLayoutNode } from "./layout-node.ts";
+import { getWindowedNode, type ScrollLineProvider } from "./mixcode/windowed-node.ts";
 import { cropKittyImageLine, getKittyImageMetadata, isImageLine } from "./terminal-image.ts";
 import { type Component, CURSOR_MARKER, compositeTuiLine } from "./tui.ts";
 import {
@@ -501,19 +502,6 @@ export function getLayoutBoxesAt(frame: LayoutFrame, x: number, y: number): Layo
 	return result.map(({ box }) => box);
 }
 
-/** The box that rendered `component` in the committed frame, if any box matched. */
-export function getComponentBox(frame: LayoutFrame, component: Component): LayoutBox | undefined {
-	const visit = (box: LayoutBox): LayoutBox | undefined => {
-		if (box.component === component) return box;
-		for (const child of box.children) {
-			const match = visit(child);
-			if (match) return match;
-		}
-		return undefined;
-	};
-	return visit(frame.root);
-}
-
 export function getScrollViewBox(frame: LayoutFrame, scrollView: ScrollView): LayoutBox | undefined {
 	const visit = (box: LayoutBox): LayoutBox | undefined => {
 		if (box.scrollView === scrollView) return box;
@@ -524,25 +512,6 @@ export function getScrollViewBox(frame: LayoutFrame, scrollView: ScrollView): La
 		return undefined;
 	};
 	return visit(frame.root);
-}
-
-/**
- * Content lines of a scroll view, whether it rendered them in full or exposes
- * them through a windowed child. Returns undefined when the view is not in the
- * committed frame.
- */
-export function getScrollLineProvider(frame: LayoutFrame, scrollView: ScrollView): ScrollLineProvider | undefined {
-	return getScrollViewBox(frame, scrollView)?.lineProvider;
-}
-
-/** Materialized content lines of a scroll view, or undefined when it has none. */
-export function materializeScrollLines(frame: LayoutFrame, scrollView: ScrollView): string[] | undefined {
-	const provider = getScrollLineProvider(frame, scrollView);
-	if (!provider) return undefined;
-	// A windowed source reports an estimated line count, which is short of the real
-	// document until every part has been rendered; materializing renders them all.
-	if (provider.materialize) return provider.materialize();
-	return provider.getLines(0, provider.lineCount());
 }
 
 export function getScrollViewsAt(frame: LayoutFrame, x: number, y: number): ScrollView[] {

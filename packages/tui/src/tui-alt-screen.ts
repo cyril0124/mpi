@@ -9,19 +9,19 @@ import { ScrollView } from "./components/scroll-view.ts";
 import { getKeybindings } from "./keybindings.ts";
 import { isKeyRelease } from "./keys.ts";
 import {
-	getComponentBox,
 	getLayoutBoxesAt,
 	getScrollbarGeometry,
-	getScrollLineProvider,
 	getScrollViewBox,
 	getScrollViewsAt,
 	type LayoutFrame,
 	type LayoutRect,
-	materializeScrollLines,
 	renderLayoutFrame,
 	type ScrollbarGeometry,
 } from "./layout.ts";
 import { getLayoutNode } from "./layout-node.ts";
+import { getComponentBox, getScrollLineProvider, materializeScrollLines } from "./mixcode/layout-queries.ts";
+import { applyHostSelectionHighlight } from "./mixcode/selection-highlight.ts";
+import { countGraphemes } from "./mixcode/text-metrics.ts";
 import type { Terminal } from "./terminal.ts";
 import {
 	deleteAllKittyImages,
@@ -55,7 +55,6 @@ import {
 	type ViewportTUI,
 } from "./tui.ts";
 import {
-	countGraphemes,
 	extractAnsiCode,
 	getGraphemeCellRange,
 	getOsc8LinkAtColumn,
@@ -79,8 +78,6 @@ const BEGIN_SYNCHRONIZED_OUTPUT = "\x1b[?2026h";
 const END_SYNCHRONIZED_OUTPUT = "\x1b[?2026l";
 const OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
 const OSC133_PROMPT_START = /^\x1b\]133;A(?:\x07|\x1b\\)/;
-/** Any SGR sequence, including colon-separated parameters. */
-const SGR_SEQUENCE_PATTERN = /\x1b\[[0-9;:]*m/g;
 const PAGE_SCROLL_OVERLAP = 4;
 const ALT_WHEEL_SCROLL_MULTIPLIER = 5;
 /** Button bits SGR reports for motion with no button held; `decodeMouseButton` maps them to "none". */
@@ -94,21 +91,6 @@ const COPY_ERROR_FLASH_DURATION_MS = 5000;
 // so mirror common terminal word-selection behavior by keeping paths and kebab-case tokens whole.
 const TERMINAL_WORD_SELECTION_JOINERS = new Set(["/", "-"]);
 const wordSegmenter = getWordSegmenter();
-/** Sentinel a selection wrap is probed with to read its opening sequence. */
-const SELECTION_STYLE_PROBE = "\x01";
-
-/**
- * Opening sequence of a host selection wrap, probed with a sentinel so the host keeps a plain
- * `(text) => string` per line. An empty result means the wrap adds nothing to re-insert.
- */
-function selectionHighlightOpen(
-	highlight: (text: string, line: TuiSelectionLine) => string,
-	line: TuiSelectionLine,
-): string {
-	const marked = highlight(SELECTION_STYLE_PROBE, line);
-	const index = marked.indexOf(SELECTION_STYLE_PROBE);
-	return index > 0 ? marked.slice(0, index) : "";
-}
 
 interface CachedKittyImage {
 	transmissionGeneration: number;
@@ -1852,15 +1834,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 
 	private applySelectionHighlight(text: string, line: TuiSelectionLine): string {
 		const highlight = this.selection?.highlight;
-		if (highlight) {
-			const open = selectionHighlightOpen(highlight, line);
-			if (!open || !text.includes("\x1b")) return highlight(text, line);
-			// Re-open the host's style after every SGR so an inner reset cannot drop it.
-			return highlight(
-				text.replace(SGR_SEQUENCE_PATTERN, (sequence) => `${sequence}${open}`),
-				line,
-			);
-		}
+		if (highlight) return applyHostSelectionHighlight(highlight, text, line);
 		let result = "\x1b[7m";
 		let index = 0;
 		while (index < text.length) {

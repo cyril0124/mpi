@@ -13,7 +13,7 @@ renders only the rows near the viewport. Long conversations scroll at a bounded 
    scroll child is a `WindowedTranscript`
    (`packages/coding-agent/src/modes/interactive/components/mixcode/windowed-chat/`).
 2. The layout engine asks it for a line count and for the rows of the current viewport
-   (`packages/tui/src/layout-node.ts`, `WindowedLayoutState`).
+   (`packages/tui/src/mixcode/windowed-node.ts`, `WindowedLayoutState`).
 3. Blocks the user has already scrolled past keep their last measured height; blocks that were
    never rendered contribute an estimate (4 rows). The sum is the scroll range, so the scrollbar
    and `G` / `End` still reach the newest output.

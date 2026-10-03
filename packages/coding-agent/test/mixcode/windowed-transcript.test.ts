@@ -9,7 +9,8 @@ import {
 import { describe, expect, it } from "vitest";
 // The layout engine is internal to pi-tui; drive the container through the real
 // scroll child path the fullscreen transcript uses.
-import { materializeScrollLines, renderLayoutFrame } from "../../../tui/src/layout.ts";
+import { renderLayoutFrame } from "../../../tui/src/layout.ts";
+import { materializeScrollLines } from "../../../tui/src/mixcode/layout-queries.ts";
 import type { Component } from "../../../tui/src/tui.ts";
 import { BlockHover, hasPointerCueAt } from "../../src/modes/interactive/components/mixcode/hover/hover-block.ts";
 import { WindowedTranscript } from "../../src/modes/interactive/components/mixcode/windowed-chat/windowed-transcript.ts";
