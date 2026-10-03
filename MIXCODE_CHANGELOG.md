@@ -463,6 +463,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A prompt typed in one tab reaches that tab even while another tab's turn is running. The main loop
+  runs one prompt at a time, so a submit received while a turn was in flight was parked in a single
+  shared queue and drained to whichever tab was focused when that turn ended: the tab that received
+  the input showed nothing, and the message later appeared in the other tab. A submit from a tab's
+  composer now goes straight to that tab's session, and the shared queue serves only a session
+  without tabs. See [Agent Tabs](docs/tabs.md).
 - `home` and `end` move the composer's caret to the line start/end again in fullscreen mode. The
   alternate screen answered both keys for its transcript top/bottom actions before the focused editor
   saw them, so the keys stopped working the moment the fork defaulted to fullscreen. `tui.altScreen.top`

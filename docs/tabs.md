@@ -186,6 +186,11 @@ entry per tab (`session_id`, `session_path`, `title`, `workdir`, `model`, `think
 
 ## Concurrency
 
+Each tab's composer sends to its own session, so a prompt typed in one tab runs there even while
+another tab's turn is in flight. Only a session without tabs routes through the single-prompt input
+loop and its shared queue; that loop drains to whatever is focused when it unblocks, which is the
+wrong tab in a multi-tab instance.
+
 Two instances sharing the same workdir poll `open_tabs.json` every 2 seconds. Opening, closing,
 reordering, and replacing a session publish changes relative to the last local layout, so an
 instance that has not yet seen a peer's tab does not erase it. Peer changes run through the same

@@ -6523,12 +6523,18 @@ export class InteractiveMode {
 				}
 			}
 
+			// A message belongs to the tab whose composer submitted it. The main loop runs
+			// one prompt at a time, so routing a submit through its shared queue would
+			// deliver the message to whichever tab is focused when another turn ends.
+			const submitTab = this.tabManager?.activeTab();
+			const submitSession = submitTab?.runtime.session ?? this.session;
+
 			// Queue input during compaction (extension commands execute immediately)
-			if (this.session.isCompacting) {
+			if (submitSession.isCompacting) {
 				if (this.isExtensionCommand(text)) {
 					this.editor.addToHistory?.(text);
 					this.editor.setText("");
-					await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(text));
+					await runInTabConsole(submitTab, () => submitSession.prompt(text));
 				} else {
 					this.queueCompactionMessage(text, "steer");
 				}
@@ -6537,12 +6543,10 @@ export class InteractiveMode {
 
 			// If streaming, use prompt() with steer behavior
 			// This handles extension commands (execute immediately), prompt template expansion, and queueing
-			if (this.session.isStreaming) {
+			if (submitSession.isStreaming) {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
-				await runInTabConsole(this.tabManager?.getActive(), () =>
-					this.session.prompt(text, { streamingBehavior: "steer" }),
-				);
+				await runInTabConsole(submitTab, () => submitSession.prompt(text, { streamingBehavior: "steer" }));
 				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
 				return;
@@ -6551,13 +6555,26 @@ export class InteractiveMode {
 			// Normal message submission
 			// First, move any pending bash components to chat
 			this.flushPendingBashComponents();
+			this.editor.addToHistory?.(text);
+
+			// Send now; the shared queue below serves only a session without tabs.
+			if (submitTab) {
+				runInTabConsole(submitTab, () => submitSession.prompt(text)).then(
+					() => this.ui.requestRender(),
+					(error: unknown) => {
+						this.setEditorText(text);
+						this.showError(`Send failed: ${error instanceof Error ? error.message : String(error)}`);
+						this.ui.requestRender();
+					},
+				);
+				return;
+			}
 
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			} else {
 				this.pendingUserInputs.push(text);
 			}
-			this.editor.addToHistory?.(text);
 		};
 	}
 
