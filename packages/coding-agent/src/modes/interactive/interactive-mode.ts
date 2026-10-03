@@ -166,6 +166,7 @@ import {
 } from "../../core/mixcode/multi-tab/mixcode-state.ts";
 import { SharedTabLayout } from "../../core/mixcode/multi-tab/shared-tab-layout.ts";
 import { type AgentTab, TabManager, tabBusyReason } from "../../core/mixcode/multi-tab/tab-manager.ts";
+import { waitForTabBindOrPark } from "../../core/mixcode/multi-tab/tab-restore-park.ts";
 import {
 	defaultAgentTitle,
 	isTabColorName,
@@ -4158,9 +4159,9 @@ export class InteractiveMode {
 		const initialId = manager.getActive().id;
 		const errors: string[] = [];
 		const restoredTabs: RestoredTab[] = [];
-		// Recorded ids whose session opened under a different id; the shared set is
-		// rewritten to the real ids before peer polling starts.
-		const renamedSessions: Array<{ from: string; to: string }> = [];
+		// Recorded ids whose session opened under a different id; each one is written to
+		// the shared set once, before peer polling starts.
+		const renamedSessionIds = new Set<string>();
 		try {
 			for (const sessionId of entries) {
 				const restoring = this.restoringTabs.find((item) => item.id === sessionId);
@@ -4193,14 +4194,41 @@ export class InteractiveMode {
 					// memory peak at one, and the bind's walk blocks the loop either way.
 					tab.loadingPhase = "resources";
 					if (restoring) restoring.phase = "resources";
-					await this.bindTabExtensions(tab);
-					// The bind can replace the session, and a file whose header id differs from
-					// its name reveals the real id only here.
-					const actualId = tab.runtime.session.sessionManager.getSessionId();
-					if (actualId !== sessionId) renamedSessions.push({ from: sessionId, to: actualId });
-					// Build the transcript here too, so the tab's first visit repaints parked
-					// blocks instead of building and cold-rendering them on the focus path.
-					this.warmTabTranscript(tab);
+					// A bind that parks in an extension dialog waits on a human, so the queue moves
+					// on and lets the tabs behind it load; the parked bind still finishes on its own,
+					// so its bookkeeping runs whenever it lands.
+					const bind = this.bindTabExtensions(tab);
+					// The bind can replace the session, and a file whose header id differs from its
+					// name reveals the real id only here. A rename is written on sight rather than in a
+					// batch at the end, because a parked bind lands after this loop has finished and
+					// the shared membership must hold the real ids before peer polling starts.
+					const recordRename = (): void => {
+						const actualId = tab.runtime.session.sessionManager.getSessionId();
+						if (actualId === sessionId) return;
+						if (renamedSessionIds.has(sessionId)) return;
+						renamedSessionIds.add(sessionId);
+						try {
+							replaceOpenTabSessionIds(this.tabsWorkdir, [{ from: sessionId, to: actualId }]);
+						} catch (error) {
+							this.showWarning(
+								`Could not update restored tab ids: ${error instanceof Error ? error.message : String(error)}`,
+							);
+						}
+					};
+					const parked = (await waitForTabBindOrPark(tab, bind)) === "parked";
+					// A handler can replace the session before a later handler parks the bind, so
+					// the rename is recorded now as well, not only when the parked bind lands.
+					recordRename();
+					if (parked) {
+						void bind.then(() => {
+							recordRename();
+							this.warmTabTranscript(tab);
+						});
+					} else {
+						// Build the transcript here too, so the tab's first visit repaints parked
+						// blocks instead of building and cold-rendering them on the focus path.
+						this.warmTabTranscript(tab);
+					}
 				} catch (error) {
 					// Skip unreadable sessions and keep whatever restored so far.
 					errors.push(error instanceof Error ? error.message : String(error));
@@ -4235,17 +4263,6 @@ export class InteractiveMode {
 			manager.activate(target);
 			syncHomeSelectionToTab(this.homeSelection, this.homeRoster(), target);
 			for (const item of restoredTabs) manager.setUnread(item.id, item.unread);
-			// Point the shared membership at the ids the tabs actually hold, so the peer
-			// reconcile cannot open a second tab for a stale recorded id.
-			if (renamedSessions.length > 0) {
-				try {
-					replaceOpenTabSessionIds(this.tabsWorkdir, renamedSessions);
-				} catch (error) {
-					this.showWarning(
-						`Could not update restored tab ids: ${error instanceof Error ? error.message : String(error)}`,
-					);
-				}
-			}
 			// Publish the layout now: sessions created during the restore have new
 			// ids, and the next start must read those instead of the old ones.
 			this.tabsRestoreAttempted = true;

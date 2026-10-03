@@ -216,6 +216,12 @@ spinner and the phase its tab is in. The tabs are then built one at a time, in t
 one session is in memory at a time and the session that opens is MixCode Home — with the tab that was
 focused last selected in the roster, not opened.
 
+A tab whose extension opens a dialog from its `session_start` handler parks there rather than
+finishing, and the queue moves on to the next tab instead of waiting for the answer. The parked tab
+reads `waiting for input` on its Home card until the dialog is answered, then finishes on its own:
+its rename is written to the shared tab set and its transcript is warmed. A tab that fails to restore
+is marked `error` and the tabs behind it still load.
+
 ## Session deletion
 
 `/delete-session`, `/delete-all-sessions`, and the session selector refuse to delete a session

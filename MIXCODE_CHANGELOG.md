@@ -454,6 +454,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A restored tab that parks in an extension dialog no longer holds up the tabs behind it. `session_start`
+  handlers run while the tabs restore one at a time, so a handler that opened a dialog left that bind
+  pending until the user answered and every later tab stayed unbuilt. The restore queue now moves on
+  when a tab parks, and the parked tab finishes on its own: it reads `waiting for input` on its Home
+  card, and its session rename and transcript warm land when its bind settles. See
+  [Agent Tabs](docs/tabs.md#startup-restore).
 - The built-in `dark` and `light` themes no longer carry a `panelBg` key. Both restated the value
   `withThemeColorFallbacks` already derives from `toolPendingBg`, so the fork no longer edits two theme
   files upstream also churns, and both match upstream again. `panelBg` itself stays, so a user theme
