@@ -67,6 +67,17 @@ truncates. The right block is dropped whole rather than squeezing the workdir ou
 The second row appears when extensions publish status texts, and is hidden while vim mode is
 active.
 
+## External editor
+
+`/editor`, or the external-editor key (`ctrl+g`, `app.editor.external`), hands the draft to the
+configured external editor (`externalEditor` from the settings, else `$VISUAL` / `$EDITOR`, else
+`notepad` on Windows and `nano` elsewhere) and takes back what it wrote: the composer keeps the
+result, an emptied draft included, and a launch that fails leaves the draft where it was. Both hand
+over the draft with its pasted blocks expanded, not as `[paste #N]` markers. The key reads the live
+composer; typing `/editor` submits the command, so the buffer the external editor opens is empty,
+while picking `/editor` from the command palette (`ctrl+p`) edits the draft the palette took over
+before it replaced it with the command text. An argument reports `Usage: /editor`.
+
 ## What the dock no longer shows
 
 pi's footer drew two rows: the working directory with the session name, then the token and cost

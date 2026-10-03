@@ -696,6 +696,20 @@ interface TranscriptBlocksCache {
 	blocks: Component[];
 }
 
+/** Draft the command palette replaced while it runs a command. */
+interface PaletteCommandDraft {
+	/**
+	 * That draft with the paste markers expanded, which is what `/editor` reads: the palette
+	 * overwrote the editor with the command text, so the editor no longer holds it.
+	 */
+	expandedText: string;
+	/**
+	 * Set by `/editor` once the external editor wrote, so the palette keeps that result, an
+	 * emptied draft included, instead of restoring the draft it replaced.
+	 */
+	ownsEditor: boolean;
+}
+
 /**
  * A non-capturing overlay that takes itself down after a timeout. A newer `show`
  * supersedes the one on screen: the older timer sees the generation change and
@@ -981,6 +995,7 @@ export class InteractiveMode {
 	};
 	private autoTrustOnReloadCwd: string | undefined;
 	private themeController: InteractiveThemeController;
+	private paletteCommandDraft: PaletteCommandDraft | undefined;
 
 	// Convenience accessors
 	private get session(): AgentSession {
@@ -6249,6 +6264,23 @@ export class InteractiveMode {
 				this.showError("Usage: /jump");
 				return;
 			}
+			if (text === "/editor") {
+				const pending = this.paletteCommandDraft;
+				// An agent tab reaches this with the composer already emptied by its submit. Home re-fills
+				// the composer with the command text, and a queued command leaves it as it was, so a
+				// composer that still holds exactly this command carries no draft.
+				const composer = this.editor.getExpandedText?.() ?? this.editor.getText();
+				const holdsCommand = composer.trim() === text;
+				const draft = pending?.expandedText ?? (holdsCommand ? "" : composer);
+				const wrote = await this.handleOpenExternalEditor(draft);
+				// Once the external editor wrote, what it wrote stays: an emptied draft is a result too.
+				if (pending && wrote) pending.ownsEditor = true;
+				return;
+			}
+			if (text.startsWith("/editor ")) {
+				this.showError("Usage: /editor");
+				return;
+			}
 			if (text === "/fork") {
 				this.showUserMessageSelector();
 				this.editor.setText("");
@@ -7899,11 +7931,14 @@ export class InteractiveMode {
 	 * not reported here; only the console-output path reports the editor error,
 	 * where silence would read as if the output had been handed over.
 	 */
-	private async handleOpenExternalEditor(): Promise<void> {
+	private async handleOpenExternalEditor(
+		content = this.editor.getExpandedText?.() ?? this.editor.getText(),
+	): Promise<boolean> {
 		const editorCmd = this.settingsManager.getExternalEditorCommand();
-		const content = this.editor.getExpandedText?.() ?? this.editor.getText();
 		const result = await this.runExternalEditor(editorCmd, content);
-		if (result.status === "complete") this.editor.setText(result.content);
+		if (result.status !== "complete") return false;
+		this.editor.setText(result.content);
+		return true;
 	}
 
 	// =========================================================================
@@ -8475,8 +8510,16 @@ export class InteractiveMode {
 	private runCommandFromPalette(name: string): void {
 		const text = `/${name}`;
 		const draft = this.editorText();
+		// `/editor` edits the draft this replaces and keeps what the external editor wrote.
+		const pending: PaletteCommandDraft = {
+			expandedText: this.editor.getExpandedText?.() ?? draft,
+			ownsEditor: false,
+		};
+		this.paletteCommandDraft = pending;
 		// A command that cleared the editor, or left the command text in it, is done with it.
 		const restoreDraft = () => {
+			this.paletteCommandDraft = undefined;
+			if (pending.ownsEditor) return;
 			const remaining = this.editorText();
 			if (!remaining.trim() || remaining === text) this.editor.setText(draft);
 		};

@@ -37,6 +37,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "system-tools", description: "Show the active agent tools" },
 	{ name: "palette", description: "Open command palette" },
 	{ name: "jump", description: "Jump to an open agent tab" },
+	{ name: "editor", description: "Edit the input draft in $VISUAL / $EDITOR" },
 	{ name: "fork", description: "Create a new fork from a previous user message" },
 	{ name: "clone", description: "Duplicate the current session at the current position" },
 	{ name: "trust", description: "Save project trust decision for future sessions" },

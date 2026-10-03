@@ -15,6 +15,7 @@
 | Agent 标签页 | 一个终端一个会话 | 多个并发标签页，各自持有 `AgentSessionRuntime` | [Agent 标签页](tabs.zh.md) |
 | `/fork` 消息选择 | 替换当前会话 | 在原标签页后创建独立标签页，标题追加 `-fork` 并自动去重，输入框填入所选消息 | 原对话与新分支可以并排保留 |
 | `/reset` | 无此命令；回到一段对话的根节点只能在 `/tree` 里手动导航 | `/reset` 在同一文件里把叶子退回会话根，保留标签页、标题与全部条目，旧分支仍在 `/tree` 可达 | 回到根节点不该先打开树选择器，而被放弃的分支值得留下 |
+| `/editor` | 无此命令；草稿只能通过 `app.editor.external` 按键交给外部编辑器 | `/editor` 从斜杠输入与命令面板打开同一个编辑器，并保留它写入的内容（清空成空草稿也算） | 编辑器槽位里是面板的命令文本时，草稿也需要能编辑 |
 | 会话删除 | 直接删除所选会话文件 | 所属标签页有对话进行中时拒绝 | 可能还有另一个标签页在写该文件 |
 | 已删除会话 | 直接 unlink 文件 | 文件移入 `<agent dir>/mixcode-pi/trash/` 并记入 `trash-index.jsonl`（上限 2 GiB，先淘汰最旧），`/resume-trash` 可把选中的一条还原回原路径；移动失败则退回系统 `trash` CLI、再退回 unlink | 误按 `/delete-session` 应当可撤销，不必依赖备份；该 trash 目录与 mixcode-pi 共用 |
 | `app.model.cycleForward` 默认键 | `ctrl+p` | 无默认键 | `ctrl+p` 改作打开命令面板 |

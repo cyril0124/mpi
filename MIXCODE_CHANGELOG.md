@@ -18,6 +18,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- `/editor` hands the composer's draft, pasted blocks expanded, to the configured external editor
+  (`externalEditor`, else `$VISUAL` / `$EDITOR`, else the platform default) and keeps what that editor
+  writes, an emptied draft included, exactly like the external-editor key (`ctrl+g`).
+  Typing it submits the command, so the external editor opens an empty buffer; picked from the command
+  palette (`ctrl+p`), where the editor slot holds the command text, it edits the draft the palette took
+  over. A failed launch leaves the draft untouched, and an argument reports `Usage: /editor`. The
+  command is listed in the `/` autocomplete and in the palette, where it sits next to `/jump`. See
+  [Input Dock](docs/input-dock.md#external-editor).
 - `/delete-session` moves the session file into `<agent dir>/mixcode-pi/trash/` instead of
   unlinking it, and records it in `trash-index.jsonl` (`sessionId`, `title`, `deletedAt`,
   `originalPath`, `trashPath`, `size`). The trash is capped at 2 GiB and evicts the oldest
