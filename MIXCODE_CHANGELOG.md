@@ -484,6 +484,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The `/settings` **Cache miss notices** row reaches every open tab. Each tab is built by its own
+  `createRuntime`, so each owns a `SettingsManager` whose merged settings are read once: writing the
+  global file from the tab the toggle happened in left every other open tab on the value it was created
+  with, so a tab switched to after the toggle kept the notices off (or on) until `/reload` or a restart.
+  A parked transcript is dropped with the change as well, since reusing one would keep the rows built
+  while its notices were off. A tab that names `showCacheMissNotices` in its project settings keeps that
+  value.
 - Reopened sessions highlight code in the conversation again. Rows painted during startup were held in
   render caches while the deferred syntax grammars were still registering, and no plain invalidation
   reached them: a message block keeps its children's rows unless the theme changed, and the fullscreen

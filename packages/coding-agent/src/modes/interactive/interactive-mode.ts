@@ -96,6 +96,7 @@ import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.ts";
+import { applyCacheMissNoticeSetting } from "../../core/mixcode/cache-miss-notice-setting.ts";
 import {
 	getConsoleHistory,
 	unwireConsoleSink,
@@ -8739,7 +8740,9 @@ export class InteractiveMode {
 						this.ui.requestRender();
 					},
 					onShowCacheMissNoticesChange: (shown) => {
-						this.settingsManager.setShowCacheMissNotices(shown);
+						applyCacheMissNoticeSetting(this.settingsManager, this.tabManager?.list() ?? [], shown);
+						// Parked transcripts were built under the old setting.
+						this.tabTranscript.clear();
 						this.rebuildChatFromMessages();
 					},
 					onCollapseChangelogChange: (collapsed) => {
