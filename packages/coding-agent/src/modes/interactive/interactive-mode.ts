@@ -8566,6 +8566,11 @@ export class InteractiveMode {
 	private runCommandFromPalette(name: string): void {
 		const text = `/${name}`;
 		const draft = this.editorText();
+		// Every tab shares one composer, so a draft belongs to the surface that mounts it. A command
+		// that switches tabs must hand the draft back there instead of typing it into the tab it
+		// switched to; Home's composer is ephemeral, so it owns no draft.
+		const ownerOfMountedComposer = () => (this.homeSelection.active ? HOME_TAB_ID : this.activeTabIdForUi);
+		const draftOwner = ownerOfMountedComposer();
 		// `/editor` edits the draft this replaces and keeps what the external editor wrote.
 		const pending: PaletteCommandDraft = {
 			expandedText: this.editor.getExpandedText?.() ?? draft,
@@ -8576,6 +8581,11 @@ export class InteractiveMode {
 		const restoreDraft = () => {
 			this.paletteCommandDraft = undefined;
 			if (pending.ownsEditor) return;
+			if (draftOwner && draftOwner !== ownerOfMountedComposer()) {
+				// Park it on the tab that owned the composer; a tab the command closed is ignored.
+				if (draftOwner !== HOME_TAB_ID) this.tabManager?.setDraft(draftOwner, draft);
+				return;
+			}
 			const remaining = this.editorText();
 			if (!remaining.trim() || remaining === text) this.editor.setText(draft);
 		};

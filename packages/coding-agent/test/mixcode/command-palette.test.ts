@@ -336,6 +336,8 @@ describe("command palette", () => {
 		let overlayOptions: unknown;
 		let hidden = false;
 		const context = Object.assign(Object.create(InteractiveMode.prototype), {
+			homeSelection: { active: false },
+			activeTabIdForUi: "A",
 			skillCommands: new Map<string, string>(),
 			ui: {
 				terminal: { rows: 24 },
@@ -414,6 +416,8 @@ describe("command palette", () => {
 		let draft = "keep me";
 		const shownErrors: string[] = [];
 		const context = Object.assign(Object.create(InteractiveMode.prototype), {
+			homeSelection: { active: false },
+			activeTabIdForUi: "A",
 			ui: {
 				showOverlay: () => ({ hide: () => {} }),
 			},
@@ -445,6 +449,8 @@ describe("command palette", () => {
 	it("gives the draft back when the command leaves it alone", async () => {
 		let draft = "keep me";
 		const context = Object.assign(Object.create(InteractiveMode.prototype), {
+			homeSelection: { active: false },
+			activeTabIdForUi: "A",
 			ui: { showOverlay: () => ({ hide: () => {} }) },
 			editor: {
 				getText: () => draft,
@@ -464,6 +470,44 @@ describe("command palette", () => {
 		await Promise.resolve();
 
 		expect(draft).toBe("keep me");
+	});
+
+	it("keeps a draft with the tab it was typed in when the command switches tabs", async () => {
+		let draft = "keep me";
+		const savedDrafts = new Map<string, string>();
+		// `onSubmit` focuses the new tab through `context`, so the reference has to exist first.
+		let context: Record<string, unknown>;
+		context = Object.assign(Object.create(InteractiveMode.prototype), {
+			ui: { showOverlay: () => ({ hide: () => {} }) },
+			homeSelection: { active: false },
+			activeTabIdForUi: "A",
+			tabManager: { setDraft: (id: string, text: string) => savedDrafts.set(id, text) },
+			editor: {
+				getText: () => draft,
+				setText: (text: string) => {
+					draft = text;
+				},
+			},
+			// `/new-session` clears the composer and focuses the tab it opened, so the mounted
+			// tab changes while the palette still holds the draft typed in the previous one.
+			defaultEditor: {
+				onSubmit: async () => {
+					draft = "";
+					context.activeTabIdForUi = "B";
+				},
+			},
+			showError: () => {},
+		});
+		const prototype = InteractiveMode.prototype as unknown as {
+			runCommandFromPalette(this: unknown, name: string): void;
+		};
+
+		prototype.runCommandFromPalette.call(context, "new-session");
+		await Promise.resolve();
+
+		// The draft stays on the tab it was typed in; the new tab's composer is untouched.
+		expect(savedDrafts.get("A")).toBe("keep me");
+		expect(draft).toBe("");
 	});
 });
 

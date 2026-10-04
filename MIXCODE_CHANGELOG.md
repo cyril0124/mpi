@@ -484,6 +484,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A command picked from the palette (`ctrl+p`) leaves the composer's draft with the tab it was typed
+  in. Restoring the draft wrote it into the editor after the command returned, but the editor is shared
+  and a tab command (`/new-session`, `/tab`, `/close-session`, …) leaves the switched-to tab's composer
+  mounted: the draft typed in tab A appeared in tab B, and tab A lost it. The palette now records which
+  surface owned the composer and parks the draft on that tab, so `/new-session` opens an empty composer
+  and `shift+tab` back to tab A brings its draft back.
 - A steer message still queued when the agent settles now starts its own turn. The SDK drains the
   steering queue only at an agent turn boundary, so a text left over from the ending run (the tail
   of `flushCompactionQueue` queues its remaining steer texts that way) had no run left to pick it up
