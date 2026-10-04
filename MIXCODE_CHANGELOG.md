@@ -484,6 +484,19 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A steer message still queued when the agent settles now starts its own turn. The SDK drains the
+  steering queue only at an agent turn boundary, so a text left over from the ending run (the tail
+  of `flushCompactionQueue` queues its remaining steer texts that way) had no run left to pick it up
+  and sat in the queue until the next submission. `scheduleSteerSettleFlush` runs on
+  `agent_settled` and sends the queue as one turn when no compaction or resume claimed the session,
+  matching mixcode's `scheduleRuntimePendingMessageFlush`; it waits out a post-settle handoff and
+  leaves a discarded conversation alone.
+- A compaction started through `session.compact()` no longer lets a submission in its first window
+  start a competing run. `compact()` awaits `abort()` before it installs the compaction abort
+  controller, so `isCompacting` stayed false while the running turn stopped, and a message sent then
+  was submitted as an ordinary prompt instead of being queued for after compaction. The manual claim
+  is now set before that await and stays out of `isIdle`, which `compact()`'s own `waitForIdle()`
+  call resolves on: folding it in deadlocks that wait.
 - The `/settings` **Cache miss notices** row reaches every open tab. Each tab is built by its own
   `createRuntime`, so each owns a `SettingsManager` whose merged settings are read once: writing the
   global file from the tab the toggle happened in left every other open tab on the value it was created

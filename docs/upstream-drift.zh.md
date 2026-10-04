@@ -37,6 +37,7 @@
 | 手动压缩模型 | `/compact` 只接受自定义指令并使用当前模型 | `/compact [provider/modelId] [instructions]` 仅为摘要请求使用指定模型，会话模型与 thinking 等级保持不变，并在工作状态中显示指定模型；压缩原因分别使用 accent/warning/error 颜色 | 手动摘要有时需要使用另一个模型，临时状态需要区分手动、阈值和溢出压缩 |
 | 排队消息显示 | 对话区下方的平铺 `Steering:`/`Follow-up:` 行 | 带边框的 `Steer (n)`/`Follow-up (n)` 预览，含轮次编号（`Round k · next/command ·`）、`SDK ·` 伴随标记、只显示最近五条、暂停提示，以及 `Esc->send now`/编辑提示 | 队列现在是有序轮次列表，而不是文本堆 |
 | Esc 时有排队的 steer 文本 | 把每一条排队消息还原到输入框并中止 | 中止，然后把 steer 队列作为一次立即轮次发送；follow-up 轮次保持排队（暂停） | `Esc->send now` 不应把 follow-up 轮次一并发出 |
+| settle 时残留的 steer 文本 | 留在 SDK steering 队列里，直到下一次提交启动一次运行 | 在没有 compaction 或 resume 接管会话时，于 `agent_settled` 把它作为一个轮次发出（`scheduleSteerSettleFlush`）；settle 之后的交接留给接管方 | 上一轮结束时入队的文本此前没有任何东西会把它发出去（`flushCompactionQueue` 的剩余 steer 文本就是这样入队的） |
 | `AgentSession`/`Agent` 队列 API | 只有 `clearQueue()`/`clearAllQueues()` | 新增 `removeQueuedMessages(kind, texts)`/`restoreQueuedMessages(kind, removed)`：从镜像与待发队列中按精确文本出队（最后匹配优先），返回按队列顺序排列的条目供还原 | flush 与 pop 需要移除指定文本，而不是整个队列 |
 | 出队键（`app.message.dequeue`） | `alt+up`（Windows 与 WSL 为 `alt+q`）；把每一条排队消息还原到输入框；编辑器保留 `ctrl+u` 做删除到行首 | `ctrl+u`，与无排队消息时的 vim 入口共用（排队消息先占用该键，无排队消息时武装 vim 入口），在 agent 标签页上无论如何都会被消费，因此不再到达编辑器；两个队列都有内容时 `ctrl+u` 后按 `s`/`f` 选一个，单个队列则把最后一条弹入输入框并重建 `/follow-up`（及 `--batch`）形式，镜像文本也会离开 SDK 队列 | 按队列编辑归为一个快捷键，且 `ctrl+u` 与队列工作流相配 |
 | 坞区组件堆叠 | 无上限；空间不够时由布局压缩槽位 | 上方与下方两个槽位共用一个行预算，被裁掉的行用 `… (widgets truncated)` 标出 | 否则很高的组件堆叠会挤掉对话区与坞区其他部分 |
@@ -111,7 +112,7 @@
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
-- `packages/coding-agent/src/core/agent-session.ts`：手动压缩请求独立指定模型，steering 与 follow-up 队列的摘除，以及 `/reset` 用的 `resetLeafToRoot()`
+- `packages/coding-agent/src/core/agent-session.ts`：手动压缩请求独立指定模型，在 abort 当前轮次前就标记压缩已激活的 claim，steering 与 follow-up 队列的摘除，以及 `/reset` 用的 `resetLeafToRoot()`
 - `packages/coding-agent/src/core/settings-manager.ts`：fork 的 fullscreen `tuiMode` 默认值，以及保留的覆盖层（`applyOverrides` 的覆盖在每次重新组合时都会保留，`clearOverrides` 释放指定字段）
 - `packages/coding-agent/src/core/extensions/loader.ts`：让 bun 发行版的扩展导入走 `virtualModules`
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调与选中选项转发给备用屏幕

@@ -129,6 +129,7 @@ import {
 	type QueueKind,
 	syncFollowUpPreview,
 } from "../../core/mixcode/follow-up/runtime-follow-up-queue.ts";
+import { scheduleSteerSettleFlush } from "../../core/mixcode/follow-up/steer-settle-flush.ts";
 import {
 	adjustHomeSelectionAfterClose,
 	clampHomeSelectedTabIndex,
@@ -6847,6 +6848,8 @@ export class InteractiveMode {
 				// A failed run pauses queued follow-up rounds, including runs the
 				// drain did not start itself.
 				if (this.followUpState.followUpRunFailed) pauseFollowUps(this.followUpState);
+				// Steer texts left in the queue never start their own turn: send them now.
+				scheduleSteerSettleFlush(this.followUpState, this.followUpHost);
 				await this.checkShutdownRequested();
 				break;
 

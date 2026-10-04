@@ -93,7 +93,7 @@ export async function dispatchTurn(
 
 const COMPACTION_CLAIM_TICKS = 8;
 
-function nextMacrotask(): Promise<void> {
+export function nextMacrotask(): Promise<void> {
 	return new Promise((resolve) => setImmediate(resolve));
 }
 

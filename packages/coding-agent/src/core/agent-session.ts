@@ -352,6 +352,8 @@ export class AgentSession {
 
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
+	// Set while compact() aborts the running turn, before that controller exists.
+	private _manualCompactionClaimed = false;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
 	private _overflowRecoveryAttempted = false;
 
@@ -1231,7 +1233,7 @@ export class AgentSession {
 
 	/** Whether the session has no active agent run, compaction, branch summary, retry, or queued continuation. */
 	get isIdle(): boolean {
-		return !this._isAgentRunActive && !this.isCompacting;
+		return !this._isAgentRunActive && !this._compactionActive;
 	}
 
 	/** Current effective system prompt, including changes not yet sent to the model. */
@@ -1291,6 +1293,15 @@ export class AgentSession {
 
 	/** Whether compaction or branch summarization is currently running */
 	get isCompacting(): boolean {
+		return this._manualCompactionClaimed || this._compactionActive;
+	}
+
+	/**
+	 * Compaction or branch summarization holding the session. The manual claim
+	 * stays out of it: `compact()` calls `waitForIdle()` while claiming, and that
+	 * wait resolves on this flag, so including the claim here deadlocks it.
+	 */
+	private get _compactionActive(): boolean {
 		return (
 			this._autoCompactionAbortController !== undefined ||
 			this._compactionAbortController !== undefined ||
@@ -2430,6 +2441,7 @@ export class AgentSession {
 	}
 
 	private _clearManualCompactionState(): void {
+		this._manualCompactionClaimed = false;
 		this._compactionAbortController = undefined;
 		this._resolveIdleWaitIfIdle();
 	}
@@ -2451,7 +2463,15 @@ export class AgentSession {
 	 * @param modelOverride Model used only for this summary; leaves the session model and thinking level unchanged
 	 */
 	async compact(customInstructions?: string, modelOverride?: Model<Api>): Promise<CompactionResult> {
-		await this.abort();
+		// Claim before abort(): abort() awaits the running turn, and a submission in
+		// that window must queue here instead of starting a competing run.
+		this._manualCompactionClaimed = true;
+		try {
+			await this.abort();
+		} catch (error) {
+			this._clearManualCompactionState();
+			throw error;
+		}
 		this._compactionAbortController = new AbortController();
 		this._emit({ type: "compaction_start", reason: "manual" });
 		let fromExtension = false;
