@@ -112,6 +112,7 @@ import {
 	isContextLimitActive,
 	parseContextLimitValue,
 } from "../../core/mixcode/context-limit.ts";
+import { emitMarkDone, setWaitingForInputCount } from "../../core/mixcode/extension-event-bus.ts";
 import {
 	type FollowUpHost,
 	flushSteerQueue,
@@ -681,6 +682,9 @@ const SINGLE_SESSION_TAB_ID = "session";
 
 /** How long the s/f queue-edit choice stays armed after the dequeue key. */
 const QUEUE_EDIT_ARM_WINDOW_MS = 1000;
+
+/** Delay before `/mark-done` reaches host extensions, so the user can leave the pane first. */
+const MARK_DONE_SIGNAL_DELAY_MS = 5_000;
 
 /** Prompt for the armed queue-edit choice, naming the keys the bindings currently carry. */
 function queueEditArmMessage(): string {
@@ -4558,6 +4562,7 @@ export class InteractiveMode {
 		try {
 			manager.markDone(manager.getActive().id);
 			this.showStatus("Tab marked done.");
+			setTimeout(() => emitMarkDone(), MARK_DONE_SIGNAL_DELAY_MS).unref?.();
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
@@ -5547,8 +5552,17 @@ export class InteractiveMode {
 			const index = list.indexOf(interaction);
 			if (index >= 0) list.splice(index, 1);
 			if (list.length === 0) this.tabInteractions.delete(tabId);
+			this.syncWaitingInputCount();
 			this.ui.requestRender();
 		};
+		this.syncWaitingInputCount();
+	}
+
+	/** Broadcast the process-wide count of extension dialogs waiting on a human. */
+	private syncWaitingInputCount(): void {
+		let count = 0;
+		for (const pending of this.tabInteractions.values()) count += pending.length;
+		setWaitingForInputCount(count);
 	}
 
 	/**
@@ -5648,6 +5662,7 @@ export class InteractiveMode {
 			this.unmountTabInteraction(interaction);
 		}
 		this.tabInteractions.delete(tabId);
+		this.syncWaitingInputCount();
 	}
 
 	/**

@@ -20,6 +20,7 @@ import type { ProjectTrustContext } from "../../extensions/index.ts";
 import { assertSessionCwdExists } from "../../session-cwd.ts";
 import { SessionManager } from "../../session-manager.ts";
 import { type ContextLimitOverride, reconcileContextLimit } from "../context-limit.ts";
+import { unregisterExtensionEventBus } from "../extension-event-bus.ts";
 import { deleteSessionFile } from "../session-delete.ts";
 import type { ToastNotification } from "../toast/toast.ts";
 import { createVimTabState, transferVimMode, type VimTabState } from "../vim/vim-mode.ts";
@@ -467,6 +468,9 @@ export class TabManager {
 		if (wasActive) this.setActive(this.tabs[Math.min(index, this.tabs.length - 1)]!);
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
+		// Drop the bus before the runtime goes: a dispose that throws must not leave
+		// a closed tab's `pi.events` subscribed to the process-wide broadcasts.
+		unregisterExtensionEventBus(tab!.runtime.services);
 		await tab!.runtime.dispose();
 		return true;
 	}
@@ -628,6 +632,7 @@ export class TabManager {
 		this.tabs.length = 0;
 		for (const tab of tabs) {
 			tab.unsubscribe();
+			unregisterExtensionEventBus(tab.runtime.services);
 			await tab.runtime.dispose();
 		}
 	}

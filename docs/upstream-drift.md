@@ -69,6 +69,7 @@ commit that causes it.
 | Batch automation | no `/batch` command and no `--batch` / `--batch-dry-run` flags; `--` always collects messages and `@file` arguments | `/batch <script> [-- <args...>]`, `--batch`, and `--batch-dry-run` run a Lua or TypeScript script that opens agent tabs; with `--batch`, `--` carries the script's arguments instead of messages, and `fengari` becomes a coding-agent dependency | scripting a fleet of agent tabs needs one entry point, and the script's arguments must reach it unparsed; see [Batch Scripts](batch-scripts.md) |
 | Provider failure diagnostics | a failed request keeps only the provider-formatted `errorMessage`, so the raw exception is gone once the process ends and nothing captures its type, code or HTTP status | every built-in text adapter accepts `StreamOptions.onProviderError` and calls it with the raw exception at its terminal catch, and the interactive app installs an observer on the shared `ModelRuntime` that writes one bounded `[provider-error]` line (`provider`, `model`, `api`, up to five `{name, code, status}` nodes) into the console history | the provider's own message is what a user acts on, and what actually failed was otherwise only visible with a debugger attached; see [Provider Error Diagnostics](provider-errors.md) |
 | Skill discovery | every session merges the project roots (`<workdir>/.pi/skills` and the `.agents/skills` directories from the workdir up to the git root) with the user roots (`<agent dir>/skills`, `~/.agents/skills`) | `MPI_PROJECT_SKILLS_ONLY` drops every skill the loader hands the filter with `user` scope (`<agent dir>/skills`) and every skill whose file lives outside the workdir, from the loader's `skillsOverride`, so the system prompt and the `/skill:<name>` list agree; unset leaves discovery untouched | a shared machine, an evaluation, or a per-repository checkout must be able to keep personal skills out of a project's prompt; see [Skill Isolation](skill-isolation.md) |
+| Herdr pane state | no host marker and no process-wide extension channels: an extension that reports its pane to a terminal multiplexer has nothing to gate on and nothing to listen to | `main()` marks the process as MixCode (`MIXCODE ??= "1"`), and every tab's `EventBus` is registered so the host can broadcast `mpi:waiting-for-input` `{count, active}` (extension dialogs across every open tab) and `mpi:mark-done` `{reason}` (5 s after `/mark-done`) to all of them | the `mpi-herdr-report` extension needs both: a Herdr sidebar that cannot see `mpi` activity shows every pane as `unknown`. The reporter itself is not shipped by this fork; see [Herdr Pane Reporting](herdr.md) |
 
 ## Outdated upstream pages and source copy
 
@@ -108,7 +109,7 @@ or adds, on every surface, is collected in [Keybindings](keybindings.md).
 
 Each one is a potential conflict point, so edits are kept down to the wiring that calls into `mixcode/` code:
 
-- `packages/coding-agent/src/modes/interactive/interactive-mode.ts`
+- `packages/coding-agent/src/modes/interactive/interactive-mode.ts`: the process-wide waiting-for-input count and the delayed `/mark-done` broadcast
 - `packages/coding-agent/src/config.ts`: `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are pinned to the `PI_*` names instead of following `piConfig.name`
 - `packages/coding-agent/src/modes/interactive/components/status-indicator.ts`: summary model label and reason-specific message colors
 - `packages/coding-agent/src/modes/interactive/components/session-selector.ts`
@@ -118,7 +119,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/src/core/slash-commands.ts`
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
-- `packages/coding-agent/src/main.ts`
+- `packages/coding-agent/src/main.ts`: the `MIXCODE` host marker and the per-tab `EventBus` registration
 - `packages/coding-agent/src/core/agent-session.ts`: request-scoped manual compaction model, the claim that marks compaction active before it aborts the running turn, the steering and follow-up queue splice, `resetLeafToRoot()` for `/reset`, and `syncCacheWarmingMode()` (the warming reconcile without the settings write)
 - `packages/coding-agent/src/core/settings-manager.ts`: the fork's fullscreen `tuiMode` default and a
   retained override layer (`applyOverrides` keeps its overrides across scope recompositions, and

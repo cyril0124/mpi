@@ -23,6 +23,7 @@
 - **[图标](icons.zh.md)**：坞区 meta 行的字形集、`ui.icons.mode` 设置（`nerd`、`ascii`、`auto`），以及 `auto` 能识别的终端。
 - **[Batch 脚本](batch-scripts.zh.md)**：用 Lua 或 TypeScript 脚本一次性铺开一批 agent 标签页并派发 Prompt，可从 CLI（`--batch`、`--batch-dry-run`）或 TUI 内的 `/batch` 命令执行。
 - **[Skill 隔离](skill-isolation.zh.md)**：`MPI_PROJECT_SKILLS_ONLY` 让会话只使用 workdir 自带的 skill，丢弃用户根与祖先 `.agents/skills` 目录。
+- **[Herdr 窗格上报](herdr.zh.md)**：fork 把自己标记为 MixCode，并在每个标签的 `pi.events` 上广播 `mpi:waiting-for-input` 与 `mpi:mark-done`，使 `mpi-herdr-report` 扩展能把窗格状态上报给 Herdr。
 
 ## Fork 机制
 

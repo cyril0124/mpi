@@ -18,6 +18,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- A Herdr pane reports its agent state. `main()` marks the process as MixCode (`MIXCODE ??= "1"`),
+  and every tab's `EventBus` is registered so the host broadcasts `mpi:waiting-for-input`
+  `{count, active}` (extension dialogs across every open tab) and `mpi:mark-done`
+  `{reason: "command"}` (5 s after `/mark-done`) to all of them. The `mpi-herdr-report` extension
+  under `<agent dir>/extensions/` consumes both and reports `blocked`/`working`/`idle` to Herdr,
+  which is how MixCode Pi already does it; this fork does not ship a reporter of its own. See
+  [Herdr Pane Reporting](docs/herdr.md).
 - Fork documentation gains `docs/keybindings.md` and its `.zh.md` mirror: the ids this fork rebinds,
   the ids it adds on each surface, the composer's key resolution order, and the `Escape` steps.
   Upstream's `packages/coding-agent/docs/keybindings.md` cannot hold them, since patching it conflicts

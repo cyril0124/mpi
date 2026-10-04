@@ -49,6 +49,7 @@ merge. Every place where this fork's behavior and upstream's documentation disag
   interactive `/batch` command.
 - **[Skill Isolation](skill-isolation.md)**: `MPI_PROJECT_SKILLS_ONLY` keeps a session on the skills
   its workdir ships, dropping the user roots and the ancestor `.agents/skills` directories.
+- **[Herdr Pane Reporting](herdr.md)**: the fork marks itself as MixCode and broadcasts `mpi:waiting-for-input` and `mpi:mark-done` on every tab's `pi.events`, so the `mpi-herdr-report` extension can report a pane's state to Herdr.
 
 ## Fork Mechanics
 

@@ -67,6 +67,7 @@
 | Batch 自动化 | 没有 `/batch` 命令，也没有 `--batch` / `--batch-dry-run`；`--` 始终收集消息与 `@file` 参数 | `/batch <script> [-- <args...>]`、`--batch`、`--batch-dry-run` 运行 Lua 或 TypeScript 脚本以打开 agent 标签页；带 `--batch` 时 `--` 传递脚本参数而不是消息，并新增 `fengari` 作为 coding-agent 依赖 | 用脚本铺开一批 agent 标签页需要一个统一入口，且参数必须原样到达脚本；见 [Batch 脚本](batch-scripts.zh.md) |
 | 模型失败诊断 | 失败的请求只保留 provider 格式化后的 `errorMessage`，原始异常在进程结束后就没了，类型、错误码与 HTTP 状态都无迹可循 | 每个内置文本适配器接受 `StreamOptions.onProviderError`，在自己的终止 catch 里把原始异常交给它；交互模式再把观察者装到共享 `ModelRuntime` 上，向控制台历史写入一行有界的 `[provider-error]`（`provider`、`model`、`api`，以及最多五个 `{name, code, status}` 节点） | 用户能行动的是 provider 自己的那句话，而真正失败的原因以前只有挂着调试器才看得到；见[模型请求错误诊断](provider-errors.zh.md) |
 | Skill 发现 | 每个会话都会把项目根（`<workdir>/.pi/skills` 与从 workdir 到 git 根的 `.agents/skills` 目录）同用户根（`<agent dir>/skills`、`~/.agents/skills`）合并 | `MPI_PROJECT_SKILLS_ONLY` 在加载器的 `skillsOverride` 里丢弃过滤器接收时作用域为 `user` 的 skill（`<agent dir>/skills`），以及文件位于 workdir 之外的 skill，使系统提示词与 `/skill:<name>` 列表保持一致；未设置时不改动发现行为 | 共享机器、评测或每仓库一份检出时，需要能把个人 skill 挡在项目提示词之外；见 [Skill 隔离](skill-isolation.zh.md) |
+| Herdr 窗格状态 | 既没有宿主标记，也没有进程级扩展通道：想向终端复用器上报窗格状态的扩展既没东西可把守，也没东西可监听 | `main()` 把进程标记为 MixCode（`MIXCODE ??= "1"`），并把每个标签的 `EventBus` 登记起来，宿主因而能向全部实例广播 `mpi:waiting-for-input` `{count, active}`（所有已打开标签中的扩展对话框）与 `mpi:mark-done` `{reason}`（`/mark-done` 之后 5 秒） | `mpi-herdr-report` 两者都需要：看不见 `mpi` 活动的 Herdr 侧边栏会把每个窗格都显示为 `unknown`。上报器本身不由本 fork 分发；见 [Herdr 窗格上报](herdr.zh.md) |
 
 ## 已过期的上游页面与源码文案
 
@@ -104,7 +105,7 @@
 
 以下每一个都是潜在冲突点，因此改动要压缩到"调用 `mixcode/` 代码的接线"这一层：
 
-- `packages/coding-agent/src/modes/interactive/interactive-mode.ts`
+- `packages/coding-agent/src/modes/interactive/interactive-mode.ts`：进程级 waiting-for-input 计数与延迟发出的 `/mark-done` 广播
 - `packages/coding-agent/src/config.ts`：`ENV_AGENT_DIR` / `ENV_SESSION_DIR` 固定为 `PI_*` 名称，不再跟随 `piConfig.name`
 - `packages/coding-agent/src/modes/interactive/components/status-indicator.ts`：摘要模型标签与按压缩原因区分的文案颜色
 - `packages/coding-agent/src/modes/interactive/components/session-selector.ts`
@@ -114,7 +115,7 @@
 - `packages/coding-agent/src/core/slash-commands.ts`
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
-- `packages/coding-agent/src/main.ts`
+- `packages/coding-agent/src/main.ts`：`MIXCODE` 宿主标记与每标签 `EventBus` 的登记
 - `packages/coding-agent/src/core/agent-session.ts`：手动压缩请求独立指定模型，在 abort 当前轮次前就标记压缩已激活的 claim，steering 与 follow-up 队列的摘除，`/reset` 用的 `resetLeafToRoot()`，以及 `syncCacheWarmingMode()`（不写设置文件的 warming 重调）
 - `packages/coding-agent/src/core/settings-manager.ts`：fork 的 fullscreen `tuiMode` 默认值，以及保留的覆盖层（`applyOverrides` 的覆盖在每次重新组合时都会保留，`clearOverrides` 释放指定字段）
 - `packages/coding-agent/src/core/extensions/loader.ts`：让 bun 发行版的扩展导入走 `virtualModules`

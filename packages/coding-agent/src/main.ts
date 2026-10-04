@@ -42,11 +42,13 @@ import {
 } from "./core/agent-session-services.ts";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.ts";
 import { AuthStorage, ReadOnlyAuthStorage } from "./core/auth-storage.ts";
+import { createEventBus } from "./core/event-bus.ts";
 import { exportFromFile } from "./core/export-html/index.ts";
 import type { InlineExtension } from "./core/extensions/types.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
 import { loadBatchDryRunPlan } from "./core/mixcode/batch/batch-cli.ts";
 import { installConsoleTuiBridge } from "./core/mixcode/console/console-tui-bridge.ts";
+import { registerExtensionEventBus } from "./core/mixcode/extension-event-bus.ts";
 import { projectSkillsOnlyOverride } from "./core/mixcode/project-skills-only.ts";
 import { configureProviderErrorDiagnostics } from "./core/mixcode/provider-error-diagnostics.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
@@ -581,6 +583,9 @@ export interface MainOptions {
 
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
+	// MixCode-gated extensions activate only in this host, never in an upstream
+	// pi process that loads the same packages. `??=` keeps an explicit value.
+	process.env.MIXCODE ??= "1";
 	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
 	if (offlineMode) {
@@ -783,6 +788,9 @@ export async function main(args: string[], options?: MainOptions) {
 				parsed.projectTrustOverride ??
 				(!hasTrustRequiringResources || trustStore.get(cwd) === true));
 		const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
+		// One bus per tab, handed to the loader so every extension's `pi.events` is
+		// this bus, then registered for process-wide host signals.
+		const eventBus = createEventBus();
 		const services = await createAgentSessionServices({
 			cwd,
 			agentDir,
@@ -827,8 +835,10 @@ export async function main(args: string[], options?: MainOptions) {
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
 				extensionFactories,
+				eventBus,
 			},
 		});
+		registerExtensionEventBus(services, eventBus);
 		const { settingsManager, modelRuntime, resourceLoader } = services;
 		const diagnostics: AgentSessionRuntimeDiagnostic[] = [
 			...projectTrustDiagnostics,
