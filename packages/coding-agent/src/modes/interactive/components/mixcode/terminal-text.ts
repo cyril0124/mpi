@@ -91,10 +91,18 @@ function isPrintableOrWhitespace(char: string): boolean {
 export const SGR_SEQUENCE = /\x1b\[[0-9;:]*m/g;
 
 /**
- * Wrap `text` in `open`, re-opening `open` after every SGR sequence the text
- * carries: an inner reset would otherwise end the paint early, leaving a
- * background, underline, or chip color covering only the text before it.
+ * Matches only the SGR sequences that turn an attribute back off: a full reset,
+ * and the individual closes for bold, inverse, foreground, and background.
  */
-export function reopenAfterSgr(open: string, text: string): string {
-	return `${open}${text.replace(SGR_SEQUENCE, (sequence) => `${sequence}${open}`)}`;
+export const SGR_RESET_SEQUENCE = /\x1b\[(?:0|22|27|39|49)m/g;
+
+/**
+ * Wrap `text` in `open`, re-opening `open` after every reset the text carries: an
+ * inner reset would otherwise end the paint early, leaving a background,
+ * underline, or chip color covering only the text before it. Sequences that open
+ * a style are left alone, so a nested foreground keeps its own color until it
+ * resets.
+ */
+export function reopenAfterReset(open: string, text: string): string {
+	return `${open}${text.replace(SGR_RESET_SEQUENCE, (sequence) => `${sequence}${open}`)}`;
 }

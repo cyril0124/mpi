@@ -5,7 +5,7 @@
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type ThemeBg, type ThemeColor, theme } from "../../theme/theme.ts";
-import { reopenAfterSgr } from "./terminal-text.ts";
+import { reopenAfterReset } from "./terminal-text.ts";
 
 const PANEL_PADDING_X = 1;
 
@@ -59,7 +59,7 @@ const ROUND_CORNERS: PanelCorners = { topLeft: "╭", topRight: "╮", bottomLef
  */
 export function paintBackground(background: ThemeBg, text: string): string {
 	const open = theme.getBgAnsi(background);
-	return `${reopenAfterSgr(open, text)}${BACKGROUND_RESET}`;
+	return `${reopenAfterReset(open, text)}${BACKGROUND_RESET}`;
 }
 
 /** Frame `body` in a box `width` columns wide, with `title` set into the top border. */

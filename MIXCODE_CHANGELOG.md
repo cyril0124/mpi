@@ -484,6 +484,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A plain tab's active title shows its highlight wave again. The chip painter re-opened its own
+  background and foreground after every escape sequence in the title, so the wave's lit cell lost
+  its accent color to the chip foreground the instant that cell opened; only a colored chip
+  survived, because it inverts the lit cells instead of recoloring them. The painter now re-opens
+  after resets only, matching mixcode's `paintTabChip`, so a nested foreground keeps its color
+  until it resets.
 - A command picked from the palette (`ctrl+p`) leaves the composer's draft with the tab it was typed
   in. Restoring the draft wrote it into the editor after the command returned, but the editor is shared
   and a tab command (`/new-session`, `/tab`, `/close-session`, …) leaves the switched-to tab's composer

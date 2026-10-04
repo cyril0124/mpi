@@ -19,7 +19,7 @@ import type { TabColorName, TabStatus } from "../../../../../core/mixcode/multi-
 import { theme } from "../../../theme/theme.ts";
 import { type HoverTarget, PointerHover } from "../hover/pointer-hover.ts";
 import { applyActiveTabShimmer, COLORED_SHIMMER_STYLES, THEME_SHIMMER_STYLES } from "../tab-shimmer.ts";
-import { reopenAfterSgr } from "../terminal-text.ts";
+import { reopenAfterReset } from "../terminal-text.ts";
 import { RULE_CHAR, TAB_STATUS_GLYPHS, tabStatusGlyph, tabStatusPaint } from "./tab-glyphs.ts";
 import { renderTabRuleChrome, type TabRuleChrome } from "./tab-rule-chrome.ts";
 import { renderZenStatusSeparator, type ZenStatusMarker, zenStatusCluster } from "./zen-status.ts";
@@ -116,7 +116,7 @@ function paintOpenSeq(paint: (text: string) => string): string {
 function chipPaint(base: (text: string) => string): (text: string) => string {
 	const open = paintOpenSeq(base);
 	if (!open) return base;
-	return (text) => base(reopenAfterSgr(open, text));
+	return (text) => base(reopenAfterReset(open, text));
 }
 
 /** Chip painter for a tab color: the color's contrast pair, reset-safe. */
