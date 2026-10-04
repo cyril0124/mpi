@@ -18,6 +18,10 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- Fork documentation gains `docs/keybindings.md` and its `.zh.md` mirror: the ids this fork rebinds,
+  the ids it adds on each surface, the composer's key resolution order, and the `Escape` steps.
+  Upstream's `packages/coding-agent/docs/keybindings.md` cannot hold them, since patching it conflicts
+  on every merge, so the fork's own bindings had no single page to be read from.
 - `/editor` hands the composer's draft, pasted blocks expanded, to the configured external editor
   (`externalEditor`, else `$VISUAL` / `$EDITOR`, else the platform default) and keeps what that editor
   writes, an emptied draft included, exactly like the external-editor key (`ctrl+g`).
@@ -336,6 +340,11 @@ point `## [Unreleased]` at the new tag.
   in-app block), and both estimate tokens at ~4 characters per token with one token per CJK character.
 ### Changed
 
+- The fork no longer patches `packages/coding-agent/docs/keybindings.md` for the fullscreen
+  `tui.altScreen.top` / `tui.altScreen.bottom` defaults: the page is byte-identical to upstream, and
+  the divergence (both actions keep no default, so `home` / `end` reach the focused editor) is
+  recorded in `docs/upstream-drift.md` instead; `packages/tui/src/keybindings.ts` keeps its fork
+  default, only the upstream page stopped carrying it.
 - The CLI presents itself as `mpi`: `piConfig.name` in `packages/coding-agent/package.json` is
   `mpi`, so `--help`, the package-command help, the terminal title and runtime messages name the
   tool `mpi`. `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are pinned to their upstream `PI_CODING_AGENT_DIR` /
@@ -463,6 +472,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `docs/upstream-drift.md`'s "Upstream files modified by this fork" list names five more files the
+  fork edits: `packages/coding-agent/src/config.ts`,
+  `packages/coding-agent/src/modes/interactive/components/extension-selector.ts`,
+  `packages/tui/src/keybindings.ts`, `packages/tui/src/components/editor.ts` and
+  `packages/tui/src/editor-component.ts`. A sync reading that list as complete could treat them as
+  upstream code and let a merge overwrite the fork's behavior there.
+- `docs/windowed-transcript.md` no longer claims plain `End` reaches the transcript bottom:
+  `tui.altScreen.bottom` carries no default key, so only vim mode's `G` / `End` do.
 - An unread badge no longer returns after the tab is focused. Focusing cleared `unread` in memory
   only, so the persisted `unseen_done` kept the session and the periodic peer layout poll restored the
   badge from disk a moment later. Focusing a tab now persists the cleared badge through the tab

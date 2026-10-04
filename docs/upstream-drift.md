@@ -87,19 +87,24 @@ Deliberately left unpatched:
 | `packages/coding-agent/src/utils/version-check.ts` (source copy) | exports `checkForNewPiVersion`, the startup check that reads `PI_SKIP_VERSION_CHECK` | removed; `getLatestPiRelease` and `isNewerPackageVersion` stay for `pi update --self` |
 | `packages/coding-agent/docs/usage.md:23` | "Press `Ctrl+T` to show or hide thinking blocks" | `ctrl+t` opens Tab Jump; `app.thinking.toggle` keeps the same default but the composer declines it behind the jump handler |
 | `packages/coding-agent/docs/keybindings.md:157` | `app.thinking.toggle` defaults to `ctrl+t` | the same key belongs to `app.tab.jump`, which the composer registers first; the toggle is reachable only after a rebind |
+| `packages/coding-agent/docs/keybindings.md:100` | "these actions control the transcript and take precedence over editor actions using the same key" | only `pageUp`/`pageDown` shadow the editor keys; `top`/`bottom` carry no default, so `home`/`end` stay with the focused editor |
+| `packages/coding-agent/docs/keybindings.md:116-117` | `tui.altScreen.top` defaults to `home`, `tui.altScreen.bottom` to `end` | both have no default key (`defaultKeys: []` in `packages/tui/src/keybindings.ts`), so `home`/`end` reach the focused editor; vim mode's `app.vim.top`/`bottom` still scroll the transcript |
 | `packages/coding-agent/docs/settings.md:79` | `fullscreenExitOutput` set to `resume-hint` selects "only a session resume hint" as the exit output | the value still suppresses the transcript on exit, and nothing is printed in its place |
 
 Those pages also never list the tab keybindings and tab slash commands — `/jump` and its `ctrl+t`
-chord included; [Agent Tabs](tabs.md) is the source of truth for those.
+chord included; [Agent Tabs](tabs.md) is the source of truth for those. Every binding the fork rebinds
+or adds, on every surface, is collected in [Keybindings](keybindings.md).
 
 ## Upstream files modified by this fork
 
 Each one is a potential conflict point, so edits are kept down to the wiring that calls into `mixcode/` code:
 
 - `packages/coding-agent/src/modes/interactive/interactive-mode.ts`
+- `packages/coding-agent/src/config.ts`: `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are pinned to the `PI_*` names instead of following `piConfig.name`
 - `packages/coding-agent/src/modes/interactive/components/status-indicator.ts`: summary model label and reason-specific message colors
 - `packages/coding-agent/src/modes/interactive/components/session-selector.ts`
 - `packages/coding-agent/src/modes/interactive/components/custom-editor.ts`
+- `packages/coding-agent/src/modes/interactive/components/extension-selector.ts`: the `keyShortcuts` option and the `y`/`n` shortcut arm on extension selectors
 - `packages/coding-agent/src/core/keybindings.ts`
 - `packages/coding-agent/src/core/slash-commands.ts`
 - `packages/coding-agent/src/core/extensions/runner.ts`
@@ -129,6 +134,8 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/ai/src/api/anthropic-messages.ts`, `packages/ai/src/api/openai-completions.ts`: record the
   reported model through the same helper as the Responses adapter, so the overwrite rule has one definition
 - `packages/agent/src/agent.ts`: the steering and follow-up queue APIs
+- `packages/tui/src/keybindings.ts`: `tui.altScreen.top`/`bottom` carry no default key, so `home`/`end` reach the focused editor
+- `packages/tui/src/components/editor.ts`, `packages/tui/src/editor-component.ts`: `setHistory` replaces a whole prompt history, and a recalled entry takes the caret at its end
 - `packages/tui/src/layout-node.ts`: the `WindowedLayoutNode` arm of the `LayoutNode` union
 - `packages/tui/src/mixcode/windowed-node.ts`: the windowed layout state and the scroll line provider
 - `packages/tui/src/components/settings-list.ts`: the optional `section` heading row on `SettingItem`

@@ -10,6 +10,9 @@ merge. Every place where this fork's behavior and upstream's documentation disag
 
 ## Features
 
+- **[Keybindings](keybindings.md)**: what the fork rebinds, the ids it adds per surface (tabs, Tab
+  Jump, MixCode Home, the workdir picker, queued messages, the console notice, vim mode), the order
+  the composer resolves a key in, and what `Escape` does.
 - **[Agent Tabs](tabs.md)**: several agents running side by side in one terminal — keybindings,
   commands, the Tab Jump switcher (`ctrl+t` / `/jump`), tab bar status, colors, persistence, and
   startup restore.

@@ -97,7 +97,7 @@ The dedicated history actions browse prompt history regardless of cursor positio
 
 #### Fullscreen
 
-In fullscreen mode, these actions control the transcript; `pageUp`/`pageDown` shadow the editor keys, and `top`/`bottom` carry no default key so `home`/`end` stay with the focused editor (vim mode binds them itself).
+In fullscreen mode, these actions control the transcript and take precedence over editor actions using the same key.
 
 | Keybinding id | Default | Description |
 |---|---|---|
@@ -113,8 +113,8 @@ In fullscreen mode, these actions control the transcript; `pageUp`/`pageDown` sh
 | `tui.altScreen.searchNext` | `enter`, `ctrl+g` | Select the next search match while searching |
 | `tui.altScreen.searchPrevious` | `shift+enter`, `ctrl+shift+g` | Select the previous search match while searching |
 | `tui.altScreen.searchClose` | `escape` | Close transcript search |
-| `tui.altScreen.top` | None | Scroll to the beginning of the transcript |
-| `tui.altScreen.bottom` | None | Scroll to the transcript end and follow new output |
+| `tui.altScreen.top` | `home` | Scroll to the beginning of the transcript |
+| `tui.altScreen.bottom` | `end` | Scroll to the transcript end and follow new output |
 
 ### Application
 

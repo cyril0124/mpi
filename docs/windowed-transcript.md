@@ -16,7 +16,7 @@ renders only the rows near the viewport. Long conversations scroll at a bounded 
    (`packages/tui/src/mixcode/windowed-node.ts`, `WindowedLayoutState`).
 3. Blocks the user has already scrolled past keep their last measured height; blocks that were
    never rendered contribute an estimate (4 rows). The sum is the scroll range, so the scrollbar
-   and `G` / `End` still reach the newest output.
+   and vim mode's `G` / `End` still reach the newest output.
 4. The window is rendered with 20 rows of overscan above and below (`WINDOW_OVERSCAN_LINES`), so a
    one-row scroll does not re-render the neighbouring block.
 5. Rows are counted from the top and only blocks inside the window are measured, so appending output

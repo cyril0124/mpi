@@ -56,7 +56,6 @@
 | 用户消息块 | 带背景的消息文本块 | 同一块内容，但在首行右端显示发送时间（`Sep 29, 9:29 PM`：短月份、日、时、分，取终端自身区域设置），以暗色绘制，正文渲染宽度相应收窄，任何文字都不会压到时间上 | 消息块自身说明了发送时刻，长对话无需打开会话列表就能按时间阅读 |
 | 指针 hover 反馈 | 无提示：列表忽略指针移动，消息区域只响应点击，跳到底部标签只有一种样式 | 指针下的单元格获得选中背景与下划线（标签页 chip、命令面板行、坞区 meta 行的模型与 thinking 字段）；响应点击的消息块整块填充为一个矩形；全屏渲染器在指针离开后告知对应组件，捕获型浮层打开时保持其下方界面无高亮，非捕获型浮层区域外仍保持 hover，终端尺寸变化时清除所有 hover | 本 fork 的可点击界面需要一个不改变键盘选择与活动标签页的提示 |
 | 扩展模块解析 | bun 跑构建产物时保留 jiti 的 `tryNative`（原生 TS 导入），扩展的 `@earendil-works/*` 裸导入因此从环境 `node_modules` 解析 | bun 跑构建产物时改走 `virtualModules`，清单内的 specifier 一律取运行中宿主自己的那份；bun 跑 TypeScript 源码不受影响 | 第二份 `@earendil-works/pi-tui` 会让 `ToolExecutionComponent.prototype` 的补丁打在宿主从未渲染的类上，渲染扩展于是静默退回内置工具行 |
-
 | 新版本提示 | 启动时请求 `pi.dev/api/latest-version`，打印带 changelog 链接的 `Update Available` 块，由 `PI_SKIP_VERSION_CHECK` 关闭 | 不再提示 pi 自身的新版本：启动检查、`checkForNewPiVersion` 与 `PI_SKIP_VERSION_CHECK` 均已删除 | 本 fork 改为只在 [MixCode Home](home.zh.md) 报告过期的扩展包 |
 | 退出恢复提示 | 已持久化的会话在交互式退出时打印 `To resume this session: pi --session <id>` | 不再打印该输出，负责拼装它的 `formatResumeCommand` 辅助函数也已删除 | MixCode 在一个进程里保留多个会话并通过自己的标签页进入，pi 的 `--session` 命令不是恢复会话的方式 |
 | 设置覆盖 | `applyOverrides` 把值叠加到生效设置上，下一次从各作用域重新组合（`save`、`reload`、信任状态变化）时就会丢失 | 覆盖层会被保留，并在每次重新组合时重新合并；`clearOverrides` 用于释放指定字段 | 标签页的 `/context-limit` 会收窄压缩预算，否则中途一次设置写入就会在无提示的情况下恢复完整预算 |
@@ -86,18 +85,22 @@
 | `packages/coding-agent/src/utils/version-check.ts`（源码文案） | 导出 `checkForNewPiVersion`，即读取 `PI_SKIP_VERSION_CHECK` 的启动检查 | 已删除；`getLatestPiRelease` 与 `isNewerPackageVersion` 保留供 `pi update --self` 使用 |
 | `packages/coding-agent/docs/usage.md:23` | "Press `Ctrl+T` to show or hide thinking blocks" | `ctrl+t` 打开 Tab Jump；`app.thinking.toggle` 默认键不变，但 composer 在跳转处理器之后不再响应它 |
 | `packages/coding-agent/docs/keybindings.md:157` | `app.thinking.toggle` 默认 `ctrl+t` | 同一个键属于 `app.tab.jump`，composer 先注册跳转处理器；thinking 开关需重新绑定后才可用 |
+| `packages/coding-agent/docs/keybindings.md:100` | "these actions control the transcript and take precedence over editor actions using the same key" | 只有 `pageUp`/`pageDown` 遮蔽编辑器键；`top`/`bottom` 无默认键，`home`/`end` 归聚焦的编辑器 |
+| `packages/coding-agent/docs/keybindings.md:116-117` | `tui.altScreen.top` 默认 `home`，`tui.altScreen.bottom` 默认 `end` | 两者都没有默认键（`packages/tui/src/keybindings.ts` 里 `defaultKeys: []`），`home`/`end` 留给聚焦的编辑器；vim 模式的 `app.vim.top`/`bottom` 仍作用于 transcript |
 | `packages/coding-agent/docs/settings.md:79` | `fullscreenExitOutput` 取 `resume-hint` 时选择 "only a session resume hint" 作为退出输出 | 该取值仍然跳过退出时的对话记录输出，且不再打印任何内容 |
 
-上面这些页面也都没有列出标签页键位和标签页斜杠命令 —— 包括 `/jump` 及其 `ctrl+t`；这些以 [Agent 标签页](tabs.zh.md) 为准。
+上面这些页面也都没有列出标签页键位和标签页斜杠命令 —— 包括 `/jump` 及其 `ctrl+t`；这些以 [Agent 标签页](tabs.zh.md) 为准。fork 重新绑定或新增的全部键位（按界面分类）集中在 [键位](keybindings.zh.md)。
 
 ## 本 fork 修改的上游文件
 
 以下每一个都是潜在冲突点，因此改动要压缩到"调用 `mixcode/` 代码的接线"这一层：
 
 - `packages/coding-agent/src/modes/interactive/interactive-mode.ts`
+- `packages/coding-agent/src/config.ts`：`ENV_AGENT_DIR` / `ENV_SESSION_DIR` 固定为 `PI_*` 名称，不再跟随 `piConfig.name`
 - `packages/coding-agent/src/modes/interactive/components/status-indicator.ts`：摘要模型标签与按压缩原因区分的文案颜色
 - `packages/coding-agent/src/modes/interactive/components/session-selector.ts`
 - `packages/coding-agent/src/modes/interactive/components/custom-editor.ts`
+- `packages/coding-agent/src/modes/interactive/components/extension-selector.ts`：`keyShortcuts` 选项，以及扩展选择器上的 `y`/`n` 快捷键分支
 - `packages/coding-agent/src/core/keybindings.ts`
 - `packages/coding-agent/src/core/slash-commands.ts`
 - `packages/coding-agent/src/core/extensions/runner.ts`
@@ -120,6 +123,8 @@
   `AssistantMessage.responseModel`
 - `packages/ai/src/api/anthropic-messages.ts`、`packages/ai/src/api/openai-completions.ts`：与 Responses 适配器共用同一个助手记录服务端报告的模型，让覆盖规则只有一处定义
 - `packages/agent/src/agent.ts`：steering 与 follow-up 队列 API
+- `packages/tui/src/keybindings.ts`：`tui.altScreen.top`/`bottom` 没有默认键，`home`/`end` 归聚焦的编辑器
+- `packages/tui/src/components/editor.ts`、`packages/tui/src/editor-component.ts`：`setHistory` 可整体替换历史，且回召回的历史条目把光标放在末尾
 - `packages/tui/src/layout-node.ts`：`LayoutNode` 联合里的 `WindowedLayoutNode` 分支
 - `packages/tui/src/mixcode/windowed-node.ts`：窗口化布局状态与滚动行提供者
 - `packages/tui/src/components/settings-list.ts`：`SettingItem` 的可选 `section` 标题行
