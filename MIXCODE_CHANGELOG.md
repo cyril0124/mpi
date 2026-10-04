@@ -484,6 +484,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A steer box no longer keeps showing a steer that another tab already sent. The host mirror behind
+  the box (`followUpState.pendingSteer`) is written only by `queue_update`, and the mode subscribes to
+  the active tab's session alone: a tab that was backgrounded while its steer drained never saw the
+  event, so returning to it repainted the consumed entry and `Esc` would have flushed it a second time.
+  Showing a tab now re-derives its steering and follow-up mirrors from the live session queues
+  (`resyncQueuedMessageMirrors`), on both transcript paths (`restoreTranscript`, `renderCurrentSessionState`).
+  A steer parked while compaction runs now enters the mirror ahead of the SDK-mirrored tail instead of
+  after it, so that re-derivation tells the two apart and keeps both.
 - The input card's top edge survives a tab name wider than the edge. The title was budgeted as
   `available - modes` and then drawn padded as ` title `, so the label overran its room by two
   columns and the fill count went negative, which `"─".repeat(fill)` rejects: a narrow pane holding

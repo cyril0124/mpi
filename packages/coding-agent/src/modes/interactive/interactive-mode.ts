@@ -3781,6 +3781,7 @@ export class InteractiveMode {
 		this.pendingTools.clear();
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
+		this.resyncQueuedMessageMirrors();
 		this.updatePendingMessagesDisplay();
 		return true;
 	}
@@ -4608,6 +4609,7 @@ export class InteractiveMode {
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
 		this.renderInitialMessages();
+		this.resyncQueuedMessageMirrors();
 		// Clearing a transcript also clears the queue boxes above the composer.
 		this.updatePendingMessagesDisplay();
 	}
@@ -8521,9 +8523,26 @@ export class InteractiveMode {
 		syncFollowUpPreview(state, followUp);
 	}
 
+	/**
+	 * Re-derive the active tab's mirrors from its session.
+	 *
+	 * `queue_update` is only delivered for the session this mode is subscribed to, so
+	 * a tab that is backgrounded while its steer/follow-up queue drains keeps a stale
+	 * mirror. Showing that tab again must not repaint the consumed entries, and an Esc
+	 * flush must not resend them, so read the live queues before the box is drawn.
+	 */
+	private resyncQueuedMessageMirrors(): void {
+		this.syncQueuedMessageMirrors(this.session.getSteeringMessages(), this.session.getFollowUpMessages());
+	}
+
 	private queueCompactionMessage(text: string, mode: "steer" | "followUp"): void {
 		this.compactionQueuedMessages.push({ text, mode });
-		if (mode === "steer") this.followUpState.pendingSteer.push(text);
+		if (mode === "steer") {
+			// Parked texts lead the SDK-mirrored tail; the mirror tells the two apart by
+			// position, so insert before the tail instead of appending after it.
+			const state = this.followUpState;
+			state.pendingSteer.splice(state.pendingSteer.length - state.queuedSteerCount, 0, text);
+		}
 		this.editor.addToHistory?.(text);
 		this.editor.setText("");
 		this.updatePendingMessagesDisplay();
