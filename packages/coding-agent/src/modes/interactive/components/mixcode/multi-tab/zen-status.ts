@@ -14,18 +14,21 @@ import { theme } from "../../../theme/theme.ts";
 import {
 	RULE_CHAR,
 	TAB_STATUS_GLYPHS,
+	TAB_WAITING_GLYPH,
 	tabStatusGlyph,
 	WORKING_INDICATOR_FRAMES,
 	WORKING_INDICATOR_INTERVAL_MS,
 } from "./tab-glyphs.ts";
 
 /** What a background tab contributes to the zen separator. */
-export type ZenStatusMarker = "working" | "done" | "error";
+export type ZenStatusMarker = "working" | "waiting" | "done" | "error";
 
 /** Solid dot: the chip glyph for a working tab, reused for the other states. */
 const STATUS_DOT = TAB_STATUS_GLYPHS.running;
 /** Markers painted before the rest collapse into `[+N]`. */
 const MARKER_CAP = 5;
+/** Default for a caller that has no waiting tabs. */
+const EMPTY_TAB_IDS: ReadonlySet<string> = new Set();
 /** Lead dashes of the marker cluster. */
 const CLUSTER_LEAD = RULE_CHAR.repeat(2);
 /**
@@ -34,6 +37,7 @@ const CLUSTER_LEAD = RULE_CHAR.repeat(2);
  */
 const MARKERS: ReadonlyMap<string, ZenStatusMarker> = new Map([
 	[TAB_STATUS_GLYPHS.running, "working"],
+	[TAB_WAITING_GLYPH, "waiting"],
 	[TAB_STATUS_GLYPHS.done, "done"],
 	[TAB_STATUS_GLYPHS.error, "error"],
 ]);
@@ -44,20 +48,26 @@ const MARKER_PAINT: Record<ZenStatusMarker, (now: number) => string> = {
 		const index = Math.floor(now / WORKING_INDICATOR_INTERVAL_MS) % WORKING_INDICATOR_FRAMES.length;
 		return theme.fg("accent", WORKING_INDICATOR_FRAMES[index] ?? WORKING_INDICATOR_FRAMES[0]!);
 	},
+	waiting: () => theme.fg("warning", STATUS_DOT),
 	done: () => theme.fg("success", STATUS_DOT),
 	error: () => theme.fg("error", STATUS_DOT),
 };
 
 /**
  * Markers for every tab other than the one in front, in tab order. A tab that
- * finished while unfocused counts as done, and an error outranks everything
- * else, because that is the chip {@link tabStatusGlyph} would draw.
+ * finished while unfocused counts as done, a tab parked on an extension dialog
+ * counts as waiting, and an error outranks everything else, because that is the
+ * chip {@link tabStatusGlyph} would draw.
  */
-export function zenStatusMarkers(tabs: readonly AgentTab[], activeId: string): ZenStatusMarker[] {
+export function zenStatusMarkers(
+	tabs: readonly AgentTab[],
+	activeId: string,
+	waitingTabIds: ReadonlySet<string> = EMPTY_TAB_IDS,
+): ZenStatusMarker[] {
 	const markers: ZenStatusMarker[] = [];
 	for (const tab of tabs) {
 		if (tab.id === activeId) continue;
-		const marker = MARKERS.get(tabStatusGlyph(tab.status, tab.unread));
+		const marker = MARKERS.get(tabStatusGlyph(tab.status, tab.unread, waitingTabIds.has(tab.id)));
 		if (marker) markers.push(marker);
 	}
 	return markers;

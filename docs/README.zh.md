@@ -7,7 +7,7 @@
 ## 功能
 
 - **[键位](keybindings.zh.md)**：fork 重新绑定了什么、按界面新增了哪些 id（标签页、Tab Jump、MixCode Home、工作目录选择器、排队消息、控制台 Notice、vim 模式）、composer 的按键解析顺序，以及 `Escape` 做什么。
-- **[Agent 标签页](tabs.zh.md)**：一个终端里并行运行多个 agent —— 键位、命令、Tab Jump 切换浮层（`ctrl+t` / `/jump`）、标签栏状态、颜色、持久化、启动恢复。
+- **[Agent 标签页](tabs.zh.md)**：一个终端里并行运行多个 agent —— 键位、命令、Tab Jump 切换浮层（`ctrl+t` / `/jump`）、标签栏状态、扩展对话框、颜色、持久化、启动恢复。
 - **[命令面板与退出确认](command-palette.zh.md)**：`ctrl+p` 模糊搜索并列出所有可执行命令，`ctrl+q` 在结束会话前先询问。
 - **[Vim 模式](vim-mode.zh.md)**：全屏对话区的模态导航（进入方式、按键、按标签页的行为、全屏前提）。
 - **[Zen 专注模式](zen-mode.zh.md)**：`/toggle-zen-mode` 隐藏标签栏标签块，只留分隔线继续显示其他 agent 的状态圆点，并让 `tab`/`shift+tab` 不再切换标签页。

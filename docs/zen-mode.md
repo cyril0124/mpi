@@ -4,7 +4,7 @@
 
 Press `/toggle-zen-mode` and the chips that name every open agent give up their row. The separator
 rule under them stays, and it keeps reporting the one thing the chips said: which of the other
-agents is working, finished, or failed.
+agents is working, waiting, finished, or failed.
 
 ```text
 ── ● ⠹ [+1] ────────────────────────────────────────────────────────────────
@@ -16,12 +16,13 @@ agents is working, finished, or failed.
 
 ## Status dots
 
-One dot per non-focused tab that is working, finished, or failed, in tab order, left-anchored on
+One dot per non-focused tab that is working, waiting, finished, or failed, in tab order, left-anchored on
 the separator. An idle tab contributes none, unless it carries unread output:
 
 | Dot | Tab state |
 | --- | --- |
 | `⠋ ⠙ ⠹ …` accent | running or thinking; the frames advance while it works |
+| `●` warning | an [extension dialog](tabs.md#extension-dialogs) on that tab waits for an answer |
 | `●` success | finished, including a tab flagged done with `/mark-done` that you have not opened yet |
 | `●` error | the last turn ended in an error |
 

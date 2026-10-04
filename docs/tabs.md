@@ -69,7 +69,7 @@ coming up keeps its spinner here too.
 | `up` / `ctrl+k` / `shift+tab` (`app.tabJump.selectPrevious`) | Move the highlight up, wrapping to the last row. |
 | `down` / `ctrl+j` / `tab` (`app.tabJump.selectNext`) | Move the highlight down, wrapping to the first row. |
 | any printable key | Filter the rows by tab title. |
-| `ctrl+f` (`app.tabJump.toggleNonIdle`) | Keep only the tabs with something to report — working, failed, or finished-unread. Home never survives the filter, and a tab that is still coming up is not attention yet. |
+| `ctrl+f` (`app.tabJump.toggleNonIdle`) | Keep only the tabs with something to report — working, waiting, failed, or finished-unread. Home never survives the filter, and a tab that is still coming up is not attention yet; a tab parked on an extension dialog is. |
 | `enter` (`tui.select.confirm`) | Jump to the highlighted entry and close; with nothing left to select it just closes. |
 | `esc` (`tui.select.cancel`) | Close without switching. |
 | pointer | The wheel moves the highlight, motion underlines the row it is over, and a left click jumps to that row's tab. |
@@ -134,10 +134,16 @@ their glyphs:
 | `thinking` | `●` | Reasoning before output, same glyph as running |
 | `error` | `x` | Last turn failed |
 | `done` | `✓` | Flagged finished, or unread output |
+| *waiting* | `?` | An extension dialog on the tab waits for an answer |
 
 Glyph color comes from the theme: `error` uses the error color, an unread tab the success color,
-`running`/`thinking` the accent color. A finished or unread tab stays emphasized (bold title)
-until it is focused. The active chip carries a leading `▌` focus mark, or `▐` on a colored chip.
+`running`/`thinking` the accent color, and a waiting tab the tool-title color. A finished or unread
+tab stays emphasized (bold title) until it is focused. The active chip carries a leading `▌` focus
+mark, or `▐` on a colored chip.
+
+`?` outranks a completion badge, because the tab cannot move until the answer arrives. An error
+glyph still wins over it; on a colored chip it shows as the glyph alone, like the other status
+colors.
 
 A highlight wave sweeps across the active tab's title: it reaches the right edge and returns in
 2 s, then the title rests for 1 s before the next pass. The wave eases into each turnaround and
@@ -145,8 +151,26 @@ keeps the chip's own background, foreground, and focus mark; a colored chip inve
 instead of recoloring them, because theme foregrounds have no contrast over a chip color.
 
 While the focused agent is in [zen mode](zen-mode.md) the bar renders no chips. One separator row
-stays and carries a dot per non-focused tab that is working, finished, or failed, so the other
-agents are still visible without the row the chips took.
+stays and carries a dot per non-focused tab that is working, waiting, finished, or failed, so the
+other agents are still visible without the row the chips took.
+
+## Extension dialogs
+
+An extension dialog belongs to the tab whose session opened it: a tool asking a question, a
+permission prompt, a `select`/`confirm`/`input` from an extension, or an editor takeover. The dialog
+is only shown while that tab is the one on screen. While it waits, a tab that is still loading keeps
+its spinner and a settled one paints `?`.
+
+A dialog opened by a background tab therefore does not appear over the agent the user is reading; it
+parks on its own tab, and the tab bar says which tab waits for an answer. Switching to that tab puts
+the dialog back as it was left (an overlay keeps its scroll position and its collapsed state), and
+its answer resolves the waiting tool call there. Switching away parks it again, so an unanswered
+question never blocks the tab in front. Home covers every tab, so a dialog parks there too: the
+roster card reads `[input]` and the masthead counts the tabs that wait on the user.
+
+An overlay dialog keeps its place in the TUI's overlay stack and is merely hidden while its tab is
+behind another one. Nothing pops the stack for it, because a pop takes whatever sits on top, which
+may belong to another surface.
 
 ## Colors
 
@@ -225,9 +249,10 @@ focused last selected in the roster, not opened.
 
 A tab whose extension opens a dialog from its `session_start` handler parks there rather than
 finishing, and the queue moves on to the next tab instead of waiting for the answer. The parked tab
-reads `waiting for input` on its Home card until the dialog is answered, then finishes on its own:
-its rename is written to the shared tab set and its transcript is warmed. A tab that fails to restore
-is marked `error` and the tabs behind it still load.
+reads `[input]` on its Home card while its chip keeps the loading spinner, until the dialog is
+answered on that tab. It then finishes on its own: its rename is written to the shared tab set and
+its transcript is warmed. A tab that fails to restore is marked `error` and the tabs behind it still
+load.
 
 ## Session deletion
 

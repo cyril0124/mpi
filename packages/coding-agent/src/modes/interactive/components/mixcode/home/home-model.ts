@@ -30,6 +30,8 @@ export interface HomeCard {
 	title: string;
 	status: TabStatus;
 	unread: boolean;
+	/** True while an extension dialog on the tab waits on a human; the card reads `[input]`. */
+	waiting?: boolean;
 	color?: TabColorName;
 	/** What a `loading` card is waiting on; the chip names this phase. */
 	loadingPhase?: TabLoadingPhase;

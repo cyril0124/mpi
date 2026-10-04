@@ -484,6 +484,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- An extension dialog (a question, a confirm, a picker, an editor takeover) belongs to the tab whose
+  session opened it. It used to be a single surface on the InteractiveMode, so a background tab's
+  question appeared over whichever agent the user was reading, and answering it there answered for the
+  wrong tab. A tab that is not on screen now parks the interaction: the tab bar paints `?` in its chip
+  (the Home roster says `[input]` and the masthead counts it), and the dialog comes back with the tab,
+  still awaiting its answer.
 - A plain tab's active title shows its highlight wave again. The chip painter re-opened its own
   background and foreground after every escape sequence in the title, so the wave's lit cell lost
   its accent color to the chip foreground the instant that cell opened; only a colored chip

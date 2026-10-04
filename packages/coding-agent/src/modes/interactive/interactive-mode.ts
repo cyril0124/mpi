@@ -571,6 +571,29 @@ interface TabExtensionUi {
 }
 
 /**
+ * An extension interaction that belongs to one tab.
+ *
+ * An extension of one session opens it, and a session belongs to one tab, so the
+ * surface it takes (the editor slot, or an overlay) is that tab's.
+ */
+interface TabInteraction {
+	/** Which surface the interaction took, which decides how it is parked. */
+	kind: "selector" | "input" | "editor" | "custom" | "overlay";
+	/** The tab that owns it, so a close can hand the slot back to what it parked. */
+	tabId?: string;
+	/** Draft a custom component displaced, read when it takes the slot. */
+	savedDraft?: string;
+	/** Component shown on the editor slot; undefined for an overlay interaction. */
+	component?: Component & { dispose?(): void };
+	/** True while `component` occupies the editor slot. */
+	mounted: boolean;
+	/** Overlay handle and whether it takes the keyboard; undefined for a slotted one. */
+	overlay?: { handle: OverlayHandle; capturing: boolean };
+	/** Drops the interaction from its tab's pending list. Set by `trackTabInteraction`. */
+	untrack?: () => void;
+}
+
+/**
  * Options for InteractiveMode initialization.
  */
 export interface InteractiveModeOptions {
@@ -919,11 +942,8 @@ export class InteractiveMode {
 	private bugReportHintShown = false;
 
 	// Extension UI state
-	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
-	private extensionInput: ExtensionInputComponent | undefined = undefined;
-	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
-	/** True while an extension custom component owns the composer (non-overlay). */
-	private extensionCustomOpen = false;
+	/** Pending extension interactions per tab: only the tab on screen mounts one. */
+	private readonly tabInteractions = new Map<string, TabInteraction[]>();
 	private extensionTerminalInputSubscriptions = new Set<{
 		handler: (data: string) => { consume?: boolean; data?: string } | undefined;
 		unsubscribe: () => void;
@@ -2582,11 +2602,11 @@ export class InteractiveMode {
 	 * tab and mounted when the tab takes focus. A surface the tab already owns on
 	 * screen is written live instead, so a background bind does not defer it: a notice
 	 * follows the transcript, and a status replaces the one the footer shows. Any other
-	 * tab records it for its next mount. Dialogs and editor text have no per-tab surface
-	 * and still reach the focused one.
+	 * tab records it for its next mount. A dialog or an editor takeover is that tab's
+	 * own surface too: it parks on the tab and shows when the tab takes focus.
 	 */
 	private createTabScopedExtensionUIContext(tabId: string): ExtensionUIContext {
-		const live = this.createExtensionUIContext();
+		const live = this.createExtensionUIContext(tabId);
 		return {
 			...live,
 			get theme() {
@@ -2659,11 +2679,16 @@ export class InteractiveMode {
 			},
 			getToolsExpanded: () => this.tabExtensionUi(tabId).toolsExpanded,
 			// A dialog parks the bind, so the chip names this phase while it is open.
-			select: (title, options, opts) => this.withLoadingPhase(tabId, () => live.select(title, options, opts)),
-			confirm: (title, message, opts) => this.withLoadingPhase(tabId, () => live.confirm(title, message, opts)),
-			input: (title, placeholder, opts) => this.withLoadingPhase(tabId, () => live.input(title, placeholder, opts)),
-			custom: (factory, options) => this.withLoadingPhase(tabId, () => live.custom(factory, options)),
-			editor: (title, prefill) => this.withLoadingPhase(tabId, () => live.editor(title, prefill)),
+			select: (title, options, opts) =>
+				this.withLoadingPhase(tabId, () => this.showExtensionSelector(title, options, opts, tabId)),
+			confirm: (title, message, opts) =>
+				this.withLoadingPhase(tabId, () => this.showExtensionConfirm(title, message, opts, tabId)),
+			input: (title, placeholder, opts) =>
+				this.withLoadingPhase(tabId, () => this.showExtensionInput(title, placeholder, opts, tabId)),
+			custom: (factory, options) =>
+				this.withLoadingPhase(tabId, () => this.showExtensionCustom(factory, options, tabId)),
+			editor: (title, prefill) =>
+				this.withLoadingPhase(tabId, () => this.showExtensionEditor(title, prefill, tabId)),
 		};
 	}
 
@@ -2783,10 +2808,25 @@ export class InteractiveMode {
 	}
 
 	private bindRuntimeCallbacks(runtime: AgentSessionRuntime): void {
-		bindRuntimeCallbacksImpl(this.runtimeCallbackHost(), runtime);
+		bindRuntimeCallbacksImpl(
+			// The tab is resolved when the reset runs, not when the bind happens: `attachTab` binds
+			// a runtime before it pushes its tab, so a lookup here would never find one and the
+			// reset would drop every tab's pending dialogs.
+			this.runtimeCallbackHost(() => {
+				const tabId = this.tabManager?.list().find((tab) => tab.runtime === runtime)?.id;
+				this.resetExtensionUI(tabId);
+			}),
+			runtime,
+		);
 	}
 
-	private runtimeCallbackHost(): RuntimeCallbackHost {
+	/**
+	 * Host callbacks shared by every runtime.
+	 *
+	 * `onResetExtensionUI` lets a runtime pin the reset to the tab it belongs to; without
+	 * it a session replacement drops every tab's pending dialogs.
+	 */
+	private runtimeCallbackHost(onResetExtensionUI?: () => void): RuntimeCallbackHost {
 		// Read the manager through a getter: the initial runtime is bound while the
 		// TabManager constructor is still running, before `this.tabManager` exists.
 		const host = this;
@@ -2797,7 +2837,7 @@ export class InteractiveMode {
 			rebindCurrentSession: (opts) => this.rebindCurrentSession(opts),
 			applyThemeFromSettings: () => this.themeController.applyFromSettings(),
 			persistOpenTabs: () => this.persistOpenTabs(),
-			resetExtensionUI: () => this.resetExtensionUI(),
+			resetExtensionUI: onResetExtensionUI ?? (() => this.resetExtensionUI()),
 		};
 	}
 
@@ -2875,6 +2915,8 @@ export class InteractiveMode {
 				? this.restoringTabBarItems(activeId)
 				: manager.list().map((tab) => this.tabBarItem(tab, activeId));
 		const agentChrome = this.tabRuleChrome();
+		// The zen dots follow the chips, a waiting `?` included.
+		const waitingTabIds = new Set(this.tabInteractions.keys());
 		return {
 			tabs,
 			activeId,
@@ -2885,7 +2927,7 @@ export class InteractiveMode {
 			maxRows: Math.max(1, Math.floor(this.ui.terminal.rows * TAB_BAR_MAX_ROWS_SHARE)),
 			// Home is a different surface and brings the whole bar back, so zen only
 			// applies to the agent whose chrome it hides.
-			...(zenAgent ? { zen: { statusMarkers: zenStatusMarkers(manager.list(), zenAgent.id) } } : {}),
+			...(zenAgent ? { zen: { statusMarkers: zenStatusMarkers(manager.list(), zenAgent.id, waitingTabIds) } } : {}),
 			...(agentChrome ? { agentChrome } : {}),
 		};
 	}
@@ -2918,6 +2960,7 @@ export class InteractiveMode {
 			// session happens to hold.
 			status: tab.loading ? "loading" : tab.status,
 			unread: tab.unread,
+			waiting: this.tabWaitingForInput(tab.id),
 			// The active surface may be Home, so the agent tab the manager holds focused
 			// keeps its rank while Home is shown.
 			recentRank: tab.id === activeId ? -1 : (this.tabManager?.recentRank(tab.id) ?? -1),
@@ -3048,6 +3091,9 @@ export class InteractiveMode {
 			// The bound tab is already the one to focus, so nothing is rebuilt and the
 			// render path that seeds the composer history does not run; seed it here.
 			this.syncEditorHistory();
+			// Its surfaces are back on screen, so a dialog parked for it returns too.
+			this.focusTabInteractions(tab.id);
+			this.ui.requestRender();
 			return;
 		}
 		// Home's composer is ephemeral: never store its text as a tab draft. The
@@ -3077,6 +3123,10 @@ export class InteractiveMode {
 			syncHomeSelectionToTab(this.homeSelection, this.homeRoster(), manager.getActive().id);
 			// Entering Home from an agent the filter hides must still select a visible row.
 			clampHomeSelectedTabIndex(this.homeSelection, this.homeRoster());
+			// Home covers every tab, so a parked dialog is not shown here either; the chip and
+			// the roster card report the wait until the user goes back to the tab.
+			// Mounting is keyed to the attached tab, which is not always the manager's focus.
+			if (this.activeTabIdForUi) this.parkTabInteractions(this.activeTabIdForUi);
 			this.homeSelection.active = true;
 			// Vim is a modal surface over an agent transcript; Home is a different
 			// surface, so the composer must not stay locked behind it.
@@ -3365,6 +3415,8 @@ export class InteractiveMode {
 			version: this.version,
 			workdir: this.displayWorkdir(this.tabsWorkdir),
 			workingCount: roster.filter((entry) => isWorkingStatus(entry.status)).length,
+			waitingCount: roster.filter((entry) => entry.tab !== undefined && this.tabWaitingForInput(entry.tab.id))
+				.length,
 			agents: roster.map((entry) => {
 				// A persisted tab whose runtime does not exist yet has no transcript to
 				// preview; its card carries the loading phase instead.
@@ -3403,6 +3455,7 @@ export class InteractiveMode {
 			title: tab.title,
 			status: tab.loading ? "loading" : tab.status,
 			unread: tab.unread,
+			waiting: this.tabWaitingForInput(tab.id),
 			color: tab.color,
 			loadingPhase: tab.loading ? tab.loadingPhase : undefined,
 			workingStartedAt: tab.workingStartedAt,
@@ -3644,6 +3697,8 @@ export class InteractiveMode {
 		// The incoming tab owns its own transient message, if it still has one.
 		this.syncToast();
 		this.hideUserMessagePreview();
+		// A dialog parked on this tab while another one was in front comes back with it.
+		this.focusTabInteractions(tab.id);
 		this.ui.requestRender();
 		this.ensureSessionBound(tab);
 	}
@@ -3843,6 +3898,9 @@ export class InteractiveMode {
 		this.setupExtensionShortcuts(tab.runtime.session.extensionRunner);
 		this.applyRuntimeSettings();
 		this.showLoadedResources({ force: false, showDiagnosticsWhenQuiet: true });
+		// `attachTabUi` mounts this tab's editor skin, which takes the slot a dialog of
+		// this tab may be holding; the dialog goes back on top of it.
+		this.focusTabInteractions(tab.id);
 		this.requestWidgetRender();
 		this.ui.requestRender();
 	}
@@ -3885,10 +3943,10 @@ export class InteractiveMode {
 		this.hiddenThinkingLabel = undefined;
 		this.toolOutputExpanded = false;
 		this.footerDataProvider.clearExtensionStatuses();
-		if (this.extensionSelector) this.hideExtensionSelector();
-		if (this.extensionInput) this.hideExtensionInput();
-		if (this.extensionEditor) this.hideExtensionEditor();
-		this.ui.hideOverlay();
+		// The tab's pending dialogs park with it: the extension still waits for its answer, the
+		// dialog comes back with the tab, and the chip reports the wait meanwhile. An overlay of
+		// this tab stays in the stack, where its focus gate keeps it off the screen.
+		this.parkTabInteractions(tabId);
 		this.clearExtensionTerminalInputListeners();
 		this.defaultEditor.onExtensionShortcut = undefined;
 		this.restoreBuiltInChrome(leavingHeader);
@@ -3948,12 +4006,13 @@ export class InteractiveMode {
 		this.requestWidgetRender();
 	}
 
-	/** Dispose and forget a closed tab's extension UI. */
+	/** Dispose and forget a closed tab's extension UI and its pending dialogs. */
 	private disposeTabUi(tabId: string): void {
 		this.tabTranscript.delete(tabId);
 		this.inlineWidgetTabStates.delete(tabId);
 		this.widgetPanelTabStates.delete(tabId);
 		this.pendingResourcesBlocks.delete(tabId);
+		this.forgetTabInteractions(tabId);
 		const ui = this.tabUi.get(tabId);
 		if (!ui) return;
 		this.tabUi.delete(tabId);
@@ -4827,17 +4886,23 @@ export class InteractiveMode {
 		this.requestWidgetRender();
 	}
 
-	private resetExtensionUI(): void {
-		if (this.extensionSelector) {
-			this.hideExtensionSelector();
+	private resetExtensionUI(tabId?: string): void {
+		// Extensions are going away, so the dialogs they wait on go with them: only an answered
+		// dialog resolves, and none of these will be. A session replacement invalidates one tab's
+		// extensions, so only that tab's dialogs are dropped; no tab given means every one.
+		const doomed =
+			tabId === undefined ? [...this.tabInteractions.values()].flat() : [...this.tabInteractionsFor(tabId)];
+		for (const interaction of doomed) {
+			interaction.overlay?.handle.hide();
+			this.unmountTabInteraction(interaction);
+			interaction.untrack?.();
+			try {
+				interaction.component?.dispose?.();
+			} catch {
+				/* A dialog that fails to dispose is already gone with its extension. */
+			}
 		}
-		if (this.extensionInput) {
-			this.hideExtensionInput();
-		}
-		if (this.extensionEditor) {
-			this.hideExtensionEditor();
-		}
-		this.ui.hideOverlay();
+		if (tabId === undefined) this.tabInteractions.clear();
 		this.clearExtensionTerminalInputListeners();
 		this.setExtensionFooter(undefined);
 		this.setExtensionHeader(undefined);
@@ -4911,18 +4976,14 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Whether an extension interaction (selector, input, editor, or custom
-	 * component) currently owns the composer. Keys already route to it through
-	 * focus; this feeds the side panel, which must leave the wheel to the chat
-	 * while a pending interaction is up, matching the input the chat would get.
+	 * Whether an extension interaction owns the composer on the tab on screen. Keys already
+	 * route to a mounted dialog through focus; this feeds the side panel, which must leave the
+	 * wheel to the chat while a pending interaction is up, matching the input the chat would get.
+	 * An overlay is not one of them: it takes the screen, which the overlay guards already cover.
 	 */
 	private extensionUiPending(): boolean {
-		return (
-			this.extensionInput !== undefined ||
-			this.extensionEditor !== undefined ||
-			this.activeSelectorToken !== undefined ||
-			this.extensionCustomOpen
-		);
+		if (this.activeSelectorToken !== undefined) return true;
+		return this.tabInteractionsFor(this.shownTabId()).some((interaction) => interaction.mounted);
 	}
 
 	/** Copy a finished side-panel selection and report it like any other copy. */
@@ -5277,11 +5338,20 @@ export class InteractiveMode {
 		};
 	}
 
-	private createExtensionUIContext(): ExtensionUIContext {
+	/**
+	 * Extension UI context of the live surfaces.
+	 *
+	 * `ownerTabId` pins the dialogs it opens to one tab. Without it the context
+	 * belongs to whatever tab the user is looking at when a dialog is requested,
+	 * which is right for a context made on the spot (a shortcut handler) and wrong
+	 * for one a session keeps, so a session bind passes its own tab.
+	 */
+	private createExtensionUIContext(ownerTabId?: string): ExtensionUIContext {
+		const dialogTabId = () => ownerTabId ?? this.shownTabId();
 		return {
-			select: (title, options, opts) => this.showExtensionSelector(title, options, opts),
-			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts),
-			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
+			select: (title, options, opts) => this.showExtensionSelector(title, options, opts, dialogTabId()),
+			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts, dialogTabId()),
+			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts, dialogTabId()),
 			notify: (message, type) => this.showExtensionNotify(message, type),
 			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
@@ -5298,11 +5368,11 @@ export class InteractiveMode {
 			setFooter: (factory) => this.setExtensionFooter(factory),
 			setHeader: (factory) => this.setExtensionHeader(factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),
-			custom: (factory, options) => this.showExtensionCustom(factory, options),
+			custom: (factory, options) => this.showExtensionCustom(factory, options, dialogTabId()),
 			pasteToEditor: (text) => this.editor.handleInput(`\x1b[200~${text}\x1b[201~`),
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getExpandedText?.() ?? this.editor.getText(),
-			editor: (title, prefill) => this.showExtensionEditor(title, prefill),
+			editor: (title, prefill) => this.showExtensionEditor(title, prefill, dialogTabId()),
 			addAutocompleteProvider: (factory) => {
 				this.autocompleteProviderWrappers.push(factory);
 				this.setupAutocompleteProvider();
@@ -5332,38 +5402,196 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * The tab whose surfaces the UI is showing. Home is a surface of its own that
+	 * covers every tab, so nothing counts as shown while it is up.
+	 */
+	private shownTabId(): string | undefined {
+		if (this.activeTabIdForUi) return this.activeTabIdForUi;
+		if (this.tabManager) return this.tabManager.activeTab()?.id;
+		return SINGLE_SESSION_TAB_ID;
+	}
+
+	/** True while `tabId` is the tab the UI is showing, rather than Home or another tab. */
+	private tabShowsOnScreen(tabId: string): boolean {
+		return !this.homeSelection.active && this.shownTabId() === tabId;
+	}
+
+	/** True while an extension interaction on the tab waits on a human. */
+	private tabWaitingForInput(tabId: string): boolean {
+		return (this.tabInteractions.get(tabId)?.length ?? 0) > 0;
+	}
+
+	/** The interactions pending on a tab, empty when it has none. */
+	private tabInteractionsFor(tabId: string | undefined): readonly TabInteraction[] {
+		return tabId === undefined ? [] : (this.tabInteractions.get(tabId) ?? []);
+	}
+
+	/**
+	 * Register an interaction on its tab. A context without a tab (a host that
+	 * supplies none) leaves it unscoped, which mounts it wherever the UI is.
+	 */
+	private trackTabInteraction(tabId: string | undefined, interaction: TabInteraction): void {
+		if (tabId === undefined) return;
+		interaction.tabId = tabId;
+		const pending = this.tabInteractions.get(tabId);
+		if (pending) pending.push(interaction);
+		else this.tabInteractions.set(tabId, [interaction]);
+		interaction.untrack = () => {
+			const list = this.tabInteractions.get(tabId);
+			if (!list) return;
+			const index = list.indexOf(interaction);
+			if (index >= 0) list.splice(index, 1);
+			if (list.length === 0) this.tabInteractions.delete(tabId);
+			this.ui.requestRender();
+		};
+	}
+
+	/**
+	 * Register an interaction and mount it when its tab is the one on screen. Any
+	 * other tab parks it: the tab bar reports the wait, and the dialog appears the
+	 * moment the user switches to it.
+	 */
+	private openTabInteraction(tabId: string | undefined, interaction: TabInteraction): void {
+		this.trackTabInteraction(tabId, interaction);
+		if (tabId === undefined || this.tabShowsOnScreen(tabId)) this.mountTabInteraction(tabId, interaction);
+		this.ui.requestRender();
+	}
+
+	/** Drop an answered interaction: park it, dispose it, stop reporting the wait. */
+	private closeTabInteraction(interaction: TabInteraction): void {
+		interaction.overlay?.handle.hide();
+		this.unmountTabInteraction(interaction);
+		interaction.untrack?.();
+		try {
+			interaction.component?.dispose?.();
+		} catch {
+			/* A dialog that fails to dispose has already answered. */
+		}
+		this.remountParkedTabInteraction(interaction.tabId);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Put the dialog a closing one displaced back on the slot. A tab holds one dialog at a
+	 * time, and the one it parked still waits for its own answer.
+	 */
+	private remountParkedTabInteraction(tabId: string | undefined): void {
+		// A parked dialog returns only while its own tab is the one on screen: an extension
+		// that closes its dialog from the background must not paint over the tab in front.
+		if (tabId === undefined || !this.tabShowsOnScreen(tabId)) return;
+		const previous = this.tabInteractionsFor(tabId)
+			.filter((interaction) => !interaction.mounted)
+			.at(-1);
+		if (previous) this.mountTabInteraction(tabId, previous);
+	}
+
+	/**
+	 * Show a slotted interaction on the editor slot. A dialog of the same tab that is
+	 * already on the slot is parked rather than disposed, and `remountParkedTabInteraction`
+	 * hands the slot back to it when this one closes.
+	 */
+	private mountTabInteraction(tabId: string | undefined, interaction: TabInteraction): void {
+		if (interaction.kind === "overlay" || interaction.mounted || !interaction.component) return;
+		for (const other of this.tabInteractionsFor(tabId)) {
+			if (other !== interaction) this.unmountTabInteraction(other);
+		}
+		// A custom component owns the composer from the moment it takes the slot, so the draft
+		// it displaces is read here. Read at request time instead, it would hold the draft of
+		// whichever tab was in front when a background tab asked for its dialog.
+		if (interaction.kind === "custom") interaction.savedDraft ??= this.editor.getText();
+		this.disposeActiveSelector();
+		this.editorContainer.clear();
+		this.editorContainer.addChild(interaction.component);
+		this.ui.setFocus(interaction.component);
+		interaction.mounted = true;
+		this.ui.requestRender();
+	}
+
+	/** Take a dialog off the editor slot, keeping its component and its promise alive. */
+	private unmountTabInteraction(interaction: TabInteraction): void {
+		if (!interaction.mounted) return;
+		interaction.mounted = false;
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Give a tab the dialogs that waited for it: mount its parked ones, then hand the
+	 * keyboard to its newest overlay, which the tab switch took focus from.
+	 */
+	private focusTabInteractions(tabId: string): void {
+		// Home covers every tab, so a dialog waits for its tab to be shown again.
+		if (!this.tabShowsOnScreen(tabId)) return;
+		const pending = this.tabInteractionsFor(tabId);
+		for (const interaction of pending) this.mountTabInteraction(tabId, interaction);
+		const overlay = pending.filter((interaction) => interaction.overlay).at(-1);
+		if (overlay?.overlay?.capturing) overlay.overlay.handle.focus();
+	}
+
+	/** Park a tab's dialogs when it loses focus. Overlays gate on focus instead of unmounting. */
+	private parkTabInteractions(tabId: string): void {
+		for (const interaction of this.tabInteractionsFor(tabId)) this.unmountTabInteraction(interaction);
+	}
+
+	/** Forget a closed tab's interactions, leaving their components to the extension that owns them. */
+	private forgetTabInteractions(tabId: string): void {
+		for (const interaction of this.tabInteractionsFor(tabId)) {
+			// An overlay has no slot to unmount, and only its handle drops the stack entry.
+			interaction.overlay?.handle.hide();
+			this.unmountTabInteraction(interaction);
+		}
+		this.tabInteractions.delete(tabId);
+	}
+
+	/**
+	 * Gate an extension overlay on its tab being the one on screen.
+	 *
+	 * The overlay keeps its place in the TUI's overlay stack, so the extension stays
+	 * in control of it: the handle it was given still hides and shows it, and a
+	 * collapse it applied survives the gate. Nothing pops the stack for a tab switch:
+	 * a pop takes whatever sits on top, which may belong to another surface.
+	 */
+	private scopeOverlayToTab(options: OverlayOptions, tabId: string | undefined): OverlayOptions {
+		if (tabId === undefined) return options;
+		const visible = options.visible;
+		return {
+			...options,
+			visible: (termWidth, termHeight) =>
+				this.tabShowsOnScreen(tabId) && (visible ? visible(termWidth, termHeight) : true),
+		};
+	}
+
+	/**
 	 * Show a selector for extensions.
 	 */
 	private showExtensionSelector(
 		title: string,
 		options: string[],
 		opts?: ExtensionUIDialogOptions & ExtensionSelectorOptions,
+		tabId?: string,
 	): Promise<string | undefined> {
+		const interaction: TabInteraction = { kind: "selector", mounted: false };
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
 				resolve(undefined);
 				return;
 			}
 
-			const onAbort = () => {
-				this.hideExtensionSelector();
-				resolve(undefined);
+			const finish = (option: string | undefined) => {
+				opts?.signal?.removeEventListener("abort", onAbort);
+				this.closeTabInteraction(interaction);
+				resolve(option);
 			};
+			const onAbort = () => finish(undefined);
 			opts?.signal?.addEventListener("abort", onAbort, { once: true });
 
-			this.extensionSelector = new ExtensionSelectorComponent(
+			interaction.component = new ExtensionSelectorComponent(
 				title,
 				options,
-				(option) => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideExtensionSelector();
-					resolve(option);
-				},
-				() => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideExtensionSelector();
-					resolve(undefined);
-				},
+				(option) => finish(option),
+				() => finish(undefined),
 				{
 					tui: this.ui,
 					timeout: opts?.timeout,
@@ -5372,24 +5600,8 @@ export class InteractiveMode {
 				},
 			);
 
-			this.disposeActiveSelector();
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.extensionSelector);
-			this.ui.setFocus(this.extensionSelector);
-			this.ui.requestRender();
+			this.openTabInteraction(tabId, interaction);
 		});
-	}
-
-	/**
-	 * Hide the extension selector.
-	 */
-	private hideExtensionSelector(): void {
-		this.extensionSelector?.dispose();
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.extensionSelector = undefined;
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
 	}
 
 	/**
@@ -5399,11 +5611,17 @@ export class InteractiveMode {
 		title: string,
 		message: string,
 		opts?: ExtensionUIDialogOptions,
+		tabId?: string,
 	): Promise<boolean> {
-		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], {
-			...opts,
-			keyShortcuts: { y: "Yes", n: "No" },
-		});
+		const result = await this.showExtensionSelector(
+			`${title}\n${message}`,
+			["Yes", "No"],
+			{
+				...opts,
+				keyShortcuts: { y: "Yes", n: "No" },
+			},
+			tabId,
+		);
 		return result === "Yes";
 	}
 
@@ -5422,94 +5640,60 @@ export class InteractiveMode {
 		title: string,
 		placeholder?: string,
 		opts?: ExtensionUIDialogOptions,
+		tabId?: string,
 	): Promise<string | undefined> {
+		const interaction: TabInteraction = { kind: "input", mounted: false };
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
 				resolve(undefined);
 				return;
 			}
 
-			const onAbort = () => {
-				this.hideExtensionInput();
-				resolve(undefined);
+			const finish = (value: string | undefined) => {
+				opts?.signal?.removeEventListener("abort", onAbort);
+				this.closeTabInteraction(interaction);
+				resolve(value);
 			};
+			const onAbort = () => finish(undefined);
 			opts?.signal?.addEventListener("abort", onAbort, { once: true });
 
-			this.extensionInput = new ExtensionInputComponent(
+			interaction.component = new ExtensionInputComponent(
 				title,
 				placeholder,
-				(value) => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideExtensionInput();
-					resolve(value);
-				},
-				() => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideExtensionInput();
-					resolve(undefined);
-				},
+				(value) => finish(value),
+				() => finish(undefined),
 				{ tui: this.ui, timeout: opts?.timeout },
 			);
 
-			this.disposeActiveSelector();
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.extensionInput);
-			this.ui.setFocus(this.extensionInput);
-			this.ui.requestRender();
+			this.openTabInteraction(tabId, interaction);
 		});
-	}
-
-	/**
-	 * Hide the extension input.
-	 */
-	private hideExtensionInput(): void {
-		this.extensionInput?.dispose();
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.extensionInput = undefined;
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
 	}
 
 	/**
 	 * Show a multi-line editor for extensions (with Ctrl+G support).
 	 */
-	private showExtensionEditor(title: string, prefill?: string): Promise<string | undefined> {
+	private showExtensionEditor(title: string, prefill?: string, tabId?: string): Promise<string | undefined> {
+		const interaction: TabInteraction = { kind: "editor", mounted: false };
 		return new Promise((resolve) => {
-			this.extensionEditor = new ExtensionEditorComponent(
+			interaction.component = new ExtensionEditorComponent(
 				this.ui,
 				this.keybindings,
 				title,
 				prefill,
 				(value) => {
-					this.hideExtensionEditor();
+					this.closeTabInteraction(interaction);
 					resolve(value);
 				},
 				() => {
-					this.hideExtensionEditor();
+					this.closeTabInteraction(interaction);
 					resolve(undefined);
 				},
 				undefined,
 				this.settingsManager.getExternalEditorCommand(),
 			);
 
-			this.disposeActiveSelector();
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.extensionEditor);
-			this.ui.setFocus(this.extensionEditor);
-			this.ui.requestRender();
+			this.openTabInteraction(tabId, interaction);
 		});
-	}
-
-	/**
-	 * Hide the extension editor.
-	 */
-	private hideExtensionEditor(): void {
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.extensionEditor = undefined;
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
 	}
 
 	/**
@@ -5619,7 +5803,10 @@ export class InteractiveMode {
 		}
 	}
 
-	/** Show a custom component with keyboard focus. Overlay mode renders on top of existing content. */
+	/**
+	 * Show a custom component with keyboard focus. Overlay mode renders on top of
+	 * existing content; either form belongs to `tabId`, so it follows that tab.
+	 */
 	private async showExtensionCustom<T>(
 		factory: (
 			tui: TUI,
@@ -5632,16 +5819,18 @@ export class InteractiveMode {
 			overlayOptions?: OverlayOptions | (() => OverlayOptions);
 			onHandle?: (handle: OverlayHandle) => void;
 		},
+		tabId?: string,
 	): Promise<T> {
-		const savedText = this.editor.getText();
 		const isOverlay = options?.overlay ?? false;
+		const interaction: TabInteraction = { kind: isOverlay ? "overlay" : "custom", mounted: false };
+		this.trackTabInteraction(tabId, interaction);
 
-		const restoreEditor = () => {
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.editor);
-			this.editor.setText(savedText);
-			this.ui.setFocus(this.editor);
-			this.ui.requestRender();
+		// A custom component owns the composer while it is on the slot, so the draft it displaced
+		// goes back when it closes. `mountTabInteraction` reads that draft, so a dialog that waits
+		// for a background tab never records another tab's.
+		const restoreDraft = () => {
+			if (isOverlay || !interaction.mounted || interaction.savedDraft === undefined) return;
+			this.editor.setText(interaction.savedDraft);
 		};
 
 		return new Promise((resolve, reject) => {
@@ -5651,10 +5840,14 @@ export class InteractiveMode {
 			const close = (result: T) => {
 				if (closed) return;
 				closed = true;
-				this.extensionCustomOpen = false;
-				if (isOverlay) this.ui.hideOverlay();
-				else restoreEditor();
-				// Note: both branches above already call requestRender
+				// The draft goes back before the slot: `unmountTabInteraction` is what hands focus
+				// back to an overlay this component displaced.
+				restoreDraft();
+				interaction.overlay?.handle.hide();
+				this.unmountTabInteraction(interaction);
+				interaction.untrack?.();
+				this.remountParkedTabInteraction(interaction.tabId);
+				this.ui.requestRender();
 				resolve(result);
 				try {
 					component?.dispose?.();
@@ -5667,6 +5860,7 @@ export class InteractiveMode {
 				.then((c) => {
 					if (closed) return;
 					component = c;
+					interaction.component = component;
 					if (isOverlay) {
 						// Resolve overlay options - can be static or dynamic function
 						const resolveOptions = (): OverlayOptions | undefined => {
@@ -5681,21 +5875,23 @@ export class InteractiveMode {
 							const w = (component as { width?: number }).width;
 							return w ? { width: w } : undefined;
 						};
-						const handle = this.ui.showOverlay(component, resolveOptions());
+						const overlayOptions = this.scopeOverlayToTab(resolveOptions() ?? {}, tabId);
+						const handle = this.ui.showOverlay(component, overlayOptions);
+						interaction.overlay = { handle, capturing: overlayOptions.nonCapturing !== true };
 						// Expose handle to caller for visibility control
 						options?.onHandle?.(handle);
+						this.ui.requestRender();
 					} else {
-						this.disposeActiveSelector();
-						this.extensionCustomOpen = true;
-						this.editorContainer.clear();
-						this.editorContainer.addChild(component);
-						this.ui.setFocus(component);
+						if (tabId === undefined || this.tabShowsOnScreen(tabId)) this.mountTabInteraction(tabId, interaction);
 						this.ui.requestRender();
 					}
 				})
 				.catch((err) => {
 					if (closed) return;
-					if (!isOverlay) restoreEditor();
+					closed = true;
+					restoreDraft();
+					this.unmountTabInteraction(interaction);
+					interaction.untrack?.();
 					reject(err);
 				});
 		});
@@ -8552,6 +8748,7 @@ export class InteractiveMode {
 				title: tab.title,
 				status: tab.status,
 				unread: tab.unread,
+				waiting: tab.waiting,
 			})),
 		];
 	}

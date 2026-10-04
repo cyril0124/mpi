@@ -14,7 +14,7 @@ commit that causes it.
 | Distribution name | the app is `pi`; `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are derived from `APP_NAME`, and the debug log is `pi-debug.log` | `piConfig.name` is `mpi`, so `--help`, the package-command help, the terminal title and runtime messages say `mpi`; `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` are pinned to their upstream names in `config.ts`, and the unsupported `update` command is not listed in `--help` | the fork installs and ships as `mpi` (see `install.sh`) without moving users' agent-dir env vars or the shared `.pi` directory |
 | `app.thinking.cycle` default key | `shift+tab` | `alt+t` | `shift+tab` became `app.tab.previous` |
 | Agent tabs | one session per terminal | several concurrent tabs, each with its own `AgentSessionRuntime` | [Agent Tabs](tabs.md) |
-| Startup tab restore | n/a (one session per terminal) | a tab parked in an extension `session_start` dialog hands the queue to the next tab, reads `waiting for input` on its Home card, and finishes on its own once the dialog is answered | a serial restore must not wait on a human; see [Agent Tabs](tabs.md#startup-restore) |
+| Startup tab restore | n/a (one session per terminal) | a tab parked in an extension `session_start` dialog hands the queue to the next tab, reads `[input]` on its Home card, and finishes on its own once the dialog is answered | a serial restore must not wait on a human; see [Agent Tabs](tabs.md#startup-restore) |
 | Composer submit | typed text goes through the single-prompt input loop, which drains its queue to the current session | a submit from a tab's composer goes straight to that tab's session, and the shared queue is used only without a tab manager | the loop runs one prompt at a time and would deliver a submit received during another tab's turn to whichever tab is focused when that turn ends; see [Agent Tabs](tabs.md) |
 | `/fork` message selection | replaces the active session | opens a new independent tab after the source, with a unique `-fork` title and the selected message in its editor | the original conversation remains available beside the alternative |
 | `/clear` | `/new` replaces the active session with a fresh file, aborting a turn that is still running | the command is `/clear`: it refuses while a turn or a bash command runs, starts the replacement from the outgoing header's parent, and drops the tab's chip color along with the session | mixcode-pi's `/clear` refuses a busy session instead of aborting the turn, and the chip color is keyed by session id, so a fresh session has none |
@@ -178,6 +178,8 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/test/settings-manager.test.ts`: the TUI mode assertions expect the fork's
   fullscreen default
 - `packages/coding-agent/test/keybindings.test.ts`, `packages/coding-agent/test/interactive-mode-compaction.test.ts`: the queue bindings and the compaction paths
+- `packages/coding-agent/test/interactive-mode-status.test.ts`: the `showExtensionCustom` case gives its
+  hand-built host the per-tab interaction registry the dialog methods read
 - `packages/coding-agent/src/utils/version-check.ts`: `checkForNewPiVersion` removed, since the startup prompt was its only caller
 - `scripts/profile-coding-agent-node.mjs`: `--offline` no longer sets the removed `PI_SKIP_VERSION_CHECK`
 - `packages/coding-agent/test/version-check.test.ts`, `packages/coding-agent/test/package-command-paths.test.ts`: the removed check and its env var dropped from the cases

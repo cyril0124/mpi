@@ -33,6 +33,8 @@ export interface TabJumpEntry {
 	title: string;
 	status: TabStatus;
 	unread: boolean;
+	/** True while an extension dialog on the tab waits on a human; the row reads `?`. */
+	waiting?: boolean;
 }
 
 /** Body lines above the first row: the search row and the blank line under it. */
@@ -49,10 +51,17 @@ const TAB_JUMP_FRAME_ROWS = 1;
 
 /**
  * Whether the non-idle filter keeps a row: it has something to report. A tab that is
- * still coming up has not started yet, so it is not one of them.
+ * still coming up has not started yet, so it is not one of them; a tab parked on an
+ * extension dialog is, because nothing moves until it is answered.
  */
 function entryNeedsAttention(entry: TabJumpEntry): boolean {
-	return entry.unread || entry.status === "error" || entry.status === "done" || isWorkingStatus(entry.status);
+	return (
+		entry.unread ||
+		entry.waiting === true ||
+		entry.status === "error" ||
+		entry.status === "done" ||
+		isWorkingStatus(entry.status)
+	);
 }
 
 /**
@@ -64,7 +73,7 @@ function wrapIndex(index: number, count: number): number {
 
 /** Style a row's text the way the tab bar styles the same tab's chip; undefined for a tab it paints plain. */
 function statusStyle(entry: TabJumpEntry): ((text: string) => string) | undefined {
-	return tabStatusPaint(entry.status, entry.unread);
+	return tabStatusPaint(entry.status, entry.unread, entry.waiting === true);
 }
 
 /** One row's place in the frame, for the renderer and the pointer hit test. */
@@ -204,7 +213,7 @@ export class TabJumpComponent implements Component {
 	 * the same rule the tab bar's chips follow.
 	 */
 	private glyphFor(entry: TabJumpEntry): string {
-		return entry.id === HOME_TAB_ID ? " " : tabStatusGlyph(entry.status, entry.unread);
+		return entry.id === HOME_TAB_ID ? " " : tabStatusGlyph(entry.status, entry.unread, entry.waiting === true);
 	}
 
 	/**

@@ -42,7 +42,8 @@ background. The roster windows around the selection and marks the hidden sides w
 
 While a startup restore is running, the roster lists the whole persisted layout from the first frame.
 A tab whose runtime is not built yet keeps its spinner, and its chip names the phase it is in:
-`session`, `resources` or `waiting for input` (the generic `loading` before a phase is known).
+`session` or `resources` (the generic `loading` before a phase is known). A tab parked on an
+extension dialog reads `[input]` instead, whichever phase it is on.
 
 When the startup check finds outdated extension packages, Home lists them above the roster:
 `Package Updates Available`, the instruction line `Package updates are available. Run pi update
@@ -107,7 +108,6 @@ Where mixcode-pi's Home page relies on machinery this fork does not have, the fo
 - the empty composer's hint names its own surface rather than mixcode-pi's: Home names the target
   agent, an agent tab reads `Describe your next change...  @ files  / commands`, and vim mode lists
   its navigation keys;
-- the masthead's `N input` counter never appears, because nothing tracks a tab waiting on the user;
 - startup lands on the restored tab rather than Home, so the fork's tab-layout restore is not
   overridden;
 - an extension's terminal-input handler runs before Home's keys, and file completion on Home

@@ -30,6 +30,12 @@ export interface TabBarItem {
 	status: TabStatus;
 	unread: boolean;
 	/**
+	 * True while an extension dialog on the tab waits on a human. The chip paints
+	 * `?` instead of its status, because the tab cannot move until the user
+	 * switches to it and answers.
+	 */
+	waiting?: boolean;
+	/**
 	 * MRU rank among the tabs the bar does not show as active: 0 is the most
 	 * recently focused one. -1 marks the active surface and every tab without a
 	 * rank.
@@ -131,7 +137,7 @@ export function tabColorPaint(color: TabColorName): (text: string) => string {
 }
 
 function glyphPainter(item: TabBarItem): ((text: string) => string) | undefined {
-	return tabStatusPaint(item.status, item.unread);
+	return tabStatusPaint(item.status, item.unread, item.waiting === true);
 }
 
 /** Paint a chip body, keeping a status color on the leading glyph. */
@@ -172,7 +178,7 @@ function chipTitle(item: TabBarItem, active: boolean, completed: boolean): strin
 }
 
 function renderChip(item: TabBarItem, active: boolean, markPainter: (text: string) => string): string {
-	const glyph = tabStatusGlyph(item.status, item.unread);
+	const glyph = tabStatusGlyph(item.status, item.unread, item.waiting === true);
 	const glyphPaint = glyphPainter(item);
 	const completed = glyph === TAB_STATUS_GLYPHS.done;
 	const body = ` ${glyph} ${chipTitle(item, active, completed)} `;

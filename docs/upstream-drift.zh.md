@@ -13,7 +13,7 @@
 | 内置主题发现 | `getBuiltinThemes()` 按名字读取 `dark.json` 与 `light.json`，丢进主题目录的 JSON 不会被发现；主题选择器只列出它们与用户主题 | 主题目录下每个 `*.json` 都会被加载，并以文件内的 `name` 作为键（跳过 `theme-schema.json`）；某个文件解析或校验失败时只是被丢弃，不会带掉其余内置主题。`aurora` 即由此提供 | 一个主题一个文件，新增主题就是新增文件，无需改动加载器 |
 | `app.thinking.cycle` 默认键 | `shift+tab` | `alt+t` | `shift+tab` 改作 `app.tab.previous` |
 | Agent 标签页 | 一个终端一个会话 | 多个并发标签页，各自持有 `AgentSessionRuntime` | [Agent 标签页](tabs.zh.md) |
-| 启动时恢复标签页 | 不适用（一个终端一个会话） | 停在扩展 `session_start` 对话框的标签页会把队列让给下一个标签页，在 Home 卡片上显示 `waiting for input`，答复后自行收尾 | 串行恢复不能等待人工输入；见 [Agent 标签页](tabs.zh.md#启动恢复) |
+| 启动时恢复标签页 | 不适用（一个终端一个会话） | 停在扩展 `session_start` 对话框的标签页会把队列让给下一个标签页，在 Home 卡片上显示 `[input]`，答复后自行收尾 | 串行恢复不能等待人工输入；见 [Agent 标签页](tabs.zh.md#启动恢复) |
 | 输入框提交 | 输入文本走输入主循环，由该循环把队列投给当前会话 | 标签内输入框的提交直接发往该标签自己的会话，只有没有标签管理器时才用共享队列 | 该循环一次只处理一个提示，会把另一标签运行期间收到的提交投给那轮结束时的焦点标签；见 [Agent 标签页](tabs.zh.md#并发访问) |
 | `/fork` 消息选择 | 替换当前会话 | 在原标签页后创建独立标签页，标题追加 `-fork` 并自动去重，输入框填入所选消息 | 原对话与新分支可以并排保留 |
 | `/clear` | `/new` 用新文件替换当前会话，正在进行的回合会被中断 | 命令改为 `/clear`：回合或 bash 运行中拒绝执行，新会话沿用旧 header 的 parent，标签页底色随会话一起丢掉 | 跟随 mixcode-pi 的 `/clear`：忙碌时拒绝执行，不再中断回合；底色按 session id 存，新会话本就没有 |
@@ -153,6 +153,7 @@
 - `packages/coding-agent/src/cli/args.ts`：`--tui-mode` 帮助行写出 fork 的默认值
 - `packages/coding-agent/test/settings-manager.test.ts`：TUI 模式断言改为 fork 的 fullscreen 默认值
 - `packages/coding-agent/test/keybindings.test.ts`、`packages/coding-agent/test/interactive-mode-compaction.test.ts`：队列绑定与压缩路径
+- `packages/coding-agent/test/interactive-mode-status.test.ts`：`showExtensionCustom` 用例给自建宿主补上按标签页作用域的协作者
 - `packages/coding-agent/src/utils/version-check.ts`：删除 `checkForNewPiVersion`，启动提示是它唯一的调用方
 - `scripts/profile-coding-agent-node.mjs`：`--offline` 不再设置已删除的 `PI_SKIP_VERSION_CHECK`
 - `packages/coding-agent/test/version-check.test.ts`、`packages/coding-agent/test/package-command-paths.test.ts`：用例中去掉已删除的检查与对应环境变量

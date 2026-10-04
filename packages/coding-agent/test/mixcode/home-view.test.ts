@@ -29,6 +29,7 @@ function render(model: Partial<HomeViewModel>): string {
 			version: "0.0.0-test",
 			workdir: "/tmp",
 			workingCount: 0,
+			waitingCount: 0,
 			agents: [],
 			selectedIndex: 0,
 			nonIdleOnly: false,
@@ -65,5 +66,19 @@ describe("Home loading cards", () => {
 		const frame = render({ agents: [{ card: idleCard("s1", "Agent-01"), messages: [] }] });
 		expect(frame).toContain("[idle]");
 		expect(frame).not.toContain("[loading]");
+	});
+
+	it("names the tabs parked on an extension dialog, phase chip or not", () => {
+		const frame = render({
+			waitingCount: 2,
+			agents: [
+				// A restore parked on a `session_start` dialog reports the question, not the phase.
+				{ card: { ...placeholderCard("s1", "Agent-01", "resources"), waiting: true }, messages: [] },
+				{ card: { ...idleCard("s2", "Agent-02"), waiting: true }, messages: [] },
+			],
+		});
+		expect(frame).toContain("2 input");
+		expect(frame).not.toContain("[resources]");
+		expect(frame.match(/\[input\]/g)).toHaveLength(2);
 	});
 });

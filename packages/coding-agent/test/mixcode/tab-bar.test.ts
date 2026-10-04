@@ -149,6 +149,38 @@ describe("tab bar layout", () => {
 		expect(row).toContain("✓");
 		expect(row).toContain(theme.bold(theme.fg("success", "done-tab")));
 	});
+
+	it("marks a tab parked on an extension dialog with a waiting glyph", () => {
+		const waiting = model(2, 0);
+		waiting.tabs = [{ ...waiting.tabs[0]!, waiting: true }, waiting.tabs[1]!];
+		const bar = new TabBar(
+			() => waiting,
+			() => {},
+		);
+		const row = bar.render(80)[0]!;
+		// A waiting tab reports the question instead of its idle status, and the waiting
+		// color lands on the glyph itself.
+		expect(plain(row)).toBe("▌? tab0   - tab1 ");
+		expect(row).toContain(theme.fg("toolTitle", "?"));
+	});
+
+	it("keeps the error glyph ahead of the waiting mark", () => {
+		const bar = new TabBar(
+			() => ({
+				tabs: [
+					{ id: "a", title: "failed", status: "error", unread: true, waiting: true, recentRank: -1 },
+					{ id: "b", title: "answered", status: "idle", unread: true, waiting: false, recentRank: -1 },
+				],
+				activeId: "b",
+				rulePainter: (text) => text,
+			}),
+			() => {},
+		);
+		const row = plain(bar.render(80)[0]!);
+		// A failed tab stays failed; a tab whose question was answered reads as done.
+		expect(row).toContain("x failed");
+		expect(row).toContain("✓ answered");
+	});
 });
 
 describe("tab bar hover", () => {

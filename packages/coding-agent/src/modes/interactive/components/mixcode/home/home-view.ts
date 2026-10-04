@@ -49,6 +49,8 @@ export interface HomeViewModel {
 	version: string;
 	workdir: string;
 	workingCount: number;
+	/** Tabs parked on an extension dialog; the masthead says how many wait on the user. */
+	waitingCount: number;
 	/** Outdated extension packages the startup check reported; absent when it found none. */
 	packageUpdates?: readonly string[];
 	agents: readonly HomeAgentEntry[];
@@ -320,7 +322,10 @@ function renderHome(view: HomeViewModel, width: number, height: number | undefin
 	const bodyWidth = Math.max(0, width - inset * 2);
 	actions.beginFrame(width, height, view.overlayOpen);
 	const brand = `${theme.fg("accent", theme.bold("MixCode"))} ${theme.fg("dim", "/ HOME")}`;
-	const activity = [view.workingCount ? theme.fg("accent", `${view.workingCount} working`) : ""]
+	const activity = [
+		view.workingCount ? theme.fg("accent", `${view.workingCount} working`) : "",
+		view.waitingCount ? theme.fg("warning", `${view.waitingCount} input`) : "",
+	]
 		.filter(Boolean)
 		.join(theme.fg("dim", "  ·  "));
 	const roomy = height === undefined || height >= ROOMY_MASTHEAD_ROWS;
@@ -558,7 +563,7 @@ function renderAgentCard(agent: HomeAgentEntry, width: number, selected: boolean
 	const titleBudget = Math.max(1, width - visibleWidth(statusGroup) - CARD_TITLE_RESERVE);
 	const textWidth = Math.max(0, width - visibleWidth(CARD_TEXT_PREFIX));
 	const titleLabel = singleLinePreview(card.title);
-	const titleText = `${tabStatusGlyph(card.status, card.unread)} ${truncateToWidth(titleLabel, titleBudget, "…")}`;
+	const titleText = `${tabStatusGlyph(card.status, card.unread, card.waiting === true)} ${truncateToWidth(titleLabel, titleBudget, "…")}`;
 	// A colored tab paints the whole title with its own colour pair.
 	const title = card.color ? tabColorPaint(card.color)(titleText) : titleSegment(card, titleText);
 	const preview = cachedOutputPreview(card.id, agent.messages, textWidth, () =>
@@ -638,8 +643,11 @@ function conversationTail(agent: HomeAgentEntry, width: number, available: numbe
 // Card cells
 // ---------------------------------------------------------------------------
 
-/** `[done]`, `[error]`, the loading phase, or the status word, painted by severity. */
+/** `[input]`, `[done]`, `[error]`, the loading phase, or the status word, painted by severity. */
 function statusChip(card: HomeCard): string {
+	// A pending question is what the user has to act on, so it outranks every status:
+	// the tab it belongs to cannot move until it is answered.
+	if (card.waiting) return theme.fg("toolTitle", "[input]");
 	// A tab still coming up names the phase it is on, so the card says what it waits for.
 	if (card.status === "loading") return theme.fg("dim", `[${card.loadingPhase ?? "loading"}]`);
 	if (card.unread && (card.status === "idle" || card.status === "done")) {
@@ -655,6 +663,7 @@ function statusChip(card: HomeCard): string {
 /** Card title colour for a tab without a `/color` of its own. */
 function titleSegment(card: HomeCard, text: string): string {
 	if (card.status === "error") return theme.fg("error", text);
+	if (card.waiting) return theme.fg("toolTitle", text);
 	if (isWorkingStatus(card.status)) return theme.fg("accent", text);
 	if (card.status === "done" || card.unread) return theme.fg("success", text);
 	return text;

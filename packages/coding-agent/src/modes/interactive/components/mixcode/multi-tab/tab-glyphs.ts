@@ -24,11 +24,23 @@ export const TAB_STATUS_GLYPHS: Record<Exclude<TabStatus, "loading">, string> = 
 	done: "\u2713",
 };
 
-/** Glyph for a tab's status; an unread completion reads as done, an error outranks it. */
-export function tabStatusGlyph(status: TabStatus, unread: boolean): string {
+/**
+ * Glyph of a tab that waits on a human: an extension dialog (question, confirm,
+ * permission prompt) is open on it and can only be answered from that tab.
+ */
+export const TAB_WAITING_GLYPH = "?";
+
+/**
+ * Glyph for a tab's status: a loading tab spins, an error outranks everything,
+ * and `waiting` outranks an unread completion because the tab cannot move until
+ * it is answered.
+ */
+export function tabStatusGlyph(status: TabStatus, unread: boolean, waiting = false): string {
 	// A loading tab spins: the frame comes from the clock, not from the tab.
 	if (status === "loading") return tabLoadingFrame();
-	if (unread && status !== "error") return TAB_STATUS_GLYPHS.done;
+	if (status === "error") return TAB_STATUS_GLYPHS.error;
+	if (waiting) return TAB_WAITING_GLYPH;
+	if (unread) return TAB_STATUS_GLYPHS.done;
 	return TAB_STATUS_GLYPHS[status];
 }
 
@@ -36,9 +48,16 @@ export function tabStatusGlyph(status: TabStatus, unread: boolean): string {
  * Painter for a tab's status text, so a chip's glyph and a Tab Jump row's glyph and
  * title read in the same colour. `undefined` leaves the text as the surface paints it.
  */
-export function tabStatusPaint(status: TabStatus, unread: boolean): ((text: string) => string) | undefined {
+export function tabStatusPaint(
+	status: TabStatus,
+	unread: boolean,
+	waiting = false,
+): ((text: string) => string) | undefined {
 	if (status === "loading") return (text) => theme.fg("dim", text);
 	if (status === "error") return (text) => theme.fg("error", text);
+	// The waiting color is the theme's warm accent, the same color MixCode gives a
+	// tab parked on a dialog; a completion stays quiet until the question is answered.
+	if (waiting) return (text) => theme.fg("toolTitle", text);
 	if (unread) return (text) => theme.fg("success", text);
 	if (isWorkingStatus(status)) return (text) => theme.fg("accent", text);
 	return undefined;
