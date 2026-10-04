@@ -1216,6 +1216,15 @@ export class AgentSession {
 		this._cacheWarmer?.onModeChanged();
 	}
 
+	/**
+	 * Reconcile active warming after the persisted mode changed under this session,
+	 * such as another tab's `/settings` row or a settings reload. The mode itself is
+	 * read live from the settings manager, so only an active run needs the nudge.
+	 */
+	syncCacheWarmingMode(): void {
+		this._cacheWarmer?.onModeChanged();
+	}
+
 	/** Current model (may be undefined if not yet selected) */
 	get model(): Model<any> | undefined {
 		return this.agent.state.model;

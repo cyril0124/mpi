@@ -484,6 +484,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A `/settings` change now reaches every open tab. Each tab owns a `SettingsManager` whose merged
+  settings are read once at construction, so a row toggled in one tab moved that tab alone: a
+  background tab kept running under the old value (its own image, compaction and queue policy), and
+  switching to it made `applyRuntimeSettings` put that older value back over the change on screen.
+  Every row now re-reads the settings file in the whole roster and re-applies the values a session
+  copies out of its manager (transport, steering and follow-up modes, cache warming), with a tab's
+  project-level value still winning; parked transcripts are dropped so their rows rebuild under the
+  new value.
 - A queued steer/follow-up box stays on screen when a tab is left and re-entered. Coming back to a tab
   whose session moved on while it was away rebuilds its transcript, and that path
   (`renderCurrentSessionState`) cleared the pending-message container without repainting it, so the box

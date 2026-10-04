@@ -41,6 +41,7 @@
 | `AgentSession`/`Agent` 队列 API | 只有 `clearQueue()`/`clearAllQueues()` | 新增 `removeQueuedMessages(kind, texts)`/`restoreQueuedMessages(kind, removed)`：从镜像与待发队列中按精确文本出队（最后匹配优先），返回按队列顺序排列的条目供还原 | flush 与 pop 需要移除指定文本，而不是整个队列 |
 | 出队键（`app.message.dequeue`） | `alt+up`（Windows 与 WSL 为 `alt+q`）；把每一条排队消息还原到输入框；编辑器保留 `ctrl+u` 做删除到行首 | `ctrl+u`，与无排队消息时的 vim 入口共用（排队消息先占用该键，无排队消息时武装 vim 入口），在 agent 标签页上无论如何都会被消费，因此不再到达编辑器；两个队列都有内容时 `ctrl+u` 后按 `s`/`f` 选一个，单个队列则把最后一条弹入输入框并重建 `/follow-up`（及 `--batch`）形式，镜像文本也会离开 SDK 队列 | 按队列编辑归为一个快捷键，且 `ctrl+u` 与队列工作流相配 |
 | 坞区组件堆叠 | 无上限；空间不够时由布局压缩槽位 | 上方与下方两个槽位共用一个行预算，被裁掉的行用 `… (widgets truncated)` 标出 | 否则很高的组件堆叠会挤掉对话区与坞区其他部分 |
+| 跨标签页的 `/settings` | 每个终端一个会话，没有可传递的对象 | 修改会让所有打开的标签页重新读取设置文件，并重新应用会话从各自管理器拷贝的值；获得焦点的标签页也会重新读取 | 一个进程持有多个会话，全局配置行必须让它们全部跟随；见 [Agent Tabs](tabs.zh.md#设置) |
 | 鼠标拖拽选中 | 屏幕上任意格子都可选中，原样复制该格子，用反显上色，拖动期间继续跟随新输出 | 只在对话区、输入卡片与 Notice 面板内生效；复制文本会去掉这些区域自身的边框、内缩与按键提示行；高亮使用主题的 `selectedBg`，开启 copy-on-select（默认）时随松手清除，关闭该设置时保留供复制命令取用，并在带指针悬停提示的块内的卡片行上加下划线（悬停提示用的是同一个背景色）；按下会钉住对话区，使流式输出挪不动选中行，松开时若期间有输出或用户滚动过则停在那里 | [鼠标拖拽选中](mouse-selection.zh.md) |
 | 隐藏的 thinking | 关闭隐藏时显示完整思考文本，开启时只显示斜体 `Thinking...` | 开启隐藏时，每个块渲染为跟随流式输出的 3 行尾窗：`Thinking` 标题的耗时在流式期间实时走动、思考停止增长后冻结，左侧竖线后是最后三行可见内容，丢弃了更早内容时首行加 `…`。扩展的 `setHiddenThinkingLabel` 仍整块替换；`/settings` 的 `Thinking tail preview` 行可关闭，默认开启 | 尾窗让思考在流式期间保持可读，又不让该块占满整个对话区 |
 | MixCode Home | 没有此页面；transcript 始终显示当前会话 | `home` 伪标签页列出所有已打开 agent 并给出对话预览 | [MixCode Home](home.zh.md) |
@@ -112,7 +113,7 @@
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
-- `packages/coding-agent/src/core/agent-session.ts`：手动压缩请求独立指定模型，在 abort 当前轮次前就标记压缩已激活的 claim，steering 与 follow-up 队列的摘除，以及 `/reset` 用的 `resetLeafToRoot()`
+- `packages/coding-agent/src/core/agent-session.ts`：手动压缩请求独立指定模型，在 abort 当前轮次前就标记压缩已激活的 claim，steering 与 follow-up 队列的摘除，`/reset` 用的 `resetLeafToRoot()`，以及 `syncCacheWarmingMode()`（不写设置文件的 warming 重调）
 - `packages/coding-agent/src/core/settings-manager.ts`：fork 的 fullscreen `tuiMode` 默认值，以及保留的覆盖层（`applyOverrides` 的覆盖在每次重新组合时都会保留，`clearOverrides` 释放指定字段）
 - `packages/coding-agent/src/core/extensions/loader.ts`：让 bun 发行版的扩展导入走 `virtualModules`
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调与选中选项转发给备用屏幕
@@ -134,7 +135,7 @@
 - `packages/tui/src/layout-node.ts`：`LayoutNode` 联合里的 `WindowedLayoutNode` 分支
 - `packages/tui/src/mixcode/windowed-node.ts`：窗口化布局状态与滚动行提供者
 - `packages/tui/src/components/settings-list.ts`：`SettingItem` 的可选 `section` 标题行
-- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`：`MixCode` 分组条目，以及 `Fullscreen exit output` 的描述
+- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`：`MixCode` 分组条目，`Fullscreen exit output` 的描述，以及面板在行变化后调用的 `onSettingsChanged` 钩子
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`：`getSettingsListTheme` 的分组标题样式
 - `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒携带的行提供者，以及被挂起的滚动视图传给窗口化子组件的 `honorOffset` 参数
 - `packages/tui/src/mixcode/layout-queries.ts`：`getComponentBox`、滚动行提供者查询与物化整行的查询

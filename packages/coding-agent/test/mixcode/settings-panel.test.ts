@@ -212,6 +212,18 @@ describe("/settings panel", () => {
 		expect(selectedRow(list.render(80))).toContain("On");
 	});
 
+	it("reports every change after it was applied, so the caller can reach other tabs", () => {
+		const onSettingsChanged = vi.fn();
+		const list = new SettingsSelectorComponent(settingsConfig({ inlineWidgets: true }), {
+			onInlineWidgetsChange: () => {},
+			onSettingsChanged,
+		} as unknown as SettingsCallbacks).getSettingsList();
+
+		list.selectItem("inline-widgets");
+		list.handleInput("\r");
+		expect(onSettingsChanged).toHaveBeenCalledTimes(1);
+	});
+
 	it("types to filter, counts the matches, and clears the filter before closing", () => {
 		let cancels = 0;
 		const list = new SettingsSelectorComponent(settingsConfig(), {

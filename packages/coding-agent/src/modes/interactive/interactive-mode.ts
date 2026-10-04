@@ -180,6 +180,7 @@ import {
 } from "../../core/mixcode/multi-tab/types.ts";
 import { listTrash, restoreFromTrash, trashDir } from "../../core/mixcode/session-trash.ts";
 import { persistSessionCwd, writeSessionFile } from "../../core/mixcode/session-workdir.ts";
+import { applySessionCopiedSettings, reloadSettingsAcrossTabs } from "../../core/mixcode/settings-tab-sync.ts";
 import { type EditorFlagRequest, parseEditorFlag } from "../../core/mixcode/system-inspection/editor-flag.ts";
 import { getEffectiveSystemPrompt } from "../../core/mixcode/system-inspection/effective-system-prompt.ts";
 import { renderSystemPromptSectionStats } from "../../core/mixcode/system-inspection/system-prompt-stats.ts";
@@ -3670,6 +3671,10 @@ export class InteractiveMode {
 		// A rebuilt transcript is built with this tab's own thinking label; the plain
 		// field write keeps that off the per-block setter, which re-measures them all.
 		this.hiddenThinkingLabel = this.tabUi.get(tab.id)?.hiddenThinkingLabel;
+		// A settings write in another tab, or outside the app, leaves this tab's manager on
+		// what it was built with; re-read it before the switch applies those values.
+		await this.settingsManager.reload();
+		applySessionCopiedSettings(this.session);
 		this.applyRuntimeSettings();
 		if (!this.restoreTranscript(tab.id)) this.renderCurrentSessionState();
 		// A warmed restored tab shows its parked transcript without re-rendering, so
@@ -9081,10 +9086,23 @@ export class InteractiveMode {
 						done();
 						this.ui.requestRender();
 					},
+					onSettingsChanged: () => this.broadcastSettingsChange(),
 				},
 			);
 			return selector.getSettingsList();
 		});
+	}
+
+	/**
+	 * Put every open tab on a `/settings` change made in one of them. Parked
+	 * transcripts were rendered under the old values, so they are dropped and
+	 * rebuilt on the next visit.
+	 */
+	private broadcastSettingsChange(): void {
+		const tabs = this.tabManager?.list() ?? [];
+		if (tabs.length === 0) return;
+		this.tabTranscript.clear();
+		void reloadSettingsAcrossTabs(this.settingsManager, tabs);
 	}
 
 	/**

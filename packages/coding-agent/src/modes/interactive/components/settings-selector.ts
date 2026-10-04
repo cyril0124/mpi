@@ -140,6 +140,8 @@ export interface SettingsCallbacks {
 	onBoxedHiddenThinkingChange: (enabled: boolean) => void;
 	onIconModeChange: (mode: IconMode) => void;
 	onShowResponseModelNoticesChange: (enabled: boolean) => void;
+	/** Called after any row changed, so a caller can bring other surfaces onto the new value. */
+	onSettingsChanged?: () => void;
 	onCancel: () => void;
 }
 
@@ -999,6 +1001,7 @@ export class SettingsSelectorComponent extends Container {
 						callbacks.onShowResponseModelNoticesChange(newValue === "true");
 						break;
 				}
+				callbacks.onSettingsChanged?.();
 			},
 			onCancel: callbacks.onCancel,
 		});

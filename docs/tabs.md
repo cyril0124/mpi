@@ -232,6 +232,16 @@ Startup joins the stored layout without discarding peer entries. An explicit wor
 replaces the shared set and order, so other instances follow that layout on their next poll.
 `--no-session` sessions do not participate in shared persistence or polling.
 
+## Settings
+
+A `/settings` change is global and reaches the whole roster. Each tab owns a `SettingsManager`
+loaded once when the tab is built, so the change first re-reads the settings file in every open tab
+and re-applies the values a session copies out of its own manager (transport, steering and follow-up
+modes, cache warming). A tab that pins the value in its project settings keeps that value. Parked
+transcripts are dropped, so a tab switched to later rebuilds its rows under the new value, and a tab
+that becomes focused re-reads the file too, which also picks up a settings file edited outside the
+app.
+
 ## Startup restore
 
 On startup the previous layout is restored only when the starting session is persisted and holds

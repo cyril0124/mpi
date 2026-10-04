@@ -47,6 +47,7 @@ commit that causes it.
 | Per-tab settings | none | `Inline widgets` also reads and writes `mixcode_settings.json`, shown in its own `MixCode` section of `/settings` | MixCode settings stay out of pi's `settings.json` and out of its section |
 | Settings list rows | one flat list of settings | `SettingItem` gained an optional `section` that renders a heading row | same as above |
 | `/settings` panel | pi-tui's `SettingsList` inside a bordered selector that replaces the editor area: `→` cursor, a search input box, raw `true`/`false` values, flat section headings | a centred floating panel titled `Settings`: a surface-framed list with a dim `filter: type to filter  N/N` line, a `Pi` / `MixCode` heading above each settings file's path, `›` rows with a label column and a value column, booleans shown as `On`/`Off`, the selected item's description, and one key-hint footer row | the panel reads as a surface over the work and names the file a setting lives in, and the composer keeps its draft while settings are open; picking `TUI mode` takes the panel down before switching, because a mode switch refuses while an overlay is open |
+| `/settings` across tabs | one session per terminal, so there is nothing to reach | a change re-reads the settings file in every open tab and re-applies the values a session copies out of its manager; a tab that becomes focused re-reads too | one process holds several sessions, so a global row has to move them all; see [Agent Tabs](tabs.md#settings) |
 | Follow-up input (`alt+enter`) | queues into the SDK follow-up queue, delivered by the agent after the run | queues host-side rounds: exclusive rounds from `/follow-up <message>`, merged rounds from `alt+enter` and `/follow-up --batch <message>`, dispatched one turn per round when idle, paused on failure until `/follow-up` resumes | follow-up rounds need pause/resume, batch merging, and queued local commands |
 | Manual compaction model | `/compact` accepts only custom instructions and uses the active model | `/compact [provider/modelId] [instructions]` uses the requested model only for the summary, without changing the session model or thinking level, and shows it in the working status; compaction reason messages use accent/warning/error colors | manual summaries sometimes need a different model, and transient status should distinguish manual, threshold, and overflow compaction |
 | Queued messages display | flat `Steering:`/`Follow-up:` lines under the transcript | boxed `Steer (n)`/`Follow-up (n)` previews with round numbering (`Round k · next/command ·`), `SDK ·` companions, latest-five truncation, a pause hint, and `Esc->send now`/edit hints | the queue is now an ordered round list, not a text dump |
@@ -116,7 +117,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`
-- `packages/coding-agent/src/core/agent-session.ts`: request-scoped manual compaction model, the claim that marks compaction active before it aborts the running turn, the steering and follow-up queue splice, and `resetLeafToRoot()` for `/reset`
+- `packages/coding-agent/src/core/agent-session.ts`: request-scoped manual compaction model, the claim that marks compaction active before it aborts the running turn, the steering and follow-up queue splice, `resetLeafToRoot()` for `/reset`, and `syncCacheWarmingMode()` (the warming reconcile without the settings write)
 - `packages/coding-agent/src/core/settings-manager.ts`: the fork's fullscreen `tuiMode` default and a
   retained override layer (`applyOverrides` keeps its overrides across scope recompositions, and
   `clearOverrides` releases named fields)
@@ -145,7 +146,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/tui/src/layout-node.ts`: the `WindowedLayoutNode` arm of the `LayoutNode` union
 - `packages/tui/src/mixcode/windowed-node.ts`: the windowed layout state and the scroll line provider
 - `packages/tui/src/components/settings-list.ts`: the optional `section` heading row on `SettingItem`
-- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section entries, and the `Fullscreen exit output` description
+- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section entries, the `Fullscreen exit output` description, and the `onSettingsChanged` hook the panel calls after a row change
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`: the `getSettingsListTheme` section heading style
 - `packages/tui/src/layout.ts`: windowed scroll child, the line provider carried on a scroll box, and
   the `honorOffset` argument a suspended scroll view passes to its windowed child
