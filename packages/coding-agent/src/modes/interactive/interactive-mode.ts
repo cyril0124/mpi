@@ -595,6 +595,18 @@ interface TabInteraction {
 }
 
 /**
+ * A terminal-input listener an extension asked for through `ctx.ui.onTerminalInput`, kept for
+ * the tab that registered it across tab switches.
+ */
+interface ExtensionTerminalInputSubscription {
+	/** Tab that owns the listener; undefined in single-session mode, where it always answers. */
+	tabId: string | undefined;
+	handler: (data: string) => { consume?: boolean; data?: string } | undefined;
+	/** Present only while the listener is registered with the renderer. */
+	unsubscribe?: () => void;
+}
+
+/**
  * Options for InteractiveMode initialization.
  */
 export interface InteractiveModeOptions {
@@ -945,10 +957,7 @@ export class InteractiveMode {
 	// Extension UI state
 	/** Pending extension interactions per tab: only the tab on screen mounts one. */
 	private readonly tabInteractions = new Map<string, TabInteraction[]>();
-	private extensionTerminalInputSubscriptions = new Set<{
-		handler: (data: string) => { consume?: boolean; data?: string } | undefined;
-		unsubscribe: () => void;
-	}>();
+	private extensionTerminalInputSubscriptions = new Set<ExtensionTerminalInputSubscription>();
 	/** Listener that answers the app's chrome shortcuts above a focused extension dialog. */
 	private extensionDialogShortcutUnsubscribe?: () => void;
 
@@ -3986,7 +3995,7 @@ export class InteractiveMode {
 		// dialog comes back with the tab, and the chip reports the wait meanwhile. An overlay of
 		// this tab stays in the stack, where its focus gate keeps it off the screen.
 		this.parkTabInteractions(tabId);
-		this.clearExtensionTerminalInputListeners();
+		this.detachExtensionTerminalInputListeners(tabId);
 		this.defaultEditor.onExtensionShortcut = undefined;
 		this.restoreBuiltInChrome(leavingHeader);
 	}
@@ -4017,6 +4026,7 @@ export class InteractiveMode {
 			ui.notices = [];
 			for (const notice of notices) this.showExtensionNotify(notice.message, notice.type);
 		}
+		this.attachExtensionTerminalInputListeners(tabId);
 	}
 
 	/** Apply the streaming and thinking state a tab owned while it was not focused. */
@@ -4944,7 +4954,7 @@ export class InteractiveMode {
 			}
 		}
 		if (tabId === undefined) this.tabInteractions.clear();
-		this.clearExtensionTerminalInputListeners();
+		this.clearExtensionTerminalInputListeners(tabId);
 		this.setExtensionFooter(undefined);
 		this.setExtensionHeader(undefined);
 		this.clearExtensionWidgets();
@@ -5338,19 +5348,46 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	/**
+	 * Register a listener an extension asked for through `ctx.ui.onTerminalInput`. One
+	 * registered while its tab is off screen waits for `attachTabUi`, so it never answers
+	 * keys meant for the tab in front.
+	 */
 	private addExtensionTerminalInputListener(
+		tabId: string | undefined,
 		handler: (data: string) => { consume?: boolean; data?: string } | undefined,
 	): () => void {
-		const subscription = { handler, unsubscribe: this.ui.addInputListener(handler) };
+		const subscription: ExtensionTerminalInputSubscription = { tabId, handler };
 		this.extensionTerminalInputSubscriptions.add(subscription);
+		if (tabId === undefined || this.tabShowsOnScreen(tabId)) {
+			subscription.unsubscribe = this.ui.addInputListener(handler);
+		}
 		return () => {
-			subscription.unsubscribe();
+			subscription.unsubscribe?.();
 			this.extensionTerminalInputSubscriptions.delete(subscription);
 		};
 	}
 
+	/** Register the terminal listeners a tab's extensions asked for while it was off screen. */
+	private attachExtensionTerminalInputListeners(tabId: string): void {
+		for (const subscription of this.extensionTerminalInputSubscriptions) {
+			if (subscription.tabId !== tabId) continue;
+			subscription.unsubscribe ??= this.ui.addInputListener(subscription.handler);
+		}
+	}
+
+	/** Park a tab's terminal listeners; `attachTabUi` puts them back when the tab returns. */
+	private detachExtensionTerminalInputListeners(tabId: string): void {
+		for (const subscription of this.extensionTerminalInputSubscriptions) {
+			if (subscription.tabId !== tabId) continue;
+			subscription.unsubscribe?.();
+			subscription.unsubscribe = undefined;
+		}
+	}
+
 	private rebindExtensionTerminalInputListeners(): void {
 		for (const subscription of this.extensionTerminalInputSubscriptions) {
+			if (!subscription.unsubscribe) continue;
 			subscription.unsubscribe();
 			subscription.unsubscribe = this.ui.addInputListener(subscription.handler);
 		}
@@ -5369,9 +5406,13 @@ export class InteractiveMode {
 		);
 	}
 
-	private clearExtensionTerminalInputListeners(): void {
-		for (const subscription of this.extensionTerminalInputSubscriptions) subscription.unsubscribe();
-		this.extensionTerminalInputSubscriptions.clear();
+	/** Drop the terminal listeners of a replaced tab, or every one when no tab is given. */
+	private clearExtensionTerminalInputListeners(tabId?: string): void {
+		for (const subscription of [...this.extensionTerminalInputSubscriptions]) {
+			if (tabId !== undefined && subscription.tabId !== tabId) continue;
+			subscription.unsubscribe?.();
+			this.extensionTerminalInputSubscriptions.delete(subscription);
+		}
 	}
 
 	/**
@@ -5407,7 +5448,7 @@ export class InteractiveMode {
 			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts, dialogTabId()),
 			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts, dialogTabId()),
 			notify: (message, type) => this.showExtensionNotify(message, type),
-			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
+			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(dialogTabId(), handler),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
 			setWorkingMessage: (message) => {
 				this.workingMessage = message;

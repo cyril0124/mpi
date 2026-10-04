@@ -484,6 +484,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- An extension's terminal-input listener survives a tab switch. `ctx.ui.onTerminalInput` listeners
+  were cleared from the shared renderer whenever a tab was detached (`detachTabUi`) and never put
+  back, so an extension that hides an overlay on collapse and reopens it from that listener could
+  not answer it again after any tab switch, leaving the overlay hidden with no way back. Each
+  listener now belongs to the tab whose extension registered it: detaching parks it, attaching the
+  tab registers it again, and a session replacement drops only its own tab's listeners.
 - App-level shortcuts answer while an extension dialog owns the keyboard. A dialog an extension opens
   as a capturing overlay takes focus from the composer, so every action bound with
   `defaultEditor.onAction` went dead for as long as it waited: `tab`/`shift+tab` no longer switched
