@@ -343,6 +343,13 @@ point `## [Unreleased]` at the new tag.
 - Vim mode's `ctrl+u` / `ctrl+d` (`pageUp` / `pageDown`) scroll a fixed 10 rows instead of the
   viewport height minus one, so one press moves the same distance on a short and a tall terminal.
   `j` / `k` keep their 3 rows. See [Vim Mode](docs/vim-mode.md#keys).
+- `/new` is renamed to `/clear`, matching mixcode-pi. Where `/new` aborted a running turn before
+  replacing the session, `/clear` refuses while a response or a bash command is running and reports
+  why, so a clear cannot cut a turn short. The replacement session inherits the outgoing header's
+  `parentSession` instead of starting a new parent chain, and the tab's chip color goes with the
+  session, since that color is keyed by session id. Everything else is unchanged: the tab, its
+  workdir, its model and its thinking level stay, the title returns to a free `Agent-NN`, and the old
+  session file stays resumable. See [Tabs](docs/tabs.md#commands).
 - `/clone` opens the current branch in a new tab titled `<current title>-cloned` and focuses it,
   instead of replacing the active tab's session with a branched copy. The source tab keeps its
   session file and stays open, so both tabs continue from the same conversation independently, as

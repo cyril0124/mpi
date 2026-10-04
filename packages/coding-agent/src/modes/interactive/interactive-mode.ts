@@ -6449,7 +6449,7 @@ export class InteractiveMode {
 				else this.showError("Usage: /delete-workspace <name>");
 				return;
 			}
-			if (text === "/new") {
+			if (text === "/clear") {
 				this.editor.setText("");
 				await this.handleClearCommand();
 				return;
@@ -10741,13 +10741,32 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	/**
+	 * `/clear`: replace the active tab's session with a fresh file, keeping the tab, its workdir, its
+	 * model and its thinking level. Refused while a turn or a bash command runs.
+	 */
 	private async handleClearCommand(): Promise<void> {
+		// Bash is checked first: a running bash command also reports streaming.
+		if (this.session.isBashRunning) {
+			this.showWarning("A bash command is already running. Press Esc to cancel it first.");
+			return;
+		}
+		if (this.session.isStreaming) {
+			this.showWarning("Wait for the current response to finish before clearing the session.");
+			return;
+		}
 		this.clearStatusIndicator();
 		try {
-			const result = await this.runtimeHost.newSession();
+			const result = await this.runtimeHost.newSession({
+				// A cleared session keeps the outgoing header's parent, so the two stay siblings.
+				parentSession: this.session.sessionManager.getHeader()?.parentSession,
+			});
 			if (result.cancelled) {
 				return;
 			}
+			// The chip color is keyed by session id, and a cleared session has none.
+			const activeTab = this.tabManager?.activeTab();
+			if (activeTab) this.tabManager?.setColor(activeTab.id, undefined);
 			// The new conversation owns nothing from the old queue.
 			discardFollowUps(this.followUpState);
 			this.followUpState.pendingSteer = [];

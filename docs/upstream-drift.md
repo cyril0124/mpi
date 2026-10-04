@@ -17,6 +17,7 @@ commit that causes it.
 | Startup tab restore | n/a (one session per terminal) | a tab parked in an extension `session_start` dialog hands the queue to the next tab, reads `waiting for input` on its Home card, and finishes on its own once the dialog is answered | a serial restore must not wait on a human; see [Agent Tabs](tabs.md#startup-restore) |
 | Composer submit | typed text goes through the single-prompt input loop, which drains its queue to the current session | a submit from a tab's composer goes straight to that tab's session, and the shared queue is used only without a tab manager | the loop runs one prompt at a time and would deliver a submit received during another tab's turn to whichever tab is focused when that turn ends; see [Agent Tabs](tabs.md) |
 | `/fork` message selection | replaces the active session | opens a new independent tab after the source, with a unique `-fork` title and the selected message in its editor | the original conversation remains available beside the alternative |
+| `/clear` | `/new` replaces the active session with a fresh file, aborting a turn that is still running | the command is `/clear`: it refuses while a turn or a bash command runs, starts the replacement from the outgoing header's parent, and drops the tab's chip color along with the session | mixcode-pi's `/clear` refuses a busy session instead of aborting the turn, and the chip color is keyed by session id, so a fresh session has none |
 | `/reset` | no such command; the only way back to the root of a conversation is to navigate there in `/tree` | `/reset` moves the leaf back to the session root in the same file, keeping the tab, its title and every entry, which stay reachable in `/tree` | re-rooting a conversation should not mean opening the tree selector, and the abandoned branches are worth keeping |
 | `/editor` | no such command; the draft reaches the external editor only through the `app.editor.external` key | `/editor` opens the same editor from slash input and from the command palette, and keeps what it writes, an emptied draft included | the draft must also be editable when the editor slot holds the palette's command text |
 | Session deletion | deletes the selected session file | refuses while the owning tab has a turn in progress | another tab may still be writing that file |
@@ -71,6 +72,10 @@ Deliberately left unpatched:
 
 | Page | Upstream text | Reality |
 | --- | --- | --- |
+| `packages/coding-agent/docs/slash-commands.md:23` | the `/new` row reads "Start a new session" | the command is `/clear` |
+| `packages/coding-agent/docs/usage.md:59` | "`/new` starts a new session." | the command is `/clear` |
+| `packages/coding-agent/docs/sessions.md:14` | "`/new` starts a new session" | the command is `/clear` |
+| `packages/coding-agent/docs/keybindings.md:136` | `app.session.new` is described as "Start a new session (`/new`)" | the action clears the session; the command is `/clear` |
 | `packages/coding-agent/docs/session-format.md:20` | "When available, pi uses the `trash` CLI to avoid permanent deletion" | `/delete-session` and the selector move the file into `<agentDir>/mixcode-pi/trash/`; the `trash` CLI only runs when that move fails |
 | `packages/coding-agent/docs/usage.md:92` | `/debug` writes its output to `pi-debug.log` | the file is `mpi-debug.log`, since the debug log name follows `APP_NAME` |
 | `packages/coding-agent/docs/cli-integration.md:95` | `piConfig.name` affects "the CLI banner, configuration paths, and derived environment variable names" | the fork pins the env var names to `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR`, so `piConfig.name` no longer changes them |

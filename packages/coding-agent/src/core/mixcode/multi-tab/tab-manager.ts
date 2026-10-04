@@ -708,7 +708,7 @@ export class TabManager {
 
 	/**
 	 * Give a tab back its generated title when the replacement session carries no
-	 * name (`/new`, `/resume` onto a session nobody named). `/rename` keeps the
+	 * name (`/clear`, `/resume` onto a session nobody named). `/rename` keeps the
 	 * title and the session name in step, so a kept title would claim a name the
 	 * session no longer has. An existing `Agent-NN` stays put.
 	 */
