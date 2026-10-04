@@ -9,13 +9,13 @@ import {
 	transferVimMode,
 	VIM_ENTER_ARM_WINDOW_MS,
 	VIM_LINE_SCROLL_ROWS,
+	VIM_PAGE_SCROLL_ROWS,
 	type VimKeyHost,
 	type VimTabState,
 } from "../../src/core/mixcode/vim/vim-mode.ts";
 
 interface Recorded {
 	scrollLines: number[];
-	scrollPages: number[];
 	oldest: number;
 	newest: number;
 	jumps: Array<-1 | 1>;
@@ -27,7 +27,6 @@ type FakeHost = VimKeyHost & { recorded: Recorded };
 function makeHost(available = true, jumpFound: boolean[] = []): FakeHost {
 	const recorded: Recorded = {
 		scrollLines: [],
-		scrollPages: [],
 		oldest: 0,
 		newest: 0,
 		jumps: [],
@@ -41,9 +40,6 @@ function makeHost(available = true, jumpFound: boolean[] = []): FakeHost {
 			available: () => available,
 			scrollLines: (lines) => {
 				recorded.scrollLines.push(lines);
-			},
-			scrollPages: (pages) => {
-				recorded.scrollPages.push(pages);
 			},
 			scrollToOldest: () => {
 				recorded.oldest += 1;
@@ -115,19 +111,19 @@ describe("vim scroll keys", () => {
 		}
 	});
 
-	it("pages up and down", () => {
+	it("pages up and down by a fixed block of rows", () => {
 		const upHost = makeHost();
 		handleVimKey(activeState(), "\x1b[5~", upHost);
-		expect(upHost.recorded.scrollPages).toEqual([1]);
+		expect(upHost.recorded.scrollLines).toEqual([VIM_PAGE_SCROLL_ROWS]);
 
 		const downHost = makeHost();
 		handleVimKey(activeState(), "\x1b[6~", downHost);
-		expect(downHost.recorded.scrollPages).toEqual([-1]);
+		expect(downHost.recorded.scrollLines).toEqual([-VIM_PAGE_SCROLL_ROWS]);
 
 		const ctrlHost = makeHost();
 		handleVimKey(activeState(), "\x15", ctrlHost);
 		handleVimKey(activeState(), "\x04", ctrlHost);
-		expect(ctrlHost.recorded.scrollPages).toEqual([1, -1]);
+		expect(ctrlHost.recorded.scrollLines).toEqual([VIM_PAGE_SCROLL_ROWS, -VIM_PAGE_SCROLL_ROWS]);
 	});
 
 	it("jumps to the oldest row on gg and to the newest on G", () => {

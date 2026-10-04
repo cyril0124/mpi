@@ -74,10 +74,10 @@ Context-scoped, so a key may appear once per surface.
 | `app.vim.enter` | `ctrl+u` | vim mode: arm entry while no message is queued, whatever the composer holds — see [Vim Mode](vim-mode.md) |
 | `app.vim.enterConfirm` | `u` | vim mode: confirm entry while armed |
 | `app.vim.exit` | `q` | vim mode: leave the modal transcript |
-| `app.vim.lineUp` | `k`, `up` | vim mode: scroll towards older output |
-| `app.vim.lineDown` | `j`, `down` | vim mode: scroll towards newer output |
-| `app.vim.pageUp` | `pageUp`, `ctrl+u` | vim mode: page towards older output |
-| `app.vim.pageDown` | `pageDown`, `ctrl+d` | vim mode: page towards newer output |
+| `app.vim.lineUp` | `k`, `up` | vim mode: scroll 3 rows towards older output |
+| `app.vim.lineDown` | `j`, `down` | vim mode: scroll 3 rows towards newer output |
+| `app.vim.pageUp` | `pageUp`, `ctrl+u` | vim mode: scroll 10 rows towards older output |
+| `app.vim.pageDown` | `pageDown`, `ctrl+d` | vim mode: scroll 10 rows towards newer output |
 | `app.vim.top` | `home` | vim mode: oldest output |
 | `app.vim.topPrefix` | `g` | vim mode: press twice for the oldest output |
 | `app.vim.bottom` | `end`, `shift+g` | vim mode: newest output |

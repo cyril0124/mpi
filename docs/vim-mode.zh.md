@@ -2,7 +2,7 @@
 
 [English Documentation](vim-mode.md)
 
-Vim 模式把全屏对话区变成一块模态的免鼠标阅读界面：主行滚动、翻页，以及按用户提问跳跃并弹出预览面板。
+Vim 模式把全屏对话区变成一块模态的免鼠标阅读界面：按行滚动、每次翻 10 行，以及按用户提问跳跃并弹出预览面板。
 
 ## 前提
 
@@ -32,8 +32,8 @@ Vim 模式开启期间输入框被锁定：边框改用强调色、忽略键入�
 | --- | --- | --- |
 | `app.vim.lineUp` | `k`、`up` | 向更早的输出滚动 3 行 |
 | `app.vim.lineDown` | `j`、`down` | 向更新的输出滚动 3 行 |
-| `app.vim.pageUp` | `pageUp`、`ctrl+u` | 向更早的输出翻一页 |
-| `app.vim.pageDown` | `pageDown`、`ctrl+d` | 向更新的输出翻一页 |
+| `app.vim.pageUp` | `pageUp`、`ctrl+u` | 向更早的输出滚动 10 行 |
+| `app.vim.pageDown` | `pageDown`、`ctrl+d` | 向更新的输出滚动 10 行 |
 | `app.vim.top` | `home` | 跳到最早一行 |
 | `app.vim.topPrefix` | `g` | 按两次（`gg`）跳到最早一行 |
 | `app.vim.bottom` | `end`、`shift+g` | 跳到最新一行并跟随新输出 |

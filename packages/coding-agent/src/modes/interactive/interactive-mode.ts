@@ -5896,10 +5896,6 @@ export class InteractiveMode {
 				// direction is inverted, because the modal surface counts towards older
 				// output while a scroll view counts towards newer rows.
 				scrollLines: (lines) => this.viewportTui()?.scrollBy(-lines),
-				scrollPages: (pages) => {
-					const viewportHeight = this.transcriptScrollView?.viewportHeight ?? 0;
-					this.viewportTui()?.scrollBy(-pages * Math.max(1, viewportHeight - 1));
-				},
 				scrollToOldest: () => this.viewportTui()?.scrollToTop(),
 				scrollToNewest: () => this.viewportTui()?.scrollToBottom(),
 				jumpUserMessage: (direction) => {

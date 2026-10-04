@@ -13,6 +13,11 @@ import type { ToastType } from "../toast/toast.ts";
 export const VIM_ENTER_ARM_WINDOW_MS = 1_000;
 /** Rows moved by one `j` / `k` press. */
 export const VIM_LINE_SCROLL_ROWS = 3;
+/**
+ * Rows moved by one `ctrl+u` / `ctrl+d` press. Fixed, so one press moves the
+ * same distance on any terminal height.
+ */
+export const VIM_PAGE_SCROLL_ROWS = 10;
 
 export interface VimTabState {
 	/** True while the modal transcript surface owns input. */
@@ -47,7 +52,6 @@ export interface VimTranscriptController {
 	/** True when an in-app transcript viewport exists (fullscreen mode). */
 	available(): boolean;
 	scrollLines(lines: number): void;
-	scrollPages(pages: number): void;
 	scrollToOldest(): void;
 	scrollToNewest(): void;
 	/** False when no further user message exists in that direction. */
@@ -139,11 +143,11 @@ export function handleVimKey(state: VimTabState, data: string, host: VimKeyHost)
 		return true;
 	}
 	if (keys.matches(data, "app.vim.pageUp")) {
-		host.controller.scrollPages(1);
+		host.controller.scrollLines(VIM_PAGE_SCROLL_ROWS);
 		return true;
 	}
 	if (keys.matches(data, "app.vim.pageDown")) {
-		host.controller.scrollPages(-1);
+		host.controller.scrollLines(-VIM_PAGE_SCROLL_ROWS);
 		return true;
 	}
 	if (keys.matches(data, "app.vim.bottom")) {

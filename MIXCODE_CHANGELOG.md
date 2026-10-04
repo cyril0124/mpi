@@ -340,6 +340,9 @@ point `## [Unreleased]` at the new tag.
   in-app block), and both estimate tokens at ~4 characters per token with one token per CJK character.
 ### Changed
 
+- Vim mode's `ctrl+u` / `ctrl+d` (`pageUp` / `pageDown`) scroll a fixed 10 rows instead of the
+  viewport height minus one, so one press moves the same distance on a short and a tall terminal.
+  `j` / `k` keep their 3 rows. See [Vim Mode](docs/vim-mode.md#keys).
 - `/clone` opens the current branch in a new tab titled `<current title>-cloned` and focuses it,
   instead of replacing the active tab's session with a branched copy. The source tab keeps its
   session file and stays open, so both tabs continue from the same conversation independently, as

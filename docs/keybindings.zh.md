@@ -72,10 +72,10 @@ id。本页说明 fork 重新绑定了什么、新增了哪些 id、composer 按
 | `app.vim.enter` | `ctrl+u` | vim 模式：无排队消息时武装进入（输入框有草稿也可以）—— 见 [Vim 模式](vim-mode.zh.md) |
 | `app.vim.enterConfirm` | `u` | vim 模式：武装后确认进入 |
 | `app.vim.exit` | `q` | vim 模式：离开模态对话区 |
-| `app.vim.lineUp` | `k`、`up` | vim 模式：向更早的输出滚动 |
-| `app.vim.lineDown` | `j`、`down` | vim 模式：向更新的输出滚动 |
-| `app.vim.pageUp` | `pageUp`、`ctrl+u` | vim 模式：向更早的输出翻页 |
-| `app.vim.pageDown` | `pageDown`、`ctrl+d` | vim 模式：向更新的输出翻页 |
+| `app.vim.lineUp` | `k`、`up` | vim 模式：向更早的输出滚动 3 行 |
+| `app.vim.lineDown` | `j`、`down` | vim 模式：向更新的输出滚动 3 行 |
+| `app.vim.pageUp` | `pageUp`、`ctrl+u` | vim 模式：向更早的输出滚动 10 行 |
+| `app.vim.pageDown` | `pageDown`、`ctrl+d` | vim 模式：向更新的输出滚动 10 行 |
 | `app.vim.top` | `home` | vim 模式：最早的输出 |
 | `app.vim.topPrefix` | `g` | vim 模式：连按两次到最早的输出 |
 | `app.vim.bottom` | `end`、`shift+g` | vim 模式：最新的输出 |

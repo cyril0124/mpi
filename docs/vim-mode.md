@@ -3,7 +3,7 @@
 [中文文档](vim-mode.zh.md)
 
 Vim mode turns the fullscreen transcript into a modal, mouse-free reading surface: home-row
-scrolling, page jumps, and jumping between user messages with a preview panel.
+scrolling, 10-row jumps, and jumping between user messages with a preview panel.
 
 ## Requirements
 
@@ -36,8 +36,8 @@ Every key below is a configurable action: override it in `keybindings.json` unde
 | --- | --- | --- |
 | `app.vim.lineUp` | `k`, `up` | Scroll 3 rows towards older output |
 | `app.vim.lineDown` | `j`, `down` | Scroll 3 rows towards newer output |
-| `app.vim.pageUp` | `pageUp`, `ctrl+u` | Scroll one page towards older output |
-| `app.vim.pageDown` | `pageDown`, `ctrl+d` | Scroll one page towards newer output |
+| `app.vim.pageUp` | `pageUp`, `ctrl+u` | Scroll 10 rows towards older output |
+| `app.vim.pageDown` | `pageDown`, `ctrl+d` | Scroll 10 rows towards newer output |
 | `app.vim.top` | `home` | Jump to the oldest row |
 | `app.vim.topPrefix` | `g` | Press twice (`gg`) to jump to the oldest row |
 | `app.vim.bottom` | `end`, `shift+g` | Jump to the newest row and follow new output |
