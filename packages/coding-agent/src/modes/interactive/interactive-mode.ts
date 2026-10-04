@@ -920,8 +920,8 @@ export class InteractiveMode {
 	// Auto-retry state
 	private retryEscapeHandler?: () => void;
 
-	// Messages queued while compaction is running
-	private compactionQueuedMessages: CompactionQueuedMessage[] = [];
+	/** Parked compaction messages, one queue per tab. */
+	private readonly compactionQueues = new Map<string, CompactionQueuedMessage[]>();
 	/** Follow-up rounds and steer/follow-up queue bookkeeping (see core/mixcode/follow-up/). */
 	private readonly followUpStates = new Map<string, FollowUpQueueState>();
 	/** True from the moment a manual compact is requested until compaction_end. */
@@ -1059,6 +1059,7 @@ export class InteractiveMode {
 					this.homeMessageCache.delete(tabId);
 					clearHomeTabCache(tabId);
 					this.followUpStates.delete(tabId);
+					this.compactionQueues.delete(tabId);
 					this.stashedPrompts.delete(tabId);
 				},
 				// Ring the bell when a tab the user is not looking at finishes, so a
@@ -3772,7 +3773,6 @@ export class InteractiveMode {
 		this.loadedResourcesContainer.clear();
 		for (const child of cached.loaded) this.loadedResourcesContainer.addChild(child);
 		this.pendingMessagesContainer.clear();
-		this.compactionQueuedMessages = [];
 		this.pendingTools.clear();
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
@@ -4599,11 +4599,12 @@ export class InteractiveMode {
 		this.loadedResourcesContainer.clear();
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
-		this.compactionQueuedMessages = [];
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
 		this.renderInitialMessages();
+		// Clearing a transcript also clears the queue boxes above the composer.
+		this.updatePendingMessagesDisplay();
 	}
 
 	/**
@@ -8380,7 +8381,7 @@ export class InteractiveMode {
 		const compactionFollowUp = this.compactionQueuedMessages
 			.filter((msg) => msg.mode === "followUp")
 			.map((msg) => msg.text);
-		this.compactionQueuedMessages = [];
+		this.compactionQueuedMessages.length = 0;
 		return {
 			steering: [...steering, ...compactionSteering],
 			followUp: [...followUp, ...compactionFollowUp],
@@ -8429,6 +8430,20 @@ export class InteractiveMode {
 			this.followUpStates.set(key, state);
 		}
 		return state;
+	}
+
+	/**
+	 * Parked compaction messages of the active tab. Keyed by tab, so a message always
+	 * flushes into the session that queued it.
+	 */
+	private get compactionQueuedMessages(): CompactionQueuedMessage[] {
+		const key = this.followUpStateKey();
+		let queue = this.compactionQueues.get(key);
+		if (!queue) {
+			queue = [];
+			this.compactionQueues.set(key, queue);
+		}
+		return queue;
 	}
 
 	/** True when a slash/skill/template/builtin text must run host-side instead of as a model turn. */
@@ -8521,12 +8536,13 @@ export class InteractiveMode {
 	}
 
 	private async flushCompactionQueue(options?: { willRetry?: boolean }): Promise<void> {
-		if (this.compactionQueuedMessages.length === 0) {
+		// Flushing can outlive a tab switch, so hold the array this call started with.
+		const parkedQueue = this.compactionQueuedMessages;
+		if (parkedQueue.length === 0) {
 			return;
 		}
 
-		const queuedMessages = [...this.compactionQueuedMessages];
-		this.compactionQueuedMessages = [];
+		const queuedMessages = parkedQueue.splice(0, parkedQueue.length);
 		// Steer texts parked during compaction leave the preview with the flush;
 		// restoreQueue puts them back if the flush fails.
 		const parkedSteer = queuedMessages.filter((message) => message.mode === "steer").map((message) => message.text);
@@ -8540,7 +8556,7 @@ export class InteractiveMode {
 
 		const restoreQueue = (error: unknown) => {
 			this.session.clearQueue();
-			this.compactionQueuedMessages = queuedMessages;
+			parkedQueue.push(...queuedMessages);
 			this.followUpState.pendingSteer = [...parkedSteer, ...this.followUpState.pendingSteer];
 			this.updatePendingMessagesDisplay();
 			this.showError(

@@ -484,6 +484,16 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A queued steer/follow-up box stays on screen when a tab is left and re-entered. Coming back to a tab
+  whose session moved on while it was away rebuilds its transcript, and that path
+  (`renderCurrentSessionState`) cleared the pending-message container without repainting it, so the box
+  stayed hidden until the next queue change redrew it. The rebuild now refreshes the display like the
+  cached-transcript path (`restoreTranscript`) already did for a reused one.
+- A message parked while compaction runs stays with the tab it was typed in. The parked queue was a
+  single shared array and every tab switch reset it, so a message queued during compaction did not
+  survive the switch, and a flush that outlived one could have sent it into whichever tab happened to be
+  focused. The queue is keyed by tab now, like the follow-up queues; the switch leaves it alone, and the
+  flush keeps the array it started with.
 - An extension dialog (a question, a confirm, a picker, an editor takeover) belongs to the tab whose
   session opened it. It used to be a single surface on the InteractiveMode, so a background tab's
   question appeared over whichever agent the user was reading, and answering it there answered for the
