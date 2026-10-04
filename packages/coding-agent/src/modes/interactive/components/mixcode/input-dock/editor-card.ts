@@ -50,11 +50,14 @@ export function renderTopEdge(
 	const modeChunk = visibleWidth(modeLabel) > 0 ? ` ${modeLabel} ` : "";
 	const modes =
 		visibleWidth(modeChunk) + Math.min(visibleWidth(title), LABEL_ROOM_MAX) + 1 > available ? "" : modeChunk;
-	const titleBudget = available - visibleWidth(modes);
+	// The label spends two of those columns on its own spacing, so the title gets the rest.
+	const titleBudget = Math.max(0, available - visibleWidth(modes) - 2);
 	const contextText = visibleWidth(title) + visibleWidth(context) + 3 > titleBudget ? "" : context;
 	const contextChunk = contextText ? `${theme.fg("dim", " · ")}${contextText}` : "";
-	const label = ` ${truncateToWidth(title, Math.max(0, titleBudget - visibleWidth(contextChunk)))}${contextChunk} `;
-	const fill = width - 4 - visibleWidth(modes) - visibleWidth(label);
+	const labelText = `${truncateToWidth(title, Math.max(0, titleBudget - visibleWidth(contextChunk)))}${contextChunk}`;
+	// An empty label spends no columns, which leaves the edge its dashes.
+	const label = visibleWidth(labelText) > 0 ? ` ${labelText} ` : "";
+	const fill = Math.max(0, width - 4 - visibleWidth(modes) - visibleWidth(label));
 	return `${frame("╭─")}${modes}${frame("─".repeat(fill))}${label}${frame("─╮")}`;
 }
 

@@ -484,6 +484,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The input card's top edge survives a tab name wider than the edge. The title was budgeted as
+  `available - modes` and then drawn padded as ` title `, so the label overran its room by two
+  columns and the fill count went negative, which `"─".repeat(fill)` rejects: a narrow pane holding
+  a long session name killed the process before the card painted. The label's padding now comes out
+  of the same budget, an empty label spends no columns, and the fill is clamped like the bottom
+  edge's, so every edge row keeps the exact `width` the module promises.
 - A `/settings` change now reaches every open tab. Each tab owns a `SettingsManager` whose merged
   settings are read once at construction, so a row toggled in one tab moved that tab alone: a
   background tab kept running under the old value (its own image, compaction and queue policy), and
