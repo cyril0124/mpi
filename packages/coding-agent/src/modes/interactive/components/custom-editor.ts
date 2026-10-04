@@ -57,7 +57,7 @@ export class CustomEditor extends Editor {
 	 */
 	public onVimKey?: (data: string) => boolean;
 	/**
-	 * Handler for the empty-editor vim entry arm (`ctrl+u`, then `u`/`ctrl+u`).
+	 * Handler for the vim entry arm (`ctrl+u`, then `u`/`ctrl+u`).
 	 * Returns true when the key was consumed by the arm or its confirmation.
 	 */
 	public onVimEnterArmKey?: (data: string) => boolean;
@@ -148,8 +148,8 @@ export class CustomEditor extends Editor {
 			return;
 		}
 
-		// The empty-editor vim entry arm intercepts ctrl+u before the editor's
-		// delete-to-line-start binding; a non-empty editor falls through.
+		// The vim entry arm intercepts ctrl+u before the editor's
+		// delete-to-line-start binding; the host declines while a message is queued.
 		if (this.onVimEnterArmKey?.(data)) {
 			return;
 		}

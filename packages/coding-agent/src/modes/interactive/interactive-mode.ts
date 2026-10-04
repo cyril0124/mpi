@@ -5993,16 +5993,17 @@ export class InteractiveMode {
 		// Vim mode owns every key while it is active; unbound keys are swallowed so
 		// they cannot reach the editor. Tab/tool/thinking actions pass through.
 		this.defaultEditor.onVimKey = (data) => this.handleVimKeyInput(data);
-		// Empty-editor `ctrl+u` arms vim entry; `u` or another `ctrl+u` confirms it.
-		// A working session arms too, since the modal surface exists to read the
-		// arriving output. A queued message is the one thing that blocks it: `ctrl+u`
-		// edits that queue then (the dequeue keybinding), so the arm declines and the
-		// key falls through.
+		// Empty-queue `ctrl+u` arms vim entry; `u` or another `ctrl+u` confirms it.
+		// A draft in the composer and a working session leave the arm open; a queued
+		// message blocks it, because `ctrl+u` edits that queue (the dequeue
+		// keybinding), so the arm declines and the key falls through.
 		this.defaultEditor.onVimEnterArmKey = (data) => {
 			const state = this.vimTabState();
 			if (state.active) return false;
 			const canArm =
-				this.editorText().length === 0 && this.compactionQueuedMessages.length === 0 && !this.hasQueuedMessages();
+				this.compactionQueuedMessages.length === 0 &&
+				!this.hasQueuedMessages() &&
+				!isShowingAutocomplete(this.editor);
 			const result = handleVimEnterArmKey(state, data, this.createVimHost(), canArm, Date.now());
 			if (result.entered) this.refreshVimChrome();
 			return result.consumed;

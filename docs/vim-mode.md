@@ -17,12 +17,12 @@ regular in `/settings` → `tuiMode`, or set `"tuiMode": "regular"` in the setti
 | Entry | How |
 | --- | --- |
 | Command | `/vim` |
-| Keyboard | With an empty editor and no queued message (the session may be working): `ctrl+u`, then `u` or `ctrl+u` within one second |
+| Keyboard | With no queued message, whatever the composer holds (the session may be working): `ctrl+u`, then `u` or `ctrl+u` within one second |
 | Exit | `q` |
 
-The keyboard entry arms a one-second window; any other key cancels it. Arming needs an empty editor and no
-queued message; the session may be working, which is when reading the arriving output matters most. Otherwise
-`ctrl+u` is left to its other bindings (with a queued message it edits that queue).
+The keyboard entry arms a one-second window; any other key cancels it. Arming needs no queued message, so a
+draft in the composer does not block it; the session may be working, which is when reading the arriving output
+matters most. Otherwise `ctrl+u` is left to its other bindings (with a queued message it edits that queue).
 
 While vim mode is on the editor is locked: it renders with the accent frame, ignores typing, and
 refuses to submit. Extension widgets above and below the editor are not rendered, so their rows go
@@ -44,7 +44,7 @@ Every key below is a configurable action: override it in `keybindings.json` unde
 | `app.vim.nextUserMessage` | `right` | Jump to the next user message, or past the last one to the newest output; paints the user-message panel |
 | `app.vim.previousUserMessage` | `shift+right` | Jump to the previous user message; paints the user-message panel |
 | `app.vim.exit` | `q` | Leave vim mode |
-| `app.vim.enter` | `ctrl+u` | Arm keyboard entry from an empty editor |
+| `app.vim.enter` | `ctrl+u` | Arm keyboard entry while no message is queued |
 | `app.vim.enterConfirm` | `u` | Confirm the armed keyboard entry |
 
 Vim mode is modal: any key that is not one of the above is swallowed so it cannot reach the editor.

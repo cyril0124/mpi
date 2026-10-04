@@ -350,7 +350,7 @@ export const KEYBINDINGS = {
 	},
 	"app.vim.enter": {
 		defaultKeys: "ctrl+u",
-		description: "Vim mode: arm entry from an empty editor",
+		description: "Vim mode: arm entry while no message is queued",
 	},
 	"app.vim.enterConfirm": {
 		defaultKeys: "u",

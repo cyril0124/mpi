@@ -482,6 +482,11 @@ point `## [Unreleased]` at the new tag.
   upstream code and let a merge overwrite the fork's behavior there.
 - `docs/windowed-transcript.md` no longer claims plain `End` reaches the transcript bottom:
   `tui.altScreen.bottom` carries no default key, so only vim mode's `G` / `End` do.
+- The vim-entry chord (`ctrl+u`, then `u` or `ctrl+u`) works while the composer holds a draft. The arm
+  required an empty editor, so a written-but-unsent prompt, the moment the modal surface is most
+  useful, answered `ctrl+u` with `No queued messages to restore`. The arm now matches mixcode's
+  `src/ui/app-input.ts` and depends only on the queues: a queued message still takes `ctrl+u` first,
+  and an open autocomplete popup still keeps it.
 - An unread badge no longer returns after the tab is focused. Focusing cleared `unread` in memory
   only, so the persisted `unseen_done` kept the session and the periodic peer layout poll restored the
   badge from disk a moment later. Focusing a tab now persists the cleared badge through the tab

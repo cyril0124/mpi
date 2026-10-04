@@ -30,7 +30,7 @@ id。本页说明 fork 重新绑定了什么、新增了哪些 id、composer 按
 | --- | --- | --- | --- |
 | `app.thinking.cycle` | `shift+tab` | `alt+t` | `shift+tab` 用于切换 agent 标签页 |
 | `app.model.cycleForward` | `ctrl+p` | 无 | `ctrl+p` 打开命令面板 |
-| `app.message.dequeue` | `alt+up`（Windows 与 WSL 为 `alt+q`） | `ctrl+u` | 该动作改为编辑单个队列而不是还原每一条，`ctrl+u` 与这个工作流相配；有排队消息或输入框有草稿时，该键先于 vim 入口被占用 |
+| `app.message.dequeue` | `alt+up`（Windows 与 WSL 为 `alt+q`） | `ctrl+u` | 该动作改为编辑单个队列而不是还原每一条，`ctrl+u` 与这个工作流相配；有排队消息时，该键先于 vim 入口被占用 |
 | `tui.altScreen.top` | `home` | 无 | 平凡的 `home`/`end` 留给聚焦的编辑器；vim 模式的 `app.vim.top`/`app.vim.bottom` 仍能到达对话区两端 |
 | `tui.altScreen.bottom` | `end` | 无 | 同上 |
 
@@ -69,7 +69,7 @@ id。本页说明 fork 重新绑定了什么、新增了哪些 id、composer 按
 | `app.queueEdit.steer` | `s`、`shift+s` | 已武装的队列选择：把排队的消息改为 steer |
 | `app.queueEdit.followUp` | `f`、`shift+f` | 已武装的队列选择：仍作为 follow-up |
 | `app.queueEdit.cancel` | `escape` | 已武装的队列选择：取消 |
-| `app.vim.enter` | `ctrl+u` | vim 模式：输入框为空时武装进入 —— 见 [Vim 模式](vim-mode.zh.md) |
+| `app.vim.enter` | `ctrl+u` | vim 模式：无排队消息时武装进入（输入框有草稿也可以）—— 见 [Vim 模式](vim-mode.zh.md) |
 | `app.vim.enterConfirm` | `u` | vim 模式：武装后确认进入 |
 | `app.vim.exit` | `q` | vim 模式：离开模态对话区 |
 | `app.vim.lineUp` | `k`、`up` | vim 模式：向更早的输出滚动 |
@@ -98,7 +98,7 @@ id。本页说明 fork 重新绑定了什么、新增了哪些 id、composer 按
   ├─ vim 模式处于活动？ ─────► vim 模式独占，但放行六个动作（标签页、
   │                            Tab Jump、工具展开、thinking 开关、退出）；
   │                            其余被吞掉
-  ├─ 空输入框 + ctrl+u？ ────► 武装 vim 入口（有排队消息时拒绝）
+  ├─ 队列为空 + ctrl+u？ ────► 武装 vim 入口（有排队消息时拒绝）
   ├─ 空输入框 + right？ ─────► 挂件侧栏
   ├─ 队列选择已武装？ ───────► s / f / escape
   ├─ 扩展快捷键？ ───────────► 扩展的处理器

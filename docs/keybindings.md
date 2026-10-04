@@ -32,7 +32,7 @@ Overrides live in `<agentDir>/keybindings.json`, that is `~/.pi/agent/keybinding
 | --- | --- | --- | --- |
 | `app.thinking.cycle` | `shift+tab` | `alt+t` | `shift+tab` switches agent tabs |
 | `app.model.cycleForward` | `ctrl+p` | none | `ctrl+p` opens the command palette |
-| `app.message.dequeue` | `alt+up` (`alt+q` on Windows and WSL) | `ctrl+u` | the action edits one queue instead of restoring every entry, and `ctrl+u` matches that workflow; a queued message or a non-empty draft takes the key before the vim-entry arm |
+| `app.message.dequeue` | `alt+up` (`alt+q` on Windows and WSL) | `ctrl+u` | the action edits one queue instead of restoring every entry, and `ctrl+u` matches that workflow; a queued message takes the key before the vim-entry arm |
 | `tui.altScreen.top` | `home` | none | plain `home`/`end` stay with the focused editor; vim mode's `app.vim.top`/`app.vim.bottom` still reach the transcript ends |
 | `tui.altScreen.bottom` | `end` | none | same |
 
@@ -71,7 +71,7 @@ Context-scoped, so a key may appear once per surface.
 | `app.queueEdit.steer` | `s`, `shift+s` | armed queue choice: steer the queued message |
 | `app.queueEdit.followUp` | `f`, `shift+f` | armed queue choice: keep it as a follow-up |
 | `app.queueEdit.cancel` | `escape` | armed queue choice: cancel |
-| `app.vim.enter` | `ctrl+u` | vim mode: arm entry from an empty editor — see [Vim Mode](vim-mode.md) |
+| `app.vim.enter` | `ctrl+u` | vim mode: arm entry while no message is queued, whatever the composer holds — see [Vim Mode](vim-mode.md) |
 | `app.vim.enterConfirm` | `u` | vim mode: confirm entry while armed |
 | `app.vim.exit` | `q` | vim mode: leave the modal transcript |
 | `app.vim.lineUp` | `k`, `up` | vim mode: scroll towards older output |
@@ -101,8 +101,7 @@ key from the terminal
   ├─ vim mode active? ────────► vim mode owns it, except six passthrough
   │                             actions (tabs, Tab Jump, tools, thinking
   │                             toggle, quit); the rest is swallowed
-  ├─ empty editor, ctrl+u? ───► arms vim entry (declined while a message
-  │                             is queued)
+  ├─ empty queue, ctrl+u? ────► arms vim entry (a queued message declines it)
   ├─ empty composer, right? ──► widget side panel
   ├─ queue choice armed? ─────► s / f / escape
   ├─ extension shortcut? ─────► the extension's handler

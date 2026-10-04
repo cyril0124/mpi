@@ -9,7 +9,7 @@
 import type { AppKeybinding, KeybindingsManager } from "../../keybindings.ts";
 import type { ToastType } from "../toast/toast.ts";
 
-/** How long an empty-editor `ctrl+u` keeps the vim-entry confirmation open. */
+/** How long an empty-queue `ctrl+u` keeps the vim-entry confirmation open. */
 export const VIM_ENTER_ARM_WINDOW_MS = 1_000;
 /** Rows moved by one `j` / `k` press. */
 export const VIM_LINE_SCROLL_ROWS = 3;
@@ -19,7 +19,7 @@ export interface VimTabState {
 	active: boolean;
 	/** `g` was pressed once; a second `g` jumps to the oldest row. */
 	topArmed: boolean;
-	/** `Date.now()` when an empty-editor `ctrl+u` armed entry. */
+	/** `Date.now()` when an empty-queue `ctrl+u` armed entry. */
 	enterArmedAt: number | undefined;
 	/**
 	 * Index of the user message the viewport last jumped to. `undefined` is the
@@ -200,7 +200,7 @@ export function exitVimMode(state: VimTabState): void {
 	resetVimTabState(state);
 }
 
-/** Outcome of one key while the empty-editor vim entry can be armed. */
+/** Outcome of one key while the empty-queue vim entry can be armed. */
 export interface VimEnterArmResult {
 	/** The key armed the window and is waiting for a confirmation key. */
 	armed: boolean;
@@ -211,8 +211,8 @@ export interface VimEnterArmResult {
 }
 
 /**
- * Empty-editor `ctrl+u` arms vim entry; `u` or another `ctrl+u` inside the
- * window enters it.
+ * Empty-queue `ctrl+u` arms vim entry; `u` or another `ctrl+u` inside the window
+ * enters it. A draft in the composer does not affect the arm.
  */
 export function handleVimEnterArmKey(
 	state: VimTabState,
