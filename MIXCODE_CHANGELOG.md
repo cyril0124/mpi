@@ -484,6 +484,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- App-level shortcuts answer while an extension dialog owns the keyboard. A dialog an extension opens
+  as a capturing overlay takes focus from the composer, so every action bound with
+  `defaultEditor.onAction` went dead for as long as it waited: `tab`/`shift+tab` no longer switched
+  agent tabs and `ctrl+q` no longer asked to quit. Those chrome actions (tab cycling and jump, tab
+  open/close, palette, quit) are now also answered from a raw input listener while the focused
+  overlay belongs to an extension; the fork's own overlays and editor-slot selectors keep their keys,
+  and a dialog keeps its own arrow-key navigation, since `tab` means "switch agent tabs" on every
+  surface.
 - A steer box no longer keeps showing a steer that another tab already sent. The host mirror behind
   the box (`followUpState.pendingSteer`) is written only by `queue_update`, and the mode subscribes to
   the active tab's session alone: a tab that was backgrounded while its steer drained never saw the

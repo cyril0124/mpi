@@ -949,6 +949,8 @@ export class InteractiveMode {
 		handler: (data: string) => { consume?: boolean; data?: string } | undefined;
 		unsubscribe: () => void;
 	}>();
+	/** Listener that answers the app's chrome shortcuts above a focused extension dialog. */
+	private extensionDialogShortcutUnsubscribe?: () => void;
 
 	// Extension widgets (components rendered above/below the editor)
 	private extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
@@ -1394,6 +1396,7 @@ export class InteractiveMode {
 		nextUi.start();
 		this.themeController.rebindTui();
 		this.rebindExtensionTerminalInputListeners();
+		this.registerExtensionDialogShortcutListener();
 		if (
 			restoreProgress &&
 			this.settingsManager.getShowTerminalProgress() &&
@@ -3030,6 +3033,36 @@ export class InteractiveMode {
 	private handleTabCycle(delta: number): boolean {
 		if (!this.zenHidesTabBar()) this.cycleTab(delta);
 		return true;
+	}
+
+	/**
+	 * Answer the app's chrome shortcuts while an extension dialog owns the keyboard. A dialog
+	 * an extension opens as a capturing overlay takes focus from the composer, so every action
+	 * bound with `defaultEditor.onAction` goes dead until it closes. Tab is answered here even
+	 * though a dialog may want it: Tab switches agent tabs on every surface in this fork, and a
+	 * dialog keeps its arrow keys for its own navigation.
+	 */
+	private handleExtensionDialogShortcut(data: string): { consume: boolean } | undefined {
+		if (!this.hasFocusedExtensionOverlay()) return undefined;
+		if (this.keybindings.matches(data, "app.tab.next")) this.handleTabCycle(1);
+		else if (this.keybindings.matches(data, "app.tab.previous")) this.handleTabCycle(-1);
+		else if (this.keybindings.matches(data, "app.tab.jump")) this.handleTabJumpShortcut();
+		else if (this.keybindings.matches(data, "app.tab.new")) void this.handleNewTab();
+		else if (this.keybindings.matches(data, "app.tab.close")) void this.handleCloseTab();
+		else if (this.keybindings.matches(data, "app.palette")) this.handlePaletteShortcut();
+		else if (this.keybindings.matches(data, "app.quit")) this.showQuitConfirm();
+		else return undefined;
+		return { consume: true };
+	}
+
+	/** Whether an extension dialog opened as an overlay currently owns the keyboard. */
+	private hasFocusedExtensionOverlay(): boolean {
+		for (const interactions of this.tabInteractions.values()) {
+			for (const interaction of interactions) {
+				if (interaction.overlay?.handle.isFocused()) return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -5323,6 +5356,19 @@ export class InteractiveMode {
 		}
 	}
 
+	/**
+	 * Route the app's chrome shortcuts to the renderer now in use. The reference `this.ui`
+	 * forwards every call to the current renderer, so a TUI-mode switch leaves the listener on
+	 * the stopped renderer and the new one needs its own; dropping the previous one keeps a
+	 * second registration from answering every key twice.
+	 */
+	private registerExtensionDialogShortcutListener(): void {
+		this.extensionDialogShortcutUnsubscribe?.();
+		this.extensionDialogShortcutUnsubscribe = this.ui.addInputListener((data) =>
+			this.handleExtensionDialogShortcut(data),
+		);
+	}
+
 	private clearExtensionTerminalInputListeners(): void {
 		for (const subscription of this.extensionTerminalInputSubscriptions) subscription.unsubscribe();
 		this.extensionTerminalInputSubscriptions.clear();
@@ -6301,6 +6347,10 @@ export class InteractiveMode {
 		this.defaultEditor.onPasteImage = () => {
 			void this.handleClipboardPaste();
 		};
+
+		// The app-chrome shortcuts above live on the editor, which a focused extension dialog
+		// replaces; this listener keeps them answering while such a dialog is up.
+		this.registerExtensionDialogShortcutListener();
 	}
 
 	private async handleRightClickPaste(): Promise<void> {
@@ -8746,10 +8796,12 @@ export class InteractiveMode {
 	}
 
 	private showTabJump(): void {
-		// Something already owns the keyboard: a capturing overlay, or a selector in the
-		// editor slot (tree, model, resume). Opening over either would stack two surfaces and
-		// leave the first one's close path unrun.
-		if (!this.tabManager || this.ui.hasCapturingOverlay() || this.activeSelectorToken !== undefined) return;
+		// A selector in the editor slot (tree, model, resume) or an overlay of this fork already
+		// owns the keyboard, and opening over either would leave its close path unrun. An
+		// extension dialog is different: the overlay stack hands it back its focus when Tab Jump
+		// closes.
+		if (!this.tabManager || this.activeSelectorToken !== undefined) return;
+		if (this.ui.hasCapturingOverlay() && !this.hasFocusedExtensionOverlay()) return;
 		const model = this.getTabBarModel();
 
 		const maxVisibleRows = Math.max(
@@ -11261,6 +11313,8 @@ export class InteractiveMode {
 		this.clearStatusIndicator();
 		this.themeController.disableAutoSync();
 		this.clearExtensionTerminalInputListeners();
+		this.extensionDialogShortcutUnsubscribe?.();
+		this.extensionDialogShortcutUnsubscribe = undefined;
 		this.footer.dispose();
 		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {
