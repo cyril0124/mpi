@@ -1625,7 +1625,7 @@ export class InteractiveMode {
 		this.ui.renderNow();
 		void loadAllHighlightLanguages().then(() => {
 			if (!this.isInitialized) return;
-			this.ui.invalidate();
+			this.flushTranscriptRenderCaches();
 			this.ui.requestRender();
 		});
 	}
@@ -7423,6 +7423,28 @@ export class InteractiveMode {
 	private rebuildChatFromMessages(): void {
 		this.chatContainer.clear();
 		this.renderSessionEntries(this.sessionManager.buildContextEntries());
+	}
+
+	/**
+	 * Drop the rendered rows under the chat and under every parked transcript.
+	 *
+	 * Invalidation on its own stops short of them: a message block keeps its children's rows unless the
+	 * theme changed, and the fullscreen layout mounts the windowed transcript, which does not forward
+	 * invalidation into its blocks. This walks every descendant instead, so the rows a transcript painted
+	 * before the deferred syntax grammars registered are rebuilt on the next render.
+	 */
+	private flushTranscriptRenderCaches(): void {
+		const flush = (component: Component): void => {
+			component.invalidate?.();
+			if (component instanceof Container) {
+				for (const child of component.children) flush(child);
+			}
+		};
+		flush(this.chatContainer);
+		for (const parkedTranscript of this.tabTranscript.values()) {
+			for (const block of parkedTranscript.chat) flush(block);
+			for (const block of parkedTranscript.loaded) flush(block);
+		}
 	}
 
 	// =========================================================================

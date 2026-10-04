@@ -474,6 +474,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Reopened sessions highlight code in the conversation again. Rows painted during startup were held in
+  render caches while the deferred syntax grammars were still registering, and no plain invalidation
+  reached them: a message block keeps its children's rows unless the theme changed, and the fullscreen
+  layout mounts the windowed transcript, which does not forward invalidation into its blocks. Code fences
+  in a deferred language, `diff` included, stayed in the plain code-block color until `/reload` rebuilt
+  the chat; the grammar load now drops those rows in the chat and in every parked transcript.
 - `docs/upstream-drift.md`'s "Upstream files modified by this fork" list names five more files the
   fork edits: `packages/coding-agent/src/config.ts`,
   `packages/coding-agent/src/modes/interactive/components/extension-selector.ts`,
