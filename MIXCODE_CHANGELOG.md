@@ -484,6 +484,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A follow-up command queued on a tab (`alt+enter` with a local command while it streams, or
+  `/follow-up <command>`) now runs on that tab. The round executes through the shared composer, so a
+  round whose tab was not in front ran against whichever tab was focused when it settled, and the
+  command text entered that tab's `up` history: the queued tab's command showed up as another tab's
+  recalled prompt. The drain now mounts the owning tab through the serialized switch path first,
+  which is how Home's action buttons and `/batch` reach the tab they act on.
 - An extension's terminal-input listener survives a tab switch. `ctx.ui.onTerminalInput` listeners
   were cleared from the shared renderer whenever a tab was detached (`detachTabUi`) and never put
   back, so an extension that hides an overlay on collapse and reopens it from that listener could

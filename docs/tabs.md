@@ -217,6 +217,11 @@ another tab's turn is in flight. Only a session without tabs routes through the 
 loop and its shared queue; that loop drains to whatever is focused when it unblocks, which is the
 wrong tab in a multi-tab instance.
 
+A queued local command (`alt+enter` with a local command, or `/follow-up <command>`) runs through the
+shared composer, so its round mounts the tab that queued it before it executes: the round never acts
+on, or enters the `up` history of, the tab that happened to be in front. `/batch` and Home's action
+buttons mount the tab they act on the same way.
+
 Two instances sharing the same workdir poll `open_tabs.json` every 2 seconds. Opening, closing,
 reordering, and replacing a session publish changes relative to the last local layout, so an
 instance that has not yet seen a peer's tab does not erase it. Peer changes run through the same

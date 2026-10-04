@@ -8500,6 +8500,12 @@ export class InteractiveMode {
 			promptTurn: (text, preflightResult) =>
 				runInTabConsole(owningTab(), () => owningSession().prompt(text, { preflightResult })),
 			runQueuedCommand: async (text) => {
+				// A command runs through the shared composer, so its owning tab has to be the
+				// tab in front: a background round would otherwise enter the focused tab's
+				// `up` history and act on that tab. Home's action buttons and `/batch`
+				// mount the tab they act on the same way.
+				const tab = owningTab();
+				if (tab && this.activeTabIdForUi !== tab.id) await this.activateTab(tab);
 				await this.defaultEditor.onSubmit?.(text);
 			},
 			isQueuedCommandText: (text) => this.isQueuedFollowUpCommand(text),
