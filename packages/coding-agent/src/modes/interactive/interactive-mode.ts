@@ -9357,6 +9357,23 @@ export class InteractiveMode {
 			return;
 		}
 
+		// With tabs, a clone is a sibling tab: the source keeps its session and stays open.
+		const sourceTab = this.tabManager?.getActive();
+		if (this.tabManager && sourceTab) {
+			try {
+				const result = await this.tabManager.cloneTab(sourceTab.id);
+				const tab = result.tab;
+				if (tab) {
+					await this.enqueueTabSwitch(() => this.switchActiveTab(tab));
+					this.showStatus("Cloned to new tab");
+				}
+				this.ui.requestRender();
+			} catch (error: unknown) {
+				this.showError(error instanceof Error ? error.message : String(error));
+			}
+			return;
+		}
+
 		try {
 			const result = await this.runtimeHost.fork(leafId, { position: "at" });
 			if (result.cancelled) {

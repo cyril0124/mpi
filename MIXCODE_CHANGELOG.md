@@ -340,11 +340,13 @@ point `## [Unreleased]` at the new tag.
   in-app block), and both estimate tokens at ~4 characters per token with one token per CJK character.
 ### Changed
 
+- `/clone` opens the current branch in a new tab titled `<current title>-cloned` and focuses it,
+  instead of replacing the active tab's session with a branched copy. The source tab keeps its
+  session file and stays open, so both tabs continue from the same conversation independently, as
+  `/fork` already does. The branch point is the source's leaf, so the clone carries the whole
+  conversation rather than rewinding to a user message. Without a tab manager `/clone` keeps the
+  upstream behavior. See [Tabs](docs/tabs.md#commands).
 - The fork no longer patches `packages/coding-agent/docs/keybindings.md` for the fullscreen
-  `tui.altScreen.top` / `tui.altScreen.bottom` defaults: the page is byte-identical to upstream, and
-  the divergence (both actions keep no default, so `home` / `end` reach the focused editor) is
-  recorded in `docs/upstream-drift.md` instead; `packages/tui/src/keybindings.ts` keeps its fork
-  default, only the upstream page stopped carrying it.
 - The CLI presents itself as `mpi`: `piConfig.name` in `packages/coding-agent/package.json` is
   `mpi`, so `--help`, the package-command help, the terminal title and runtime messages name the
   tool `mpi`. `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are pinned to their upstream `PI_CODING_AGENT_DIR` /

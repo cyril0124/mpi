@@ -10,7 +10,7 @@
  */
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
-import type { AgentSessionEvent } from "../../agent-session.ts";
+import type { AgentSession, AgentSessionEvent } from "../../agent-session.ts";
 import {
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
@@ -214,11 +214,7 @@ export class TabManager {
 		const sourceTab = this.get(sourceId);
 		if (!sourceTab) throw new Error(`Unknown tab: ${sourceId}`);
 		const sourceSession = sourceTab.runtime.session;
-		const runner = sourceSession.extensionRunner;
-		if (runner.hasHandlers("session_before_fork")) {
-			const result = await runner.emit({ type: "session_before_fork", entryId, position: "before" });
-			if (result?.cancel) return { cancelled: true };
-		}
+		if (await this.branchVetoed(sourceSession, entryId, "before")) return { cancelled: true };
 
 		const sourceManager = sourceSession.sessionManager;
 		const selectedEntry = sourceManager.getEntry(entryId);
@@ -259,33 +255,96 @@ export class TabManager {
 			sessionManager.createBranchedSession(selectedEntry.parentId);
 		}
 
-		const forkSessionFile = sessionManager.getSessionFile();
-		let runtime: AgentSessionRuntime;
-		try {
-			runtime = await createAgentSessionRuntime(this.createRuntime, {
-				cwd,
-				agentDir: this.agentDir,
-				sessionManager,
-				sessionStartEvent: { type: "session_start", reason: "fork", previousSessionFile: sourceFile },
-			});
-		} catch (error) {
-			if (forkSessionFile) {
-				try {
-					await unlink(forkSessionFile);
-				} catch (cleanupError) {
-					if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") {
-						throw new AggregateError([error, cleanupError], "Fork startup and session cleanup failed");
-					}
-				}
-			}
-			throw error;
-		}
+		const runtime = await this.createBranchedRuntime(sessionManager, cwd, sourceFile);
 
 		const title = this.resolveTabTitle(`${sourceTab.title}-fork`);
 		runtime.session.setSessionName(title);
 		const tab = this.addRuntime(runtime, title, sourceTab.id);
 		tab.draftInput = selectedText;
 		return { cancelled: false, tab, selectedText };
+	}
+
+	/**
+	 * Copy the source tab's current position into an independent tab titled
+	 * `<source>-cloned`, leaving the source tab and its session file untouched.
+	 *
+	 * The branch point is the source's leaf, so the clone keeps the whole conversation;
+	 * `forkTab` rewinds to a user message instead. A branch that holds no assistant
+	 * message yet gets its file on the clone's first assistant response.
+	 */
+	async cloneTab(sourceId: string): Promise<{ cancelled: boolean; tab?: AgentTab }> {
+		const sourceTab = this.get(sourceId);
+		if (!sourceTab) throw new Error(`Unknown tab: ${sourceId}`);
+		const sourceSession = sourceTab.runtime.session;
+		const sourceManager = sourceSession.sessionManager;
+		const leafId = sourceManager.getLeafId();
+		if (!leafId) throw new Error("Nothing to clone yet");
+		if (await this.branchVetoed(sourceSession, leafId, "at")) return { cancelled: true };
+
+		const sourceFile = sourceManager.getSessionFile();
+		const cwd = sourceManager.getCwd();
+		let sessionManager: SessionManager;
+		if (sourceManager.isPersisted()) {
+			if (!sourceFile || !existsSync(sourceFile)) {
+				throw new Error(
+					"This session has not been saved yet. Wait for the first assistant response before cloning it.",
+				);
+			}
+			// A manager of its own, so branching rewrites the clone's file and not the source's.
+			sessionManager = SessionManager.open(sourceFile, sourceManager.getSessionDir());
+		} else {
+			const header = sourceManager.getHeader();
+			if (!header) throw new Error("Session is missing its header");
+			sessionManager = SessionManager.inMemory(cwd, undefined, [header, ...sourceManager.getEntries()]);
+		}
+		sessionManager.createBranchedSession(leafId);
+
+		const runtime = await this.createBranchedRuntime(sessionManager, cwd, sourceFile);
+		const title = this.resolveTabTitle(`${sourceTab.title}-cloned`);
+		runtime.session.setSessionName(title);
+		return { cancelled: false, tab: this.addRuntime(runtime, title, sourceTab.id) };
+	}
+
+	/**
+	 * True when an extension vetoes a branch from `entryId`. Both `forkTab` and `cloneTab`
+	 * ask before they touch the session, so the veto arrives before any file is written.
+	 */
+	private async branchVetoed(session: AgentSession, entryId: string, position: "before" | "at"): Promise<boolean> {
+		const runner = session.extensionRunner;
+		if (!runner.hasHandlers("session_before_fork")) return false;
+		const result = await runner.emit({ type: "session_before_fork", entryId, position });
+		return result?.cancel === true;
+	}
+
+	/**
+	 * Runtime for a tab branched off `sessionManager`. Startup failure removes the
+	 * half-written session file, so a failed fork or clone leaves no orphan behind.
+	 */
+	private async createBranchedRuntime(
+		sessionManager: SessionManager,
+		cwd: string,
+		previousSessionFile: string | undefined,
+	): Promise<AgentSessionRuntime> {
+		const branchedSessionFile = sessionManager.getSessionFile();
+		try {
+			return await createAgentSessionRuntime(this.createRuntime, {
+				cwd,
+				agentDir: this.agentDir,
+				sessionManager,
+				sessionStartEvent: { type: "session_start", reason: "fork", previousSessionFile },
+			});
+		} catch (error) {
+			if (branchedSessionFile) {
+				try {
+					await unlink(branchedSessionFile);
+				} catch (cleanupError) {
+					if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") {
+						throw new AggregateError([error, cleanupError], "Session startup and cleanup failed");
+					}
+				}
+			}
+			throw error;
+		}
 	}
 
 	/**

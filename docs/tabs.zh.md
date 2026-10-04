@@ -23,6 +23,7 @@
 | 命令 | 行为 |
 | --- | --- |
 | `/new-session [--focus\|--no-focus] [title]` | 新建标签页，可选标题。默认聚焦新标签页，`--no-focus` 保持当前标签页聚焦。参数非法时报 `Usage: /new-session [--focus\|--no-focus] [title]`。 |
+| `/clone` | 把当前分支复制成一个新标签页，标题为 `<当前标题>-cloned`，并聚焦新标签页。原标签页保留会话文件并保持打开，之后两个标签页各自改动互不影响。 |
 | `/close-session [yes]` | 关闭当前标签页，保留会话文件。`yes` 跳过确认。 |
 | `/close-all-sessions` | 关闭除当前标签页外的所有标签页，需确认。 |
 | `/delete-session [yes]` | 关闭当前标签页并把会话文件移入回收站，可用 `/resume-trash` 还原。`yes` 跳过确认。 |

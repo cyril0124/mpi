@@ -30,6 +30,7 @@ start-up instructions do not name the toggle, and `/hotkeys` reports it with a n
 | Command | Behavior |
 | --- | --- |
 | `/new-session [--focus\|--no-focus] [title]` | Open a tab with an optional title. Focuses the new tab unless `--no-focus` is given. An invalid argument reports `Usage: /new-session [--focus\|--no-focus] [title]`. |
+| `/clone` | Copy the active branch into a new tab titled `<current title>-cloned`, and focus the new tab. The source tab keeps its session file and stays open, so the two tabs continue from the same conversation independently. |
 | `/close-session [yes]` | Close the current tab, keeping its session file. `yes` skips the confirmation. |
 | `/close-all-sessions` | Close every tab except the current one, after confirmation. |
 | `/delete-session [yes]` | Close the current tab and move its session file to the trash, where `/resume-trash` can restore it. `yes` skips the confirmation. |
