@@ -1,12 +1,13 @@
 /**
- * New-tab, close-tab, and delete-tab commands, plus the rebind and invalidate
- * callbacks the host attaches to each runtime.
+ * New-tab, resume-into-tab, close-tab, and delete-tab commands, plus the rebind
+ * and invalidate callbacks the host attaches to each runtime.
  *
  * A membership change runs inside SharedTabLayout.transaction() so the shared
  * layout publishes one reconciled snapshot per command.
  */
 
 import type { AgentSessionRuntime } from "../../../../core/agent-session-runtime.ts";
+import type { ProjectTrustContext } from "../../../../core/extensions/index.ts";
 import type { SharedTabLayout } from "../../../../core/mixcode/multi-tab/shared-tab-layout.ts";
 import {
 	type AgentTab,
@@ -15,6 +16,7 @@ import {
 	tabBusyReason,
 } from "../../../../core/mixcode/multi-tab/tab-manager.ts";
 import { deleteSessionFile } from "../../../../core/mixcode/session-delete.ts";
+import { MissingSessionCwdError } from "../../../../core/session-cwd.ts";
 
 /** Roll up a deleteSessionFile result as a tally entry. */
 function deleteOutcome(result: { ok: boolean; removed: boolean; error?: string }): {
@@ -88,6 +90,96 @@ export async function handleNewTab(host: TabLifecycleHost, title: string | undef
 		return;
 	}
 	await host.enqueueTabSwitch(() => host.switchActiveTab(tab));
+}
+
+/** Host surface the resume-into-tab command needs on top of the tab lifecycle one. */
+export interface ResumeTabHost extends TabLifecycleHost {
+	/** Ask before opening a session whose recorded cwd is gone; undefined cancels. */
+	promptMissingSessionCwd(error: MissingSessionCwdError): Promise<string | undefined>;
+	/** Trust decision context for a cwd the opened session brings with it. */
+	projectTrustContext(cwd: string): ProjectTrustContext;
+}
+
+/**
+ * Open `sessionPath` in a tab of its own. Publishes the new session id through
+ * SharedTabLayout.transaction() so peers learn about it without a separate
+ * incremental write, the way handleNewTab does.
+ *
+ * A session whose recorded directory is gone is opened only after the host has
+ * offered a cwd to open it in. Reports its own failure and returns undefined when
+ * the open failed or the offer was declined.
+ */
+async function openResumedSessionTab(
+	host: ResumeTabHost,
+	tabManager: TabManager,
+	sessionPath: string,
+): Promise<{ tab: AgentTab; usedCurrentCwd: boolean } | undefined> {
+	let openedTab: AgentTab | undefined;
+	const open = async (workdir?: string): Promise<void> => {
+		openedTab = await tabManager.openSessionTab(sessionPath, {
+			workdir,
+			projectTrustContextFactory: (cwd) => host.projectTrustContext(cwd),
+		});
+	};
+	const openAndPublish = async (workdir?: string): Promise<void> => {
+		await (host.sharedTabLayout?.transaction(() => open(workdir)) ?? open(workdir));
+	};
+	const failureMessage = (error: unknown): string =>
+		`Failed to resume session: ${error instanceof Error ? error.message : String(error)}`;
+
+	try {
+		await openAndPublish();
+	} catch (error) {
+		if (!(error instanceof MissingSessionCwdError)) {
+			host.showError(failureMessage(error));
+			return undefined;
+		}
+		// The session's own directory is gone: ask for the cwd to open it in instead.
+		const selectedCwd = await host.promptMissingSessionCwd(error);
+		if (!selectedCwd) {
+			host.showStatus("Resume cancelled");
+			return undefined;
+		}
+		try {
+			await openAndPublish(selectedCwd);
+		} catch (retryError) {
+			host.showError(failureMessage(retryError));
+			return undefined;
+		}
+		return openedTab ? { tab: openedTab, usedCurrentCwd: true } : undefined;
+	}
+	return openedTab ? { tab: openedTab, usedCurrentCwd: false } : undefined;
+}
+
+/**
+ * Open an existing session file in a tab of its own, leaving the focused tab on
+ * its session; the `/resume` and `/resume-trash` selectors go through it.
+ *
+ * A session that is already open is focused instead of opened twice: two runtimes
+ * on one session file would append to it concurrently.
+ */
+export async function handleResumeIntoTab(host: ResumeTabHost, sessionPath: string): Promise<void> {
+	const { tabManager } = host;
+	if (!tabManager) return;
+
+	// The composer text belongs to the tab it was typed in, and both branches below
+	// move focus to another tab, the same handover handleNewTab does.
+	tabManager.setDraft(tabManager.getActive().id, host.editorText());
+
+	const open = tabManager.list().find((tab) => tab.runtime.session.sessionFile === sessionPath);
+	if (open) {
+		// Focus moves in the manager first, the way activateTab does it, so the tab bar
+		// and every command that follows the manager's focus agree with the switch.
+		tabManager.activate(open.id);
+		await host.enqueueTabSwitch(() => host.switchActiveTab(open));
+		host.showStatus(`Session is already open in tab "${open.title}".`);
+		return;
+	}
+
+	const opened = await openResumedSessionTab(host, tabManager, sessionPath);
+	if (!opened) return;
+	await host.enqueueTabSwitch(() => host.switchActiveTab(opened.tab));
+	host.showStatus(opened.usedCurrentCwd ? "Resumed session in current cwd" : "Resumed session");
 }
 
 /**
@@ -199,7 +291,7 @@ export async function handleDeleteTabs(
 /**
  * Attach the host rebind and invalidate callbacks to a runtime, whether it is the
  * initial one or a tab created later. After a rebind the layout is published, so
- * the shared set follows a session that `/clear` or `/resume` replaced.
+ * the shared set follows a session that `/clear` or `/workdir` replaced.
  */
 export function bindRuntimeCallbacks(host: RuntimeCallbackHost, runtime: AgentSessionRuntime): void {
 	runtime.setBeforeSessionInvalidate(() => {

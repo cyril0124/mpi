@@ -35,7 +35,8 @@ start-up instructions do not name the toggle, and `/hotkeys` reports it with a n
 | `/close-all-sessions` | Close every tab except the current one, after confirmation. |
 | `/delete-session [yes]` | Close the current tab and move its session file to the trash, where `/resume-trash` can restore it. `yes` skips the confirmation. |
 | `/delete-all-sessions` | Move every tab's session file to the trash and start fresh, after confirmation. |
-| `/resume-trash` | Open the session selector over the trash: restore a deleted session to its original path, or remove it for good. |
+| `/resume` | Open the session selector; the picked session opens in a tab of its own, or focuses the tab that already holds it. |
+| `/resume-trash` | Open the session selector over the trash: restore a deleted session to its original path and open it in a tab of its own, or remove it for good. |
 | `/rename <title>` | Rename the current tab and its session. |
 | `/tabs` | List the open tabs. |
 | `/tab <index\|title>` | Focus an open tab. |
@@ -187,8 +188,9 @@ in use. A title that is already taken gets `-1`, `-2`, … appended, and the uni
 persisted.
 
 The title names the session behind it: `/rename` writes that name into the session, and replacing
-the session with an unnamed one (`/clear`, or `/resume` onto a session nobody named) drops a custom
-title back to a free `Agent-NN`. A title that was already generated keeps its number.
+the session with an unnamed one (`/clear`) drops a custom title back to a free `Agent-NN`. A title
+that was already generated keeps its number. A resumed session names its own new tab: the name
+recorded in the session file, or a free `Agent-NN` for a session nobody named.
 
 ## Persistence
 

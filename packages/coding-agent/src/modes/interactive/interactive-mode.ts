@@ -362,6 +362,8 @@ import {
 	bindRuntimeCallbacks as bindRuntimeCallbacksImpl,
 	handleCloseTab as handleCloseTabImpl,
 	handleNewTab as handleNewTabImpl,
+	handleResumeIntoTab as handleResumeIntoTabImpl,
+	type ResumeTabHost,
 	type RuntimeCallbackHost,
 	type TabLifecycleHost,
 } from "./mixcode/multi-tab/tab-lifecycle.ts";
@@ -2871,6 +2873,14 @@ export class InteractiveMode {
 			showWarning: (msg) => this.showWarning(msg),
 			showStatus: (msg) => this.showStatus(msg),
 			runtimeHost: this.runtimeHost,
+		};
+	}
+
+	private resumeTabHost(): ResumeTabHost {
+		return {
+			...this.tabLifecycleHost(),
+			promptMissingSessionCwd: (error) => this.promptForMissingSessionCwd(error),
+			projectTrustContext: (cwd) => this.createProjectTrustContext(cwd),
 		};
 	}
 
@@ -9939,7 +9949,7 @@ export class InteractiveMode {
 						: SessionManager.listAll(this.sessionManager.getSessionDir(), onProgress, signal),
 				async (sessionPath) => {
 					done();
-					await this.handleResumeSession(sessionPath);
+					await this.handleResumeIntoTab(sessionPath);
 				},
 				() => {
 					done();
@@ -9986,7 +9996,7 @@ export class InteractiveMode {
 				(onProgress, signal) => SessionManager.listAll(trashRoot, onProgress, signal),
 				async (trashPath) => {
 					done();
-					await this.handleResumeSession(await this.restoreTrashedSession(trashPath));
+					await this.handleResumeIntoTab(await this.restoreTrashedSession(trashPath));
 				},
 				() => {
 					done();
@@ -10026,6 +10036,20 @@ export class InteractiveMode {
 		} catch {
 			return trashPath;
 		}
+	}
+
+	/**
+	 * `/resume` and `/resume-trash`: the picked session opens in a tab of its own,
+	 * the way `/clone` and a restored workspace entry do, so the focused tab keeps
+	 * its session. A host without a tab manager has no tab to open, and there the
+	 * session replaces the current one as upstream does.
+	 */
+	private async handleResumeIntoTab(sessionPath: string): Promise<void> {
+		if (!this.tabManager) {
+			await this.handleResumeSession(sessionPath);
+			return;
+		}
+		await handleResumeIntoTabImpl(this.resumeTabHost(), sessionPath);
 	}
 
 	private async handleResumeSession(

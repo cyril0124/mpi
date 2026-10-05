@@ -16,6 +16,8 @@ import {
 	type CreateAgentSessionRuntimeFactory,
 	createAgentSessionRuntime,
 } from "../../agent-session-runtime.ts";
+import type { ProjectTrustContext } from "../../extensions/index.ts";
+import { assertSessionCwdExists } from "../../session-cwd.ts";
 import { SessionManager } from "../../session-manager.ts";
 import { type ContextLimitOverride, reconcileContextLimit } from "../context-limit.ts";
 import { deleteSessionFile } from "../session-delete.ts";
@@ -380,19 +382,33 @@ export class TabManager {
 		return tab;
 	}
 
-	/** Open an existing session file in a new tab (`/restore-workspace`). `id` as in `createTab`. */
+	/**
+	 * Open an existing session file in a new tab (`/resume`, `/restore-workspace`).
+	 * `id` as in `createTab`; `projectTrustContextFactory` resolves the trust
+	 * decision for the opened session's cwd, the way `switchSession` does.
+	 */
 	async openSessionTab(
 		sessionPath: string,
-		options: { title?: string; workdir?: string; id?: string } = {},
+		options: {
+			title?: string;
+			workdir?: string;
+			id?: string;
+			projectTrustContextFactory?: (cwd: string) => ProjectTrustContext;
+		} = {},
 	): Promise<AgentTab> {
 		const active = this.getActive();
 		const sessionDir = active.runtime.session.sessionManager.getSessionDir();
 		const sessionManager = SessionManager.open(sessionPath, sessionDir, options.workdir);
+		// The runtime asserts this again with the session's own cwd as fallback, which is
+		// the directory that is missing. Assert first so a caller that catches the error
+		// can offer the cwd this tab sits in, the way `switchSession` does.
+		assertSessionCwdExists(sessionManager, active.runtime.cwd);
 		const runtime = await createAgentSessionRuntime(this.createRuntime, {
 			cwd: sessionManager.getCwd(),
 			agentDir: this.agentDir,
 			sessionManager,
 			sessionStartEvent: { type: "session_start", reason: "resume" },
+			projectTrustContext: options.projectTrustContextFactory?.(sessionManager.getCwd()),
 		});
 		const title = this.resolveTabTitle(options.title);
 		const tab = this.attachTab(title, runtime, options.id);
@@ -681,7 +697,7 @@ export class TabManager {
 
 	/**
 	 * Re-subscribe a tab after its runtime replaced its session (e.g. `/clear`,
-	 * `/resume`), since the old subscription died with the old session object.
+	 * `/workdir`), since the old subscription died with the old session object.
 	 * The replacement also drops a `/context-limit` override: it belonged to the
 	 * outgoing session's model and settings manager, both now discarded. A custom
 	 * title is dropped too: it named the conversation that just went away.
@@ -708,7 +724,7 @@ export class TabManager {
 
 	/**
 	 * Give a tab back its generated title when the replacement session carries no
-	 * name (`/clear`, `/resume` onto a session nobody named). `/rename` keeps the
+	 * name (`/clear`, or a `/workdir` move onto a session nobody named). `/rename` keeps the
 	 * title and the session name in step, so a kept title would claim a name the
 	 * session no longer has. An existing `Agent-NN` stays put.
 	 */

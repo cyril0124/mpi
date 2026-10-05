@@ -340,6 +340,13 @@ point `## [Unreleased]` at the new tag.
   in-app block), and both estimate tokens at ~4 characters per token with one token per CJK character.
 ### Changed
 
+- `/resume` and `/resume-trash` open the picked session in a tab of its own instead of replacing the
+  focused tab's session, matching `/clone` and a restored workspace entry. A session that is already
+  open in a tab is focused rather than opened twice, because two runtimes on one session file would
+  append to it concurrently. The extension API's `ctx.switchSession` and a host without a tab manager
+  keep the in-place replacement, and a resume that mounts a tab reaches extensions as a
+  `session_start` with reason `resume` instead of the runtime-level `session_before_switch` veto,
+  which the fork's other tab-opening paths already skip. See [Tabs](docs/tabs.md#commands).
 - Vim mode's `ctrl+u` / `ctrl+d` (`pageUp` / `pageDown`) scroll a fixed 10 rows instead of the
   viewport height minus one, so one press moves the same distance on a short and a tall terminal.
   `j` / `k` keep their 3 rows. See [Vim Mode](docs/vim-mode.md#keys).
