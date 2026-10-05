@@ -845,6 +845,10 @@ point `## [Unreleased]` at the new tag.
   dispatched into the tab that queued it rather than whichever tab is focused when the round runs.
   A batch that opens one tab and runs `/color` in another no longer paints the wrong tab, and a
   plugin command no longer lands in the focused tab's session.
+- MixCode Home no longer shows the transcript scrollbar. Home fits the viewport exactly and never
+  scrolls, so the `always` setting only painted a full-height track beside a page with nothing to
+  scroll. The scrollbar is hidden while Home is the rendered surface, and the setting applies again
+  once a transcript returns.
 
 ### Removed
 

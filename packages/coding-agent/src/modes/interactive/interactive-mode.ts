@@ -2612,7 +2612,10 @@ export class InteractiveMode {
 	}
 
 	private applyFullscreenScrollbarSetting(): void {
-		this.transcriptScrollView?.setScrollbar(this.settingsManager.getFullscreenScrollbar());
+		// Home fits the viewport exactly and never scrolls, so it shows no scrollbar whatever
+		// the setting says; the setting is back in force once a transcript is rendered again.
+		const mode = this.homeSelection.active ? "hidden" : this.settingsManager.getFullscreenScrollbar();
+		this.transcriptScrollView?.setScrollbar(mode);
 	}
 
 	/**
@@ -3186,6 +3189,7 @@ export class InteractiveMode {
 			// Mounting is keyed to the attached tab, which is not always the manager's focus.
 			if (this.activeTabIdForUi) this.parkTabInteractions(this.activeTabIdForUi);
 			this.homeSelection.active = true;
+			this.applyFullscreenScrollbarSetting();
 			// Vim is a modal surface over an agent transcript; Home is a different
 			// surface, so the composer must not stay locked behind it.
 			this.leaveVimMode();
@@ -3208,6 +3212,7 @@ export class InteractiveMode {
 	private leaveHome(): void {
 		if (!this.homeSelection.active) return;
 		this.homeSelection.active = false;
+		this.applyFullscreenScrollbarSetting();
 		this.homeView?.resetCapture();
 		this.setEditorText("");
 		this.updateEditorBorderColor();
