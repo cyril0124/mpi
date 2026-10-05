@@ -279,8 +279,12 @@ function layoutComponent(
 		typeof entry.basis === "number" ? entry.basis : measureWidth(context, entry.component, safeWidth),
 	);
 	const widths = allocateStackSizes(entries, intrinsicWidths, safeWidth, node.gap);
+	// A stretched child is given the full height, so its own height is never read. Measuring
+	// it anyway renders the child whole, which costs a windowed child (a scroll view that
+	// paints only its window) the entire document on every frame.
+	const needsIntrinsicHeights = height === undefined || node.align !== "stretch";
 	const intrinsicHeights = entries.map((entry, index) =>
-		measureHeight(context, entry.component, Math.max(1, widths[index]!)),
+		needsIntrinsicHeights ? measureHeight(context, entry.component, Math.max(1, widths[index]!)) : 0,
 	);
 	const allocatedHeight =
 		height === undefined

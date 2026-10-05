@@ -25,7 +25,7 @@ commit that causes it.
 | `app.model.cycleForward` default key | `ctrl+p` | no default key | `ctrl+p` opens the command palette |
 | `app.tab.jump` default key | no such action; `ctrl+t` toggles thinking-block visibility | `ctrl+t` opens the Tab Jump switcher, and `app.thinking.toggle` keeps its `ctrl+t` default but loses the chord to the composer's registration order | jumping to one of several agents should not mean cycling past the others; see [Agent Tabs](tabs.md#tab-jump) |
 | Quit | `ctrl+d` exits, no confirmation | `ctrl+q` (`ctrl+shift+q` on Windows and WSL) asks first; `ctrl+d` unchanged | [Command Palette and Quit Confirmation](command-palette.md) |
-| Fullscreen transcript rendering | renders every message component each frame, then clips to the viewport | renders only the visible window (20 rows of overscan) and estimates unmeasured blocks at 4 rows | frame cost otherwise grows with the whole conversation |
+| Fullscreen transcript rendering | renders every message component each frame, then clips to the viewport | renders only the visible window (20 rows of overscan) and estimates unmeasured blocks at 4 rows; an `HStack` measures no intrinsic height for a stretched child that already has one, so the side panel column cannot render the transcript whole | frame cost otherwise grows with the whole conversation, and a width change would otherwise re-lay-out every message |
 | Transcript scrolling keys | `tui.altScreen.*` only | plus a modal surface (`/vim`, `j`/`k`/`gg`/`G`, prompt jumps with a `User Messages` preview panel) in fullscreen mode; `tui.altScreen.top`/`bottom` keep no default key, so `home`/`end` stay with the composer and vim mode reaches the transcript ends on them | mouse-free reading of long conversations |
 | Default TUI mode | `regular` | `fullscreen`; an explicit `tuiMode: "regular"` in `settings.json` still selects the plain transcript | the fork's reading features (windowed transcript, vim, mouse selection) only exist on the alternate screen, and upstream's `packages/coding-agent/docs/settings.md` still lists `"regular"` as the default |
 | Editor frame while modal | thinking/bash border color | accent border, input and submit locked | vim mode owns input |
@@ -148,8 +148,9 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/tui/src/components/settings-list.ts`: the optional `section` heading row on `SettingItem`
 - `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section entries, the `Fullscreen exit output` description, and the `onSettingsChanged` hook the panel calls after a row change
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`: the `getSettingsListTheme` section heading style
-- `packages/tui/src/layout.ts`: windowed scroll child, the line provider carried on a scroll box, and
-  the `honorOffset` argument a suspended scroll view passes to its windowed child
+- `packages/tui/src/layout.ts`: windowed scroll child, the line provider carried on a scroll box, the
+  `honorOffset` argument a suspended scroll view passes to its windowed child, and the
+  `HStack` intrinsic-height measurement skipped for a stretched child of a known height
 - `packages/tui/src/mixcode/layout-queries.ts`: `getComponentBox`, the scroll line provider lookup, and
   the materialized-line query
 - `packages/tui/src/components/scroll-view.ts`: `setFollowSuspended` / `isFollowSuspended` /

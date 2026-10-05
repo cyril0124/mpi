@@ -11,7 +11,9 @@ renders only the rows near the viewport. Long conversations scroll at a bounded 
 
 1. The transcript viewport is `VStack[ScrollView(transcript), dock]`, mounted under the tab bar; its
    scroll child is a `WindowedTranscript`
-   (`packages/coding-agent/src/modes/interactive/components/mixcode/windowed-chat/`).
+   (`packages/coding-agent/src/modes/interactive/components/mixcode/windowed-chat/`), and the open
+   widget panel splits those rows in an `HStack`. The layout measures no intrinsic height for a
+   stretched `HStack` child, so the panel column cannot render the transcript whole either.
 2. The layout engine asks it for a line count and for the rows of the current viewport
    (`packages/tui/src/mixcode/windowed-node.ts`, `WindowedLayoutState`).
 3. Blocks the user has already scrolled past keep their last measured height; blocks that were

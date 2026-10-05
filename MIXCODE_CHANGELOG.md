@@ -484,6 +484,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A terminal resize no longer stalls on a long conversation in fullscreen mode. The chat viewport
+  wraps the transcript in an `HStack` with the widget panel column, and the layout measured every
+  stretched `HStack` child by rendering it whole. That call rendered the entire transcript on every
+  frame, so the windowed transcript bounded nothing and a width change dropped every width-keyed
+  message cache at once. The layout now skips the intrinsic-height measurement for a stretched child
+  that has a known height, and a resize re-renders only the window.
 - A follow-up command queued on a tab (`alt+enter` with a local command while it streams, or
   `/follow-up <command>`) now runs on that tab. The round executes through the shared composer, so a
   round whose tab was not in front ran against whichever tab was focused when it settled, and the

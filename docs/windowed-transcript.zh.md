@@ -9,7 +9,9 @@
 ## 工作机制
 
 1. 对话区视口是 `VStack[ScrollView(对话区), 停靠区]`，挂在标签栏之下；它的滚动子组件是
-   `WindowedTranscript`（`packages/coding-agent/src/modes/interactive/components/mixcode/windowed-chat/`）。
+   `WindowedTranscript`（`packages/coding-agent/src/modes/interactive/components/mixcode/windowed-chat/`），
+   展开的 widget 面板则用 `HStack` 切分这些行。布局不为 `HStack` 的拉伸子项测量固有高度，因此面板列
+   也无法把对话区整体渲染一遍。
 2. 布局引擎向它索取行数，以及当前视口需要的行（`packages/tui/src/mixcode/windowed-node.ts` 的
    `WindowedLayoutState`）。
 3. 已经滚动过的块保留上次测得的真实高度；从未渲染过的块贡献一个估计值（4 行）。两者之和构成滚动

@@ -1,5 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
+import { HStack } from "../src/components/h-stack.ts";
 import { ScrollView, type ScrollViewScrollbar } from "../src/components/scroll-view.ts";
 import { Text } from "../src/components/text.ts";
 import { VStack } from "../src/components/v-stack.ts";
@@ -8,7 +9,7 @@ import { materializeScrollLines } from "../src/mixcode/layout-queries.ts";
 import { WINDOWED_NODE, type WindowedLayoutNode } from "../src/mixcode/windowed-node.ts";
 import type { Component } from "../src/tui.ts";
 import { TuiAltScreen } from "../src/tui-alt-screen.ts";
-import { stripTerminalSequences } from "../src/utils.ts";
+import { stripTerminalSequences, visibleWidth } from "../src/utils.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 /** Windowed content stand-in: numbered rows served from a virtual total. */
@@ -142,6 +143,69 @@ describe("windowed scroll child", () => {
 		const lines = materializeScrollLines(frame, transcript);
 		assert.strictEqual(lines?.length, 300);
 		assert.strictEqual(lines?.[299], "row-299");
+	});
+});
+
+/** Panel stand-in: one fixed-width row, whatever width the layout passes. */
+class FixedWidthPanel implements Component {
+	private readonly rows: string[];
+
+	constructor(rows: string[]) {
+		this.rows = rows;
+	}
+
+	render(_width: number): string[] {
+		return this.rows;
+	}
+
+	invalidate(): void {}
+}
+
+function frameWithPanel(content: Component, height: number) {
+	const transcript = new ScrollView(content, { follow: "end", primary: true });
+	const panel = new FixedWidthPanel(["panel"]);
+	const row = new HStack(
+		[
+			{ component: transcript, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+			{ component: panel, basis: "auto", grow: 0, shrink: 0, minSize: 0 },
+		],
+		{ gap: 1 },
+	);
+	const root = new VStack([
+		{ component: row, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+		{ component: new Text("dock", 0, 0), basis: "auto", grow: 0, shrink: 0 },
+	]);
+	return { transcript, render: (width: number) => renderLayoutFrame(root, width, height, () => {}) };
+}
+
+describe("windowed scroll child beside a panel", () => {
+	it("stays windowed when the panel column joins the layout, across a width change", () => {
+		// The fullscreen chat viewport puts the transcript and the widget panel column in an
+		// HStack (`chat-viewport.ts`). The windowed child has to stay windowed there.
+		const content = new WindowedRows(500);
+		const { transcript, render } = frameWithPanel(content, 8);
+
+		const narrow = render(24);
+		const narrowLines = visible(narrow.lines);
+		// A pass that measures the child by rendering it would defeat the window.
+		assert.strictEqual(content.fullRenders, 0, "the panel column must not measure the transcript by rendering it");
+		assert.strictEqual(transcript.viewportHeight, 7);
+		assert.ok(
+			narrowLines[0]?.startsWith("row-493"),
+			`the window covers the last viewport of the transcript, got ${narrowLines[0]}`,
+		);
+		assert.strictEqual(narrowLines[6], "row-499", "the newest row is painted last");
+		assert.ok(narrowLines[0]?.endsWith("panel"), `the panel keeps its column, got ${narrowLines[0]}`);
+		assert.strictEqual(narrowLines[7], "dock", "the dock keeps the last row");
+		for (const line of narrow.lines) assert.strictEqual(visibleWidth(line), 24, "the row fills the frame width");
+
+		// A resize reruns the same tree at a new width: the window is re-measured, not the document.
+		const wide = render(40);
+		assert.strictEqual(content.fullRenders, 0, "a width change must not render the whole transcript");
+		const wideLines = visible(wide.lines);
+		assert.ok(wideLines[0]?.startsWith("row-493"), `the window follows the end again, got ${wideLines[0]}`);
+		assert.ok(wideLines[0]?.endsWith("panel"), "the panel follows the wider frame");
+		for (const line of wide.lines) assert.strictEqual(visibleWidth(line), 40, "the wider row fills the frame width");
 	});
 });
 
