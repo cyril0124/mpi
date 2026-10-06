@@ -498,6 +498,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A command dispatched from Home no longer replaces the focused tab's parked draft. `/new-session
+  <title>` typed in Home's composer closes the `/` autocomplete list, so the key reaches Home's send
+  handler, which attaches the selected tab before dispatching; the command's own branch then clears
+  the composer, and the draft handover parked that emptiness over the draft the tab had left with
+  Home. The handover now stays suspended for the run of a command Home dispatches.
+
 - A draft typed in an agent tab survives a visit to Home followed by `/resume` (or `/new-session`).
   `handleResumeIntoTab` and `handleNewTab` parked the composer's text unconditionally, and from
   Home that text is the empty ephemeral composer, so the pick overwrote the draft the tab had

@@ -982,6 +982,12 @@ export class InteractiveMode {
 	/** Tab whose extension UI is currently mounted; used to capture state on switch. */
 	private activeTabIdForUi: string | undefined = undefined;
 	/**
+	 * Depth of Home's own command dispatches. While one runs the composer holds that command,
+	 * not the focused tab's draft, so the draft handover must not park the composer text; Home
+	 * parked that tab's draft when it took the composer.
+	 */
+	private homeCommandDepth = 0;
+	/**
 	 * Sessions whose extensions are already bound. Created on first use so a host
 	 * that only supplies a subset of this class (tests) still works.
 	 */
@@ -3429,10 +3435,13 @@ export class InteractiveMode {
 		if (this.editor !== this.defaultEditor) this.editor.setText(text);
 	}
 
-	/** Park the composer's text as the draft of the tab on screen; Home's composer owns no draft. */
+	/**
+	 * Park the composer's text as the draft of the tab on screen. A no-op while Home owns the
+	 * composer or is dispatching one of its commands: neither text belongs to a tab.
+	 */
 	private saveComposerDraft(): void {
 		const manager = this.tabManager;
-		if (!manager || this.homeSelection.active) return;
+		if (!manager || this.homeSelection.active || this.homeCommandDepth > 0) return;
 		manager.setDraft(manager.getActive().id, this.editorText());
 	}
 
@@ -3585,6 +3594,20 @@ export class InteractiveMode {
 		return Math.max(4, this.ui.terminal.rows - barRows - 6);
 	}
 
+	/**
+	 * Run a command Home's composer holds through the editor's submit handler, with the draft
+	 * handover suspended for the run: the command's branch clears the composer, and a command
+	 * that moves focus would otherwise park that emptiness over the draft the tab had parked.
+	 */
+	private async submitHomeCommand(text: string): Promise<void> {
+		this.homeCommandDepth += 1;
+		try {
+			await this.defaultEditor.onSubmit?.(text);
+		} finally {
+			this.homeCommandDepth -= 1;
+		}
+	}
+
 	/** Run a heading button's command on the tab the roster has selected. */
 	private async runHomeAction(action: HomeAction): Promise<void> {
 		const manager = this.tabManager;
@@ -3597,7 +3620,7 @@ export class InteractiveMode {
 			// attached first, the same routing the composer's commands use.
 			const selected = homeSelectedTab(this.homeSelection, this.homeRoster());
 			if (selected?.tab && manager.getActive().id !== selected.id) await this.activateTab(selected.tab);
-			await this.defaultEditor.onSubmit?.(`/${action}`);
+			await this.submitHomeCommand(`/${action}`);
 		} finally {
 			this.homeView?.setActionPending(false);
 			this.homeView?.resetCapture();
@@ -3679,7 +3702,7 @@ export class InteractiveMode {
 			void (async () => {
 				await this.activateTab(tab);
 				this.setEditorText(text);
-				await this.defaultEditor.onSubmit?.(text);
+				await this.submitHomeCommand(text);
 			})();
 			return true;
 		}
