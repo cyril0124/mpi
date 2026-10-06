@@ -498,6 +498,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- An extension dialog requested after its session was backgrounded stays on that session's own tab.
+  A session bound while its tab was on screen received a UI context with no owner tab, and an
+  unowned context resolves `select`/`confirm`/`input`/`custom`/`editor` against whatever tab is on
+  screen when the dialog is asked for. A dialog requested later, such as a permission prompt from a
+  tool that awaited something or a question from an asynchronous handler, therefore painted over the
+  tab in front and carried the `?` waiting mark there, while the answer resolved the pending work in
+  the requesting session. The bind now passes a getter that resolves the owning tab when the dialog
+  is requested, so the dialog parks on the tab that opened it and the chip reports the wait there.
 - A terminal resize no longer stalls on a long conversation in fullscreen mode. The chat viewport
   wraps the transcript in an `HStack` with the widget panel column, and the layout measured every
   stretched `HStack` child by rendering it whole. That call rendered the entire transcript on every

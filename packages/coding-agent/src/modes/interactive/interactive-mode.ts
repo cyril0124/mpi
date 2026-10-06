@@ -2536,7 +2536,7 @@ export class InteractiveMode {
 		const backgroundTabId = options.backgroundTabId;
 		const uiContext = backgroundTabId
 			? this.createTabScopedExtensionUIContext(backgroundTabId)
-			: this.createExtensionUIContext();
+			: this.createExtensionUIContext(() => this.tabIdForRuntime(runtime));
 		await session.bindExtensions({
 			uiContext,
 			mode: "tui",
@@ -2832,13 +2832,8 @@ export class InteractiveMode {
 
 	private bindRuntimeCallbacks(runtime: AgentSessionRuntime): void {
 		bindRuntimeCallbacksImpl(
-			// The tab is resolved when the reset runs, not when the bind happens: `attachTab` binds
-			// a runtime before it pushes its tab, so a lookup here would never find one and the
-			// reset would drop every tab's pending dialogs.
-			this.runtimeCallbackHost(() => {
-				const tabId = this.tabManager?.list().find((tab) => tab.runtime === runtime)?.id;
-				this.resetExtensionUI(tabId);
-			}),
+			// The reset resolves its tab when it runs, by which time the tab is registered.
+			this.runtimeCallbackHost(() => this.resetExtensionUI(this.tabIdForRuntime(runtime))),
 			runtime,
 		);
 	}
@@ -5459,10 +5454,13 @@ export class InteractiveMode {
 	 * `ownerTabId` pins the dialogs it opens to one tab. Without it the context
 	 * belongs to whatever tab the user is looking at when a dialog is requested,
 	 * which is right for a context made on the spot (a shortcut handler) and wrong
-	 * for one a session keeps, so a session bind passes its own tab.
+	 * for one a session keeps, so a session bind passes its own tab, as a getter:
+	 * a bind runs before its tab is registered, and the tab a later dialog belongs
+	 * to is only known when the dialog is requested.
 	 */
-	private createExtensionUIContext(ownerTabId?: string): ExtensionUIContext {
-		const dialogTabId = () => ownerTabId ?? this.shownTabId();
+	private createExtensionUIContext(ownerTabId?: string | (() => string | undefined)): ExtensionUIContext {
+		const ownerTab = () => (typeof ownerTabId === "function" ? ownerTabId() : ownerTabId);
+		const dialogTabId = () => ownerTab() ?? this.shownTabId();
 		return {
 			select: (title, options, opts) => this.showExtensionSelector(title, options, opts, dialogTabId()),
 			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts, dialogTabId()),
@@ -5524,6 +5522,14 @@ export class InteractiveMode {
 		if (this.activeTabIdForUi) return this.activeTabIdForUi;
 		if (this.tabManager) return this.tabManager.activeTab()?.id;
 		return SINGLE_SESSION_TAB_ID;
+	}
+
+	/**
+	 * The tab holding `runtime`, resolved on demand: a runtime is bound before its tab is
+	 * registered, so a lookup at bind time would find nothing.
+	 */
+	private tabIdForRuntime(runtime: AgentSessionRuntime): string | undefined {
+		return this.tabManager?.list().find((tab) => tab.runtime === runtime)?.id;
 	}
 
 	/** True while `tabId` is the tab the UI is showing, rather than Home or another tab. */
