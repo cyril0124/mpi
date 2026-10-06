@@ -498,6 +498,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Pointer hover again fills the entire message card, including blank rows and horizontal padding.
+  The card's own background could override the cue after the shared SGR helper was narrowed to
+  resets only; block hover now re-opens only its background after every inner SGR, preserving
+  foreground colors and keeping the gap between cards unhighlighted.
+
 - An extension dialog requested after its session was backgrounded stays on that session's own tab.
   A session bound while its tab was on screen received a UI context with no owner tab, and an
   unowned context resolves `select`/`confirm`/`input`/`custom`/`editor` against whatever tab is on

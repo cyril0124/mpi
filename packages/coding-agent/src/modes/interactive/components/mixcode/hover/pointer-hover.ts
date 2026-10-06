@@ -8,7 +8,7 @@
  */
 import { compositeTuiLine, isImageLine, sliceByColumn, visibleWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
-import { reopenAfterReset, SGR_SEQUENCE } from "../terminal-text.ts";
+import { SGR_SEQUENCE } from "../terminal-text.ts";
 
 /** One rendered rectangle matching a clickable target's visible cells. */
 export interface HoverTarget {
@@ -51,18 +51,18 @@ function hoverUnderlineOpen(): string {
 }
 
 /**
- * Background cue for a whole block row. The row is filled to the full width first, so the
- * cue covers the block as one rectangle instead of stopping at its text, and the background
- * is re-opened after every inner reset, so content painted with its own background cannot mask
- * it. A row fill is the whole cue here, so the row keeps whatever styling its own content
- * already carries. Image rows are left alone, since only their own escape sequences can
- * describe them.
+ * Fill the whole row with the hover background, including padding. Re-open only
+ * the background after every SGR so nested backgrounds cannot mask it and other
+ * styles survive. Image rows keep their own escape sequences unchanged.
  */
 export function paintRowBackground(line: string, width: number): string {
 	const open = theme.getBgAnsi("selectedBg");
 	if (!open || isImageLine(line)) return line;
 	const filled = visibleWidth(line) < width ? line + " ".repeat(width - visibleWidth(line)) : line;
-	return theme.bg("selectedBg", reopenAfterReset(open, filled));
+	return theme.bg(
+		"selectedBg",
+		filled.replace(SGR_SEQUENCE, (sequence) => `${sequence}${open}`),
+	);
 }
 
 /**
