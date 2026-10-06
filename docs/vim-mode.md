@@ -24,7 +24,7 @@ The keyboard entry arms a one-second window; any other key cancels it. Arming ne
 draft in the composer does not block it; the session may be working, which is when reading the arriving output
 matters most. Otherwise `ctrl+u` is left to its other bindings (with a queued message it edits that queue).
 
-While vim mode is on the editor is locked: it renders with the accent frame, ignores typing, and
+While vim mode is on the editor is locked: it renders with the accent frame, draws no caret, ignores typing, and
 refuses to submit. Extension widgets above and below the editor are not rendered, so their rows go
 to the transcript; registrations and lifecycle are untouched.
 

@@ -301,6 +301,12 @@ export class Editor implements Component, Focusable {
 	/** Focusable interface - set by TUI when focus changes */
 	focused: boolean = false;
 
+	/**
+	 * When false the renderer draws no caret and emits no CURSOR_MARKER. A locked
+	 * editor keeps its text and loses the insertion point.
+	 */
+	cursorVisible: boolean = true;
+
 	protected tui: TUI;
 	private theme: EditorTheme;
 	private paddingX: number = 0;
@@ -580,7 +586,7 @@ export class Editor implements Component, Focusable {
 		// Emit hardware cursor marker when focused so TUI can position the
 		// hardware cursor for IME candidate-window placement even while
 		// autocomplete (e.g. slash-command menu) is visible.
-		const emitCursorMarker = this.focused;
+		const emitCursorMarker = this.focused && this.cursorVisible;
 
 		for (const layoutLine of visibleLines) {
 			let displayText = layoutLine.text;
@@ -588,7 +594,7 @@ export class Editor implements Component, Focusable {
 			let cursorInPadding = false;
 
 			// Add cursor if this line has it
-			if (layoutLine.hasCursor && layoutLine.cursorPos !== undefined) {
+			if (this.cursorVisible && layoutLine.hasCursor && layoutLine.cursorPos !== undefined) {
 				const before = displayText.slice(0, layoutLine.cursorPos);
 				const after = displayText.slice(layoutLine.cursorPos);
 

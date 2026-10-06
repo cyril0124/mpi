@@ -30,7 +30,7 @@ commit that causes it.
 | Fullscreen transcript rendering | renders every message component each frame, then clips to the viewport | renders only the visible window (20 rows of overscan) and estimates unmeasured blocks at 4 rows; an `HStack` measures no intrinsic height for a stretched child that already has one, so the side panel column cannot render the transcript whole | frame cost otherwise grows with the whole conversation, and a width change would otherwise re-lay-out every message |
 | Transcript scrolling keys | `tui.altScreen.*` only | plus a modal surface (`/vim`, `j`/`k`/`gg`/`G`, prompt jumps with a `User Messages` preview panel) in fullscreen mode; `tui.altScreen.top`/`bottom` keep no default key, so `home`/`end` stay with the composer and vim mode reaches the transcript ends on them | mouse-free reading of long conversations |
 | Default TUI mode | `regular` | `fullscreen`; an explicit `tuiMode: "regular"` in `settings.json` still selects the plain transcript | the fork's reading features (windowed transcript, vim, mouse selection) only exist on the alternate screen, and upstream's `packages/coding-agent/docs/settings.md` still lists `"regular"` as the default |
-| Editor frame while modal | thinking/bash border color | accent border, input and submit locked | vim mode owns input |
+| Editor frame while modal | thinking/bash border color | accent border, no caret, input and submit locked | vim mode owns input |
 | Zen focus mode | no such mode; upstream has no tab bar to hide | `/toggle-zen-mode` drops the chips and leaves the separator carrying the other agents' status dots, and `tab`/`shift+tab` stop switching agents while an agent tab is in zen | the chips cost a row the transcript wants back, while the bar still has to report what the other agents are doing; see [Zen Mode](zen-mode.md) |
 | MixCode Home | no such surface; the transcript always shows the active session | a `home` pseudo-tab lists every open agent with a conversation preview | [MixCode Home](home.md) |
 | `left`/`right`/`up`/`down`/`enter`/`ctrl+f` | editor cursor, prompt history, submit | on Home they select, attach, send, and filter the roster; on agent tabs the editor keeps them | [MixCode Home](home.md) |
@@ -145,7 +145,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
   reported model through the same helper as the Responses adapter, so the overwrite rule has one definition
 - `packages/agent/src/agent.ts`: the steering and follow-up queue APIs
 - `packages/tui/src/keybindings.ts`: `tui.altScreen.top`/`bottom` carry no default key, so `home`/`end` reach the focused editor
-- `packages/tui/src/components/editor.ts`, `packages/tui/src/editor-component.ts`: `setHistory` replaces a whole prompt history, and a recalled entry takes the caret at its end
+- `packages/tui/src/components/editor.ts`, `packages/tui/src/editor-component.ts`: `setHistory` replaces a whole prompt history, a recalled entry takes the caret at its end, and `cursorVisible` hides the caret of a locked editor
 - `packages/tui/src/layout-node.ts`: the `WindowedLayoutNode` arm of the `LayoutNode` union
 - `packages/tui/src/mixcode/windowed-node.ts`: the windowed layout state and the scroll line provider
 - `packages/tui/src/components/settings-list.ts`: the optional `section` heading row on `SettingItem`

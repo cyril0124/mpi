@@ -86,6 +86,10 @@ export class MixcodePromptEditor extends CustomEditor {
 	}
 
 	override render(width: number): string[] {
+		const chrome = this.chrome();
+		// Vim mode locks the composer to a reading surface: a caret would claim the
+		// typing the modal surface swallows.
+		this.cursorVisible = !chrome.vimMode;
 		if (width < MIN_CARD_WIDTH) return super.render(width).map(withoutSentinel);
 
 		const innerWidth = cardInnerWidth(width, BODY_INSET);
@@ -103,7 +107,6 @@ export class MixcodePromptEditor extends CustomEditor {
 
 		const body = lines.slice(1, bottomIndex);
 		const completion = lines.slice(bottomIndex + 1);
-		const chrome = this.chrome();
 		const frame = this.borderColor;
 
 		const title = theme.fg("accent", chrome.title);

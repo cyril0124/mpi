@@ -29,7 +29,7 @@
 | 全屏对话区渲染 | 每帧渲染全部消息组件再裁剪到视口 | 只渲染可见窗口（上下各 20 行余量），未测块按 4 行估算；`HStack` 不再为已有高度的拉伸子项测量其固有高度，因此侧边面板列不会把对话区整体渲染一遍 | 否则帧开销随整段对话增长，改变终端宽度时还会把每条消息重新排版 |
 | 对话区滚动键 | 仅 `tui.altScreen.*` | 全屏模式下另有模态界面（`/vim`、`j`/`k`/`gg`/`G`、提问跳转）；`tui.altScreen.top`/`bottom` 无默认键，`home`/`end` 留给输入框，Vim 模式用它们跳到对话区两端 | 长对话免鼠标阅读 |
 | 默认 TUI 模式 | `regular` | `fullscreen`；`settings.json` 里显式写 `tuiMode: "regular"` 仍会回到普通对话区 | 本 fork 的阅读功能（窗口化对话区、Vim、鼠标选中）只存在于备选屏幕；上游 `packages/coding-agent/docs/settings.md` 的默认值仍写作 `"regular"` |
-| 模态下的输入框边框 | thinking/bash 边框色 | 强调色边框，输入与提交被锁定 | Vim 模式独占输入 |
+| 模态下的输入框边框 | thinking/bash 边框色 | 强调色边框，不画光标，输入与提交被锁定 | Vim 模式独占输入 |
 | Zen 专注模式 | 无此模式；上游没有可隐藏的标签栏 | `/toggle-zen-mode` 去掉标签块，只留分隔线继续显示其他 agent 的状态圆点；agent 标签页处于 zen 时 `tab`/`shift+tab` 不再切换标签页 | 标签块占用的那一行要让给对话区，而标签栏仍需汇报其他 agent 的动向；见 [Zen 专注模式](zen-mode.zh.md) |
 | 扩展组件 | 固定在编辑器上/下方的坞区 | 默认放在对话流末尾，带行预算与 `/widgets`，因为 [`ui.inlineWidgets`](inline-widgets.zh.md) 默认开启 | 过高的组件否则会占用整个编辑器坞区的行 |
 | 按标签页的设置项 | 无 | `Inline widgets` 读写 `mixcode_settings.json`，在 `/settings` 的 `MixCode` 分组中单独展示 | MixCode 的设置不写进 pi 的 `settings.json`，也不混进它的分组 |
@@ -134,7 +134,7 @@
 - `packages/ai/src/api/anthropic-messages.ts`、`packages/ai/src/api/openai-completions.ts`：与 Responses 适配器共用同一个助手记录服务端报告的模型，让覆盖规则只有一处定义
 - `packages/agent/src/agent.ts`：steering 与 follow-up 队列 API
 - `packages/tui/src/keybindings.ts`：`tui.altScreen.top`/`bottom` 没有默认键，`home`/`end` 归聚焦的编辑器
-- `packages/tui/src/components/editor.ts`、`packages/tui/src/editor-component.ts`：`setHistory` 可整体替换历史，且回召回的历史条目把光标放在末尾
+- `packages/tui/src/components/editor.ts`、`packages/tui/src/editor-component.ts`：`setHistory` 可整体替换历史，且回召回的历史条目把光标放在末尾；`cursorVisible` 让被锁定的编辑器不画光标
 - `packages/tui/src/layout-node.ts`：`LayoutNode` 联合里的 `WindowedLayoutNode` 分支
 - `packages/tui/src/mixcode/windowed-node.ts`：窗口化布局状态与滚动行提供者
 - `packages/tui/src/components/settings-list.ts`：`SettingItem` 的可选 `section` 标题行

@@ -498,6 +498,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Vim mode's locked composer draws no caret. The editor still drew its reverse-video caret
+  and emitted the hardware-cursor marker while vim mode owned input, so the accent-framed
+  card looked like it took the typing it ignores. `Editor.cursorVisible` turns both off, and
+  the input card reads it from the tab's vim state on every frame.
+
 - A command dispatched from Home no longer replaces the focused tab's parked draft. `/new-session
   <title>` typed in Home's composer closes the `/` autocomplete list, so the key reaches Home's send
   handler, which attaches the selected tab before dispatching; the command's own branch then clears
