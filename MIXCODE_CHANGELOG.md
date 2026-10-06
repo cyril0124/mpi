@@ -498,6 +498,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/resume` picking the session the focused tab already holds no longer wipes that tab's extension
+  chrome. The already-open branch called `switchActiveTab` directly, which has no same-tab guard and
+  rebuilt the tab's widgets, footer/header, statuses and custom editor from the empty `tabUi` record
+  a foreground tab never has. The branch now goes through `activateTab`, whose guard leaves a tab
+  that is already on screen untouched, so the current session can be re-picked without losing what
+  its extensions drew.
+
 - Pointer hover again fills the entire message card, including blank rows and horizontal padding.
   The card's own background could override the cue after the shared SGR helper was narrowed to
   resets only; block hover now re-opens only its background after every inner SGR, preserving

@@ -98,6 +98,12 @@ export interface ResumeTabHost extends TabLifecycleHost {
 	promptMissingSessionCwd(error: MissingSessionCwdError): Promise<string | undefined>;
 	/** Trust decision context for a cwd the opened session brings with it. */
 	projectTrustContext(cwd: string): ProjectTrustContext;
+	/**
+	 * Focus an existing tab through the activation guard, which leaves a tab already on screen
+	 * untouched; a full switch would rebuild its extension chrome from the empty parked record a
+	 * foreground tab never has.
+	 */
+	activateTab(tab: AgentTab): Promise<void>;
 }
 
 /**
@@ -169,9 +175,9 @@ export async function handleResumeIntoTab(host: ResumeTabHost, sessionPath: stri
 	const open = tabManager.list().find((tab) => tab.runtime.session.sessionFile === sessionPath);
 	if (open) {
 		// Focus moves in the manager first, the way activateTab does it, so the tab bar
-		// and every command that follows the manager's focus agree with the switch.
+		// and every command that follows the manager's focus agree with the activation.
 		tabManager.activate(open.id);
-		await host.enqueueTabSwitch(() => host.switchActiveTab(open));
+		await host.activateTab(open);
 		host.showStatus(`Session is already open in tab "${open.title}".`);
 		return;
 	}

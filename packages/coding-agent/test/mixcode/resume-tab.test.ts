@@ -170,7 +170,7 @@ describe("resume into a new tab", () => {
 		await handleResumeIntoTab(
 			{
 				...host(a),
-				switchActiveTab: async (tab) => {
+				activateTab: async (tab) => {
 					displayCalls.push(tab.id);
 					await a.switchActiveTab(tab);
 				},
@@ -188,6 +188,35 @@ describe("resume into a new tab", () => {
 		// The composer text stays with the tab it was typed in.
 		expect(a.manager.get(secondTab.id)!.draftInput).toBe("draft");
 		expect(a.manager.list().filter((tab) => tab.runtime.session.sessionFile === firstFile)).toHaveLength(1);
+	});
+
+	it("does not rebuild a tab that already holds the session and is the one on screen", async () => {
+		// Picking the session the displayed tab already holds must not run a full tab switch, which
+		// would reset the tab's live extension chrome to the empty parked record.
+		const a = await client();
+		const tab = a.manager.getActive();
+		const file = tab.runtime.session.sessionFile!;
+
+		const calls: string[] = [];
+		await handleResumeIntoTab(
+			{
+				...host(a),
+				activateTab: async (target) => {
+					calls.push(`activate:${target.id}`);
+				},
+				switchActiveTab: async (target) => {
+					calls.push(`switch:${target.id}`);
+					await a.switchActiveTab(target);
+				},
+			},
+			file,
+		);
+
+		expect(a.errors).toEqual([]);
+		expect(a.status).toEqual([`Session is already open in tab "Agent-01".`]);
+		expect(calls).toEqual([`activate:${tab.id}`]);
+		expect(a.manager.getActive().id).toBe(tab.id);
+		expect(a.manager.list()).toHaveLength(1);
 	});
 
 	it("asks before opening a session whose recorded cwd is gone, and opens it in the chosen cwd", async () => {

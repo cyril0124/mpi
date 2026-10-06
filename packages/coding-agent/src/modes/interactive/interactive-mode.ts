@@ -2881,6 +2881,7 @@ export class InteractiveMode {
 	private resumeTabHost(): ResumeTabHost {
 		return {
 			...this.tabLifecycleHost(),
+			activateTab: (tab) => this.activateTab(tab),
 			promptMissingSessionCwd: (error) => this.promptForMissingSessionCwd(error),
 			projectTrustContext: (cwd) => this.createProjectTrustContext(cwd),
 		};

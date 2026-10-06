@@ -113,6 +113,13 @@ export async function createTabClient(options: {
 			},
 			enqueueTabSwitch: enqueue,
 			switchActiveTab,
+			// Mirrors the real activation: a tab already on screen is left untouched instead of
+			// being rebuilt.
+			activateTab: async (tab: AgentTab) => {
+				if (displayedTabId === tab.id) return;
+				manager.activate(tab.id);
+				await switchActiveTab(tab);
+			},
 			disposeTabUi,
 			queueRestoredTabBinds: () => {},
 			showError: (message: string) => {
