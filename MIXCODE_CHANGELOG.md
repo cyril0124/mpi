@@ -498,6 +498,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A draft typed in an agent tab survives a visit to Home followed by `/resume` (or `/new-session`).
+  `handleResumeIntoTab` and `handleNewTab` parked the composer's text unconditionally, and from
+  Home that text is the empty ephemeral composer, so the pick overwrote the draft the tab had
+  parked. The handover now goes through the host's `saveComposerDraft`, which skips while Home owns
+  the composer, and `activateTab`'s already-on-screen guard puts the tab's parked draft back in the
+  composer after Home cleared it.
+
 - `/resume` picking the session the focused tab already holds no longer wipes that tab's extension
   chrome. The already-open branch called `switchActiveTab` directly, which has no same-tab guard and
   rebuilt the tab's widgets, footer/header, statuses and custom editor from the empty `tabUi` record

@@ -66,6 +66,9 @@ export async function createTabClient(options: {
 	const openedUi: string[] = [];
 	const status: string[] = [];
 	let displayedTabId = manager.getActive().id;
+	let editorText = "draft";
+	// Home owns the composer: its text is ephemeral, so it parks no tab draft.
+	let homeOwnsComposer = false;
 	let queue = Promise.resolve();
 	const enqueue = (operation: () => Promise<void>): Promise<void> => {
 		const next = queue.then(operation);
@@ -104,6 +107,15 @@ export async function createTabClient(options: {
 		get displayedTabId() {
 			return displayedTabId;
 		},
+		get editorText() {
+			return editorText;
+		},
+		setEditorText: (text: string) => {
+			editorText = text;
+		},
+		setHomeOwnsComposer: (owns: boolean) => {
+			homeOwnsComposer = owns;
+		},
 		host: {
 			tabManager: manager,
 			sharedTabLayout: shared,
@@ -116,9 +128,20 @@ export async function createTabClient(options: {
 			// Mirrors the real activation: a tab already on screen is left untouched instead of
 			// being rebuilt.
 			activateTab: async (tab: AgentTab) => {
-				if (displayedTabId === tab.id) return;
+				const leavingHome = homeOwnsComposer;
+				homeOwnsComposer = false;
+				if (displayedTabId === tab.id) {
+					// Home cleared the composer when it took the slot, so its tab's parked draft
+					// comes back here, the way a full switch would restore it.
+					if (leavingHome) editorText = tab.draftInput;
+					return;
+				}
 				manager.activate(tab.id);
 				await switchActiveTab(tab);
+			},
+			saveComposerDraft: () => {
+				if (homeOwnsComposer) return;
+				manager.setDraft(manager.getActive().id, editorText);
 			},
 			disposeTabUi,
 			queueRestoredTabBinds: () => {},
@@ -132,7 +155,6 @@ export async function createTabClient(options: {
 				status.push(message);
 			},
 			showExtensionConfirm: async () => true,
-			editorText: () => "draft",
 			subscribeToAgent: () => {},
 			unsubscribeFromAgent: () => {},
 		},

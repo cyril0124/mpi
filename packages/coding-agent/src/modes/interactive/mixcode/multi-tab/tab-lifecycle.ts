@@ -30,7 +30,12 @@ function deleteOutcome(result: { ok: boolean; removed: boolean; error?: string }
 export interface TabLifecycleHost {
 	readonly tabManager: TabManager | undefined;
 	readonly sharedTabLayout: SharedTabLayout | undefined;
-	editorText(): string;
+	/**
+	 * Park the composer's text as the draft of the tab that mounts it. A no-op while Home owns
+	 * the composer: Home's text is ephemeral and belongs to no tab, so a command run from there
+	 * must not overwrite the draft that tab parked.
+	 */
+	saveComposerDraft(): void;
 	enqueueTabSwitch(run: () => Promise<void>): Promise<void>;
 	switchActiveTab(tab: AgentTab): Promise<void>;
 	disposeTabUi(tabId: string): void;
@@ -63,7 +68,7 @@ export async function handleNewTab(host: TabLifecycleHost, title: string | undef
 		return;
 	}
 	const previousId = tabManager.getActive().id;
-	tabManager.setDraft(previousId, host.editorText());
+	host.saveComposerDraft();
 
 	let createdTab: AgentTab | undefined;
 	const create = async () => {
@@ -169,8 +174,9 @@ export async function handleResumeIntoTab(host: ResumeTabHost, sessionPath: stri
 	if (!tabManager) return;
 
 	// The composer text belongs to the tab it was typed in, and both branches below
-	// move focus to another tab, the same handover handleNewTab does.
-	tabManager.setDraft(tabManager.getActive().id, host.editorText());
+	// move focus to another tab, the same handover handleNewTab does. Home owns no
+	// draft, so the host skips the handover there.
+	host.saveComposerDraft();
 
 	const open = tabManager.list().find((tab) => tab.runtime.session.sessionFile === sessionPath);
 	if (open) {

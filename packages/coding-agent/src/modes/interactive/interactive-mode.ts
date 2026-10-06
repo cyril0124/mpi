@@ -2866,7 +2866,7 @@ export class InteractiveMode {
 		return {
 			tabManager: this.tabManager,
 			sharedTabLayout: this.sharedTabLayout,
-			editorText: () => this.editorText(),
+			saveComposerDraft: () => this.saveComposerDraft(),
 			enqueueTabSwitch: (run) => this.enqueueTabSwitch(run),
 			switchActiveTab: (tab) => this.switchActiveTab(tab),
 			disposeTabUi: (id) => this.disposeTabUi(id),
@@ -3145,6 +3145,9 @@ export class InteractiveMode {
 		// startup restore moves the focus without switching the UI, so the two can
 		// disagree and skipping the switch would leave the previous transcript up.
 		if (tab.id === this.activeTabIdForUi) {
+			// Home cleared the composer when it took the slot, so the draft it parked comes
+			// back here; a full switch would restore it the same way.
+			if (leavingHome) this.setEditorText(tab.draftInput);
 			// The bound tab is already the one to focus, so nothing is rebuilt and the
 			// render path that seeds the composer history does not run; seed it here.
 			this.syncEditorHistory();
@@ -3424,6 +3427,13 @@ export class InteractiveMode {
 	private setEditorText(text: string): void {
 		this.defaultEditor.setText(text);
 		if (this.editor !== this.defaultEditor) this.editor.setText(text);
+	}
+
+	/** Park the composer's text as the draft of the tab on screen; Home's composer owns no draft. */
+	private saveComposerDraft(): void {
+		const manager = this.tabManager;
+		if (!manager || this.homeSelection.active) return;
+		manager.setDraft(manager.getActive().id, this.editorText());
 	}
 
 	/**

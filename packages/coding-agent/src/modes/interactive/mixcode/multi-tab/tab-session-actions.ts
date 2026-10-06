@@ -17,7 +17,8 @@ export interface SessionActionHost {
 	readonly tabManager: TabManager | undefined;
 	readonly sharedTabLayout: SharedTabLayout | undefined;
 	readonly session: AgentSession;
-	editorText(): string;
+	/** Park the composer's text as the draft of the tab that mounts it; a no-op from Home. */
+	saveComposerDraft(): void;
 	enqueueTabSwitch(run: () => Promise<void>): Promise<void>;
 	switchActiveTab(tab: AgentTab): Promise<void>;
 	disposeTabUi(tabId: string): void;

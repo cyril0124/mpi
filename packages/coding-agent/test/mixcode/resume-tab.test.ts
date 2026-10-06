@@ -219,6 +219,25 @@ describe("resume into a new tab", () => {
 		expect(a.manager.list()).toHaveLength(1);
 	});
 
+	it("keeps the focused tab's parked draft when Home owns the composer", async () => {
+		// Home parks the tab's composer text as its draft and clears the composer. Picking that
+		// session again from Home must not write Home's ephemeral composer over the parked draft,
+		// and the tab comes back with the draft in its composer.
+		const a = await client();
+		const tab = a.manager.getActive();
+		const file = tab.runtime.session.sessionFile!;
+		a.manager.setDraft(tab.id, "DRAFT-KEEP-ME");
+		a.setEditorText("");
+		a.setHomeOwnsComposer(true);
+
+		await handleResumeIntoTab(host(a), file);
+
+		expect(a.errors).toEqual([]);
+		expect(a.status).toEqual([`Session is already open in tab "Agent-01".`]);
+		expect(a.manager.get(tab.id)!.draftInput).toBe("DRAFT-KEEP-ME");
+		expect(a.editorText).toBe("DRAFT-KEEP-ME");
+	});
+
 	it("asks before opening a session whose recorded cwd is gone, and opens it in the chosen cwd", async () => {
 		const focused = await client();
 		const goneWorkdir = join(root, "gone");
