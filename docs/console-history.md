@@ -63,8 +63,9 @@ line opens a new one.
 height: older lines are dropped and a dim `(N earlier lines hidden · c/y copy all)` row takes their
 place.
 - `c` or `y` (`app.notice.copy`) copies the whole panel text; `Esc` or `q` (`app.notice.dismiss`)
-closes it. While a run or a bash command is live, `Esc` keeps its interrupt meaning and the panel
-then closes on the next one.
+closes it. While a run or a bash command is live, `Esc` belongs to that run instead (during a run the
+first press only arms the confirm window; see [Keybindings](keybindings.md#escape)) and the panel then
+closes on the next one.
 - Both bindings are ordinary fork keybindings, so they can be remapped in `keybindings.json`.
 
 The panel is a transient view, not a record: `/console-history` is the list of what was captured.

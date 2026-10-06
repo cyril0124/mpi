@@ -112,6 +112,11 @@ import {
 	isContextLimitActive,
 	parseContextLimitValue,
 } from "../../core/mixcode/context-limit.ts";
+import {
+	hasAssistantOutput,
+	INTERRUPT_ARM_WINDOW_MS,
+	retractableUserMessage,
+} from "../../core/mixcode/escape-retract.ts";
 import { emitMarkDone, setWaitingForInputCount } from "../../core/mixcode/extension-event-bus.ts";
 import {
 	type FollowUpHost,
@@ -686,6 +691,11 @@ const QUEUE_EDIT_ARM_WINDOW_MS = 1000;
 /** Delay before `/mark-done` reaches host extensions, so the user can leave the pane first. */
 const MARK_DONE_SIGNAL_DELAY_MS = 5_000;
 
+/** Prompt for the armed interrupt confirm, naming the key the binding currently carries. */
+function interruptArmMessage(): string {
+	return `${keyDisplayText("app.interrupt")} again: stop`;
+}
+
 /** Prompt for the armed queue-edit choice, naming the keys the bindings currently carry. */
 function queueEditArmMessage(): string {
 	const steer = primaryKeyGlyphText("app.queueEdit.steer");
@@ -947,6 +957,17 @@ export class InteractiveMode {
 	private compactionClaimed = false;
 	/** Manual compaction model labels belong to their originating sessions. */
 	private readonly compactionModelRefs = new Map<AgentSession, string>();
+	/** Deadline of the armed interrupt confirm; 0 = unarmed. */
+	private interruptArmDeadline = 0;
+	/** Timer that drops the confirm toast when the arm window ends. */
+	private interruptArmTimer: NodeJS.Timeout | undefined;
+	/** Prompt painted while the interrupt is armed, so the window clears the toast it showed. */
+	private interruptArmMessage: string | undefined;
+	/** Branch leaf the in-flight run started from; undefined when no run is recorded. */
+	private runStartLeafId: string | null | undefined = undefined;
+	/** True once the in-flight run rendered output the user can see. */
+	private runVisibleOutput = false;
+
 	/** Deadline of the armed queue-edit choice (s/f) after the dequeue key; 0 = unarmed. */
 	private queueEditArmDeadline = 0;
 	/** Timer that drops the choice toast when the arm window ends. */
@@ -3774,6 +3795,10 @@ export class InteractiveMode {
 		// instances, and each block caches its own render against its content, so a
 		// quiet switch repaints without re-rendering the conversation. A rebuilt
 		// transcript has all-new components, which start with no measurements.
+		// The confirm window and the run markers belong to the session leaving the screen.
+		this.endInterruptArm();
+		this.runStartLeafId = undefined;
+		this.runVisibleOutput = false;
 		this.subscribeToAgent();
 		this.attachTabUi(tab.id);
 		// A tab bound in the background still owes its own resources block and theme
@@ -6380,10 +6405,23 @@ export class InteractiveMode {
 		this.defaultEditor.onEscape = () => {
 			// A queued steer message sends immediately: abort the run and flush the
 			// steer queue as one turn. Follow-up rounds are never promoted.
-			if (this.tryFlushSteerQueue()) return;
+			if (this.tryFlushSteerQueue()) {
+				this.endInterruptArm();
+				return;
+			}
 			if (this.session.isStreaming) {
-				this.restoreQueuedMessagesToEditor({ abort: true });
-			} else if (this.session.isBashRunning) {
+				// The first Escape only arms: the confirmed second one retracts a turn
+				// that produced no output yet, and aborts otherwise.
+				if (this.isInterruptArmed()) {
+					this.endInterruptArm();
+					void this.retractOrAbortTurn();
+					return;
+				}
+				this.armInterrupt();
+				return;
+			}
+			this.endInterruptArm();
+			if (this.session.isBashRunning) {
 				this.session.abortBash();
 			} else if (this.isBashMode) {
 				this.editor.setText("");
@@ -6979,6 +7017,11 @@ export class InteractiveMode {
 			case "agent_start":
 				this.pendingTools.clear();
 				this.followUpState.followUpRunFailed = false;
+				// The leaf before this run's prompt is what a retract rewinds past, so
+				// record it before the prompt is persisted at its message_end.
+				this.runStartLeafId = this.sessionManager.getLeafId();
+				this.runVisibleOutput = false;
+				this.endInterruptArm();
 				// Restore main escape handler if retry handler is still active
 				// (retry success event fires later, but we need main handler now)
 				if (this.retryEscapeHandler) {
@@ -7010,12 +7053,13 @@ export class InteractiveMode {
 			case "entry_appended":
 				if (this.entriesRenderedByBoundaryCompaction.delete(event.entry.id)) break;
 				if (event.entry.type === "custom") {
-					this.addCustomEntryToChat(event.entry);
+					if (this.addCustomEntryToChat(event.entry)) this.runVisibleOutput = true;
 					this.ui.requestRender();
 				} else if (event.entry.type === "usage" && event.entry.kind === "cache_warm") {
 					this.addCacheWarmingUsage(event.entry);
 					this.ui.requestRender();
 				} else if (event.entry.type === "custom_message" && event.entry.display) {
+					this.runVisibleOutput = true;
 					this.addMessageToChat(
 						createCustomMessage(
 							event.entry.customType,
@@ -7065,6 +7109,7 @@ export class InteractiveMode {
 
 			case "message_start":
 				if (event.message.role === "custom") {
+					if (event.message.display) this.runVisibleOutput = true;
 					this.addMessageToChat(event.message);
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
@@ -7072,6 +7117,7 @@ export class InteractiveMode {
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
+					if (hasAssistantOutput(event.message)) this.runVisibleOutput = true;
 					this.startStreamingMessage(event.message);
 					this.ui.requestRender();
 				}
@@ -7081,6 +7127,7 @@ export class InteractiveMode {
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
 					this.streamingComponent.updateContent(this.streamingMessage, true);
+					if (!this.runVisibleOutput) this.runVisibleOutput = hasAssistantOutput(this.streamingMessage);
 
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
@@ -7162,6 +7209,7 @@ export class InteractiveMode {
 				break;
 
 			case "tool_execution_start": {
+				this.runVisibleOutput = true;
 				let component = this.pendingTools.get(event.toolCallId);
 				if (!component) {
 					component = new ToolExecutionComponent(
@@ -7208,6 +7256,8 @@ export class InteractiveMode {
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
+				this.runStartLeafId = undefined;
+				this.endInterruptArm();
 				this.clearStatusIndicator("working");
 				if (this.streamingComponent) {
 					this.chatContainer.removeChild(this.streamingComponent);
@@ -7233,6 +7283,7 @@ export class InteractiveMode {
 					this.ui.terminal.setProgress(true);
 				}
 				// Keep editor active; submissions are queued during compaction.
+				this.endInterruptArm();
 				this.autoCompactionEscapeHandler = this.defaultEditor.onEscape;
 				this.defaultEditor.onEscape = () => {
 					this.session.abortCompaction();
@@ -7302,6 +7353,7 @@ export class InteractiveMode {
 
 			case "auto_retry_start": {
 				// Set up escape to abort retry
+				this.endInterruptArm();
 				this.retryEscapeHandler = this.defaultEditor.onEscape;
 				this.defaultEditor.onEscape = () => {
 					this.session.abortRetry();
@@ -7409,26 +7461,32 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private addCustomEntryToChat(entry: Extract<SessionEntry, { type: "custom" }>): void {
+	/**
+	 * Add the entry's rendered component to the transcript, reporting whether
+	 * anything rendered: without a renderer, or with nothing to show, the entry has
+	 * no component and reports false.
+	 */
+	private addCustomEntryToChat(entry: Extract<SessionEntry, { type: "custom" }>): boolean {
 		const renderer = this.session.extensionRunner.getEntryRenderer(entry.customType);
 		if (!renderer) {
-			return;
+			return false;
 		}
 		const component = new CustomEntryComponent(entry, renderer);
 		component.setExpanded(this.toolOutputExpanded);
 		if (!component.hasContent()) {
-			return;
+			return false;
 		}
 
 		if (this.streamingComponent) {
 			const streamingIndex = this.chatContainer.children.indexOf(this.streamingComponent);
 			if (streamingIndex >= 0) {
 				this.chatContainer.children.splice(streamingIndex, 0, component);
-				return;
+				return true;
 			}
 		}
 
 		this.chatContainer.addChild(component);
+		return true;
 	}
 
 	private addMessageToChat(message: AgentMessage): void {
@@ -8245,6 +8303,116 @@ export class InteractiveMode {
 		if (shownMessage === undefined || activeToast(this.toastHost())?.message !== shownMessage) return;
 		clearToast(this.toastHost());
 		this.hideToast();
+	}
+
+	/**
+	 * Arm the interrupt confirm: a press inside the window confirms the interrupt,
+	 * and a later press only arms again.
+	 */
+	private armInterrupt(): void {
+		this.interruptArmDeadline = Date.now() + INTERRUPT_ARM_WINDOW_MS;
+		this.interruptArmMessage = interruptArmMessage();
+		this.notifyToast("info", this.interruptArmMessage);
+		if (this.interruptArmTimer) clearTimeout(this.interruptArmTimer);
+		this.interruptArmTimer = setTimeout(() => this.endInterruptArm(), INTERRUPT_ARM_WINDOW_MS);
+	}
+
+	/** True while the arm window is open, so the next press confirms the interrupt. */
+	private isInterruptArmed(): boolean {
+		return this.interruptArmDeadline !== 0 && Date.now() <= this.interruptArmDeadline;
+	}
+
+	/** End the confirm window, clear its timer, and drop its toast if it still shows. */
+	private endInterruptArm(): void {
+		this.interruptArmDeadline = 0;
+		if (this.interruptArmTimer) {
+			clearTimeout(this.interruptArmTimer);
+			this.interruptArmTimer = undefined;
+		}
+		const shownMessage = this.interruptArmMessage;
+		this.interruptArmMessage = undefined;
+		if (shownMessage === undefined || activeToast(this.toastHost())?.message !== shownMessage) return;
+		clearToast(this.toastHost());
+		this.hideToast();
+	}
+
+	/** Confirm the armed interrupt: retract a turn that produced no output, else abort the run. */
+	private async retractOrAbortTurn(): Promise<void> {
+		try {
+			if (await this.retractCurrentTurn()) return;
+		} catch (error) {
+			// The retract has already settled the composer. Nothing may reject into the
+			// fire-and-forget call site, where the app exits on an unhandled rejection.
+			this.showError(`Interrupt failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		this.restoreQueuedMessagesToEditor({ abort: true });
+	}
+
+	/**
+	 * Retract the in-flight turn as if it had never been submitted: abort the
+	 * stream, rewind the branch leaf to before the run's own user message, and put
+	 * that message back into an empty composer. Returns false when the run is not
+	 * retractable, so the caller aborts it normally.
+	 */
+	private async retractCurrentTurn(): Promise<boolean> {
+		// Compaction owns the run until it ends, and navigateTree refuses to run under it.
+		if (this.session.isCompacting || this.compactionClaimed) return false;
+		// A queued follow-up round is recovered by the abort path instead: retracting
+		// under it would leave that queue to fire into the retracted conversation.
+		if (this.hasQueuedMessages()) return false;
+		// A composer the user is writing in is left alone: the confirmed Esc aborts
+		// instead of rewinding a turn out from under the draft.
+		if (this.editor.getText().trim()) return false;
+		const target = retractableUserMessage(
+			this.sessionManager.getBranch(),
+			this.runStartLeafId,
+			this.runVisibleOutput,
+		);
+		if (!target) return false;
+		// Optimistic prefill: abort() waits for stream idle, which can lag behind the
+		// provider teardown, so the composer takes its text before that wait.
+		this.setEditorText(target.text);
+		this.ui.requestRender();
+		const leafBeforeRewind = this.sessionManager.getLeafId();
+		let cancelled = false;
+		let rewindText: string | undefined;
+		try {
+			if (this.session.isStreaming) await this.session.abort();
+			// The await accepts input: a round queued during it has to abort instead of being
+			// rewound under, and a run or compaction that started must not be rewound into.
+			if (
+				this.hasQueuedMessages() ||
+				this.session.isStreaming ||
+				this.session.isCompacting ||
+				this.compactionClaimed
+			) {
+				this.setEditorText("");
+				return false;
+			}
+			const result = await this.session.navigateTree(target.id);
+			cancelled = result.cancelled;
+			rewindText = result.editorText;
+		} catch (error) {
+			// The rewind commits before navigateTree refreshes the context and notifies
+			// extensions, and abort() can fail before it: the composer keeps its copy unless
+			// the branch never moved.
+			if (this.sessionManager.getLeafId() === leafBeforeRewind) this.setEditorText("");
+			throw error;
+		}
+		if (cancelled) {
+			// An extension vetoed the rewind, so the turn stays in the transcript and
+			// the composer must not keep a second copy of its text.
+			this.setEditorText("");
+			this.ui.requestRender();
+			return true;
+		}
+
+		this.chatContainer.clear();
+		this.renderInitialMessages();
+		if (rewindText && !this.editor.getText().trim()) this.setEditorText(rewindText);
+		this.updatePendingMessagesDisplay();
+		this.ui.requestRender();
+		return true;
 	}
 
 	/** Pop the last entry of one queue into the editor, preserving a non-empty draft. */

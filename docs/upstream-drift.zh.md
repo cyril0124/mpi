@@ -25,6 +25,7 @@
 | 已删除会话 | 直接 unlink 文件 | 文件移入 `<agent dir>/mixcode-pi/trash/` 并记入 `trash-index.jsonl`（上限 2 GiB，先淘汰最旧），`/resume-trash` 可把选中的一条还原回原路径；移动失败则退回系统 `trash` CLI、再退回 unlink | 误按 `/delete-session` 应当可撤销，不必依赖备份；该 trash 目录与 mixcode-pi 共用 |
 | `app.model.cycleForward` 默认键 | `ctrl+p` | 无默认键 | `ctrl+p` 改作打开命令面板 |
 | `app.tab.jump` 默认键 | 无此动作；`ctrl+t` 切换 thinking 块显示 | `ctrl+t` 打开 Tab Jump 切换浮层，`app.thinking.toggle` 保留 `ctrl+t` 默认值但在 composer 中按注册顺序把该键让给跳转 | 有多个 agent 时应当直接跳过去，而不是逐个循环；见 [Agent 标签页](tabs.zh.md#标签页跳转) |
+| 运行中按 `Escape` | 第一次按下即中断运行 | 第一次按下只武装 1 秒确认窗口并提示 `<中断键> again: stop`，第二次按下才中断；本轮还没有可见输出时改为回撤：分支 leaf 回到本轮自己的用户消息之前，文本回到输入框 | 一次误按不应丢掉还没开始回答的提示，回撤出来的文本可以直接改完再发；见[按键绑定](keybindings.zh.md#escape) |
 | 退出 | `ctrl+d` 直接退出，不询问 | `ctrl+q`（Windows 与 WSL 为 `ctrl+shift+q`）先询问；`ctrl+d` 不变 | [命令面板与退出确认](command-palette.zh.md) |
 | 全屏对话区渲染 | 每帧渲染全部消息组件再裁剪到视口 | 只渲染可见窗口（上下各 20 行余量），未测块按 4 行估算；`HStack` 不再为已有高度的拉伸子项测量其固有高度，因此侧边面板列不会把对话区整体渲染一遍 | 否则帧开销随整段对话增长，改变终端宽度时还会把每条消息重新排版 |
 | 对话区滚动键 | 仅 `tui.altScreen.*` | 全屏模式下另有模态界面（`/vim`、`j`/`k`/`gg`/`G`、提问跳转）；`tui.altScreen.top`/`bottom` 无默认键，`home`/`end` 留给输入框，Vim 模式用它们跳到对话区两端 | 长对话免鼠标阅读 |

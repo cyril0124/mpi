@@ -347,6 +347,17 @@ point `## [Unreleased]` at the new tag.
   in-app block), and both estimate tokens at ~4 characters per token with one token per CJK character.
 ### Changed
 
+- `Escape` interrupts a running turn in two steps: the first press arms a 1 s window and shows
+  `<interrupt key> again: stop`, and the second press inside that window interrupts. A turn that has
+  produced nothing readable yet (no assistant text, no thinking, no tool call, no displayed
+  extension message or rendered custom entry, with an empty composer and no queued follow-up round)
+  is retracted instead of merely stopped: the branch leaf rewinds to before that run's own user
+  message and the text returns to the composer, so a prompt sent too early can be edited and sent
+  again. Every other run aborts as before, leaving queued steer texts in the editor and a queued
+  follow-up round paused in the queue.
+  The notice names the configured `app.interrupt` key, and a run a custom message started is never
+  retracted, since rewinding to an older user message would drop completed turns. See
+  [Keybindings](docs/keybindings.md#escape).
 - `/resume` and `/resume-trash` open the picked session in a tab of its own instead of replacing the
   focused tab's session, matching `/clone` and a restored workspace entry. A session that is already
   open in a tab is focused rather than opened twice, because two runtimes on one session file would

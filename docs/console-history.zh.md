@@ -35,7 +35,7 @@
 - 它浮在画面之上且不抢焦点，所以弹窗在时输入框仍能正常输入。
 - 同一批连续的行会继续加进同一个弹窗；关掉之后再有人写日志，就新开一个。
 - 超长的行折行而不是截断，弹窗最高长到终端高度的约 60%：更早的行被丢掉，替换为一行灰字 `(N earlier lines hidden · c/y copy all)`。
-- `c` 或 `y`（`app.notice.copy`）复制弹窗全文；`Esc` 或 `q`（`app.notice.dismiss`）关闭。当有回合或 bash 命令正在跑时，`Esc` 仍然表示中断，弹窗留到下一次 `Esc`。
+- `c` 或 `y`（`app.notice.copy`）复制弹窗全文；`Esc` 或 `q`（`app.notice.dismiss`）关闭。当有回合或 bash 命令正在跑时，`Esc` 归该运行所有（运行中第一次按下只武装确认窗口，见[按键绑定](keybindings.zh.md#escape)），弹窗留到下一次 `Esc`。
 - 两个按键都是本 fork 的普通按键绑定，可以在 `keybindings.json` 里改。
 
 弹窗只是临时显示，不存记录；`/console-history` 才是捕获内容的清单。
