@@ -508,6 +508,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The composer-level queue keys no longer act on the tab behind MixCode Home. `ctrl+u`
+  (`app.message.dequeue`) popped that tab's queued round into Home's ephemeral composer, which the
+  next `tab` discarded, so the message ended up in no queue and in no session; `alt+enter`
+  (`app.message.followUp`) sent the text to the mounted tab while Home's own hint named the roster's
+  selection, so it reached a different agent than the one the composer promised. Both keys leave the
+  text where it is while Home owns the composer.
+
 - `Escape` keeps working on every tab while a branch summary runs. `/tree` followed by a summary
   choice replaced the composer's `onEscape` with a closure calling
   `this.session.abortBranchSummary()`, and only `navigateTree` settling restored the previous

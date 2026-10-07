@@ -8045,6 +8045,10 @@ export class InteractiveMode {
 		const text = (this.editor.getExpandedText?.() ?? this.editor.getText()).trim();
 		if (!text) return;
 
+		// A follow-up round belongs to the tab that queued it; Home's composer addresses the roster's
+		// selection instead, so the round would be queued on the tab behind Home. Keep the text here.
+		if (this.homeSelection.active) return;
+
 		// Queue input during compaction (extension commands execute immediately)
 		if (this.session.isCompacting) {
 			if (this.isExtensionCommand(text)) {
@@ -8157,6 +8161,9 @@ export class InteractiveMode {
 	}
 
 	private handleDequeue(): void {
+		// Home's composer is ephemeral and addresses the roster's selection, so an entry popped out of
+		// another tab's queue would be discarded with it on the next `tab`.
+		if (this.homeSelection.active) return;
 		const steerCount = this.followUpState.pendingSteer.length;
 		const followUpCount = this.followUpState.pendingFollowUps.length;
 		if (steerCount > 0 && followUpCount > 0) {
