@@ -1097,6 +1097,9 @@ export class InteractiveMode {
 				// Ring the bell when a tab the user is not looking at finishes, so a
 				// background result is noticeable with the terminal unfocused.
 				onBackgroundCompletion: () => this.ui.terminal.write("\x07"),
+				// A parked compaction message has to reach its own tab even when that tab's
+				// compaction ends behind another one.
+				onCompactionEnd: (tabId, willRetry) => this.flushParkedCompactionQueue(tabId, willRetry),
 				configureRuntime: (runtime) => this.bindRuntimeCallbacks(runtime),
 			});
 		} else {
@@ -8708,28 +8711,34 @@ export class InteractiveMode {
 		return this.tabManager?.activeTab()?.id ?? SINGLE_SESSION_TAB_ID;
 	}
 
-	private get followUpState(): FollowUpQueueState {
-		const key = this.followUpStateKey();
-		let state = this.followUpStates.get(key);
+	private followUpStateFor(tabId: string): FollowUpQueueState {
+		let state = this.followUpStates.get(tabId);
 		if (!state) {
 			state = createFollowUpQueueState();
-			this.followUpStates.set(key, state);
+			this.followUpStates.set(tabId, state);
 		}
 		return state;
 	}
 
+	private get followUpState(): FollowUpQueueState {
+		return this.followUpStateFor(this.followUpStateKey());
+	}
+
 	/**
-	 * Parked compaction messages of the active tab. Keyed by tab, so a message always
+	 * Parked compaction messages of `tabId`. Keyed by tab, so a message always
 	 * flushes into the session that queued it.
 	 */
-	private get compactionQueuedMessages(): CompactionQueuedMessage[] {
-		const key = this.followUpStateKey();
-		let queue = this.compactionQueues.get(key);
+	private compactionQueueFor(tabId: string): CompactionQueuedMessage[] {
+		let queue = this.compactionQueues.get(tabId);
 		if (!queue) {
 			queue = [];
-			this.compactionQueues.set(key, queue);
+			this.compactionQueues.set(tabId, queue);
 		}
 		return queue;
+	}
+
+	private get compactionQueuedMessages(): CompactionQueuedMessage[] {
+		return this.compactionQueueFor(this.followUpStateKey());
 	}
 
 	/** True when a slash/skill/template/builtin text must run host-side instead of as a model turn. */
@@ -8767,6 +8776,12 @@ export class InteractiveMode {
 				}),
 			),
 		);
+	}
+
+	/** Repaint the parked-message boxes only while `tabId` is the tab on screen. */
+	private updatePendingMessagesDisplayFor(tabId: string): void {
+		if (tabId !== this.followUpStateKey()) return;
+		this.updatePendingMessagesDisplay();
 	}
 
 	private restoreQueuedMessagesToEditor(options?: { abort?: boolean; currentText?: string }): number {
@@ -8829,18 +8844,48 @@ export class InteractiveMode {
 	}
 
 	private isExtensionCommand(text: string): boolean {
+		return this.isExtensionCommandFor(this.session, text);
+	}
+
+	/** True when `session`'s own extensions own this slash command. */
+	private isExtensionCommandFor(session: AgentSession, text: string): boolean {
 		if (!text.startsWith("/")) return false;
 
-		const extensionRunner = this.session.extensionRunner;
+		const extensionRunner = session.extensionRunner;
 
 		const spaceIndex = text.indexOf(" ");
 		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
 		return !!extensionRunner.getCommand(commandName);
 	}
 
-	private async flushCompactionQueue(options?: { willRetry?: boolean }): Promise<void> {
-		// Flushing can outlive a tab switch, so hold the array this call started with.
-		const parkedQueue = this.compactionQueuedMessages;
+	/**
+	 * Flush the parked compaction messages of one tab into that tab's session.
+	 *
+	 * A parked message belongs to the tab that queued it, and that tab's compaction can end
+	 * while another tab holds focus, so `options.tabId` names the owner: it decides the queue,
+	 * the session, the extension table and the preview. Only the tab on screen repaints its
+	 * preview; a background tab's copy is rebuilt from the live queues when it is shown again.
+	 */
+	private async flushCompactionQueue(options?: { willRetry?: boolean; tabId?: string }): Promise<void> {
+		const ownerTabId = options?.tabId;
+		// Flushing can outlive a tab switch, so the owner and the array this call started with are
+		// resolved once, before the first await. Without `tabId` the owner is the focused tab, read
+		// from `this`, which is the shape a harness driving this one method on a hand-built `this`
+		// uses.
+		const ownerTab = ownerTabId === undefined ? this.tabManager?.getActive() : this.tabManager?.get(ownerTabId);
+		const ownerSession = ownerTabId === undefined ? this.session : (ownerTab?.runtime.session ?? this.session);
+		const ownerState = ownerTabId === undefined ? this.followUpState : this.followUpStateFor(ownerTabId);
+		const parkedQueue =
+			ownerTabId === undefined ? this.compactionQueuedMessages : this.compactionQueueFor(ownerTabId);
+		const repaintPreview = () =>
+			ownerTabId === undefined
+				? this.updatePendingMessagesDisplay()
+				: this.updatePendingMessagesDisplayFor(ownerTabId);
+		const ownsCommand = (text: string) =>
+			ownerTabId === undefined ? this.isExtensionCommand(text) : this.isExtensionCommandFor(ownerSession, text);
+		// A failure behind another tab reports which tab is holding the messages.
+		const ownerLabel =
+			ownerTabId !== undefined && ownerTab && ownerTab.id !== this.activeTabIdForUi ? `${ownerTab.title}: ` : "";
 		if (parkedQueue.length === 0) {
 			return;
 		}
@@ -8849,21 +8894,21 @@ export class InteractiveMode {
 		// Steer texts parked during compaction leave the preview with the flush;
 		// restoreQueue puts them back if the flush fails.
 		const parkedSteer = queuedMessages.filter((message) => message.mode === "steer").map((message) => message.text);
-		const remainingSteer = [...this.followUpState.pendingSteer];
+		const remainingSteer = [...ownerState.pendingSteer];
 		for (const text of parkedSteer) {
 			const index = remainingSteer.indexOf(text);
 			if (index !== -1) remainingSteer.splice(index, 1);
 		}
-		this.followUpState.pendingSteer = remainingSteer;
-		this.updatePendingMessagesDisplay();
+		ownerState.pendingSteer = remainingSteer;
+		repaintPreview();
 
 		const restoreQueue = (error: unknown) => {
-			this.session.clearQueue();
+			ownerSession.clearQueue();
 			parkedQueue.push(...queuedMessages);
-			this.followUpState.pendingSteer = [...parkedSteer, ...this.followUpState.pendingSteer];
-			this.updatePendingMessagesDisplay();
+			ownerState.pendingSteer = [...parkedSteer, ...ownerState.pendingSteer];
+			repaintPreview();
 			this.showError(
-				`Failed to send queued message${queuedMessages.length > 1 ? "s" : ""}: ${
+				`${ownerLabel}Failed to send queued message${queuedMessages.length > 1 ? "s" : ""}: ${
 					error instanceof Error ? error.message : String(error)
 				}`,
 			);
@@ -8873,24 +8918,24 @@ export class InteractiveMode {
 			if (options?.willRetry) {
 				// When retry is pending, queue messages for the retry turn
 				for (const message of queuedMessages) {
-					if (this.isExtensionCommand(message.text)) {
-						await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(message.text));
+					if (ownsCommand(message.text)) {
+						await runInTabConsole(ownerTab, () => ownerSession.prompt(message.text));
 					} else if (message.mode === "followUp") {
-						await runInTabConsole(this.tabManager?.getActive(), () => this.session.followUp(message.text));
+						await runInTabConsole(ownerTab, () => ownerSession.followUp(message.text));
 					} else {
-						await runInTabConsole(this.tabManager?.getActive(), () => this.session.steer(message.text));
+						await runInTabConsole(ownerTab, () => ownerSession.steer(message.text));
 					}
 				}
-				this.updatePendingMessagesDisplay();
+				repaintPreview();
 				return;
 			}
 
 			// Find first non-extension-command message to use as prompt
-			const firstPromptIndex = queuedMessages.findIndex((message) => !this.isExtensionCommand(message.text));
+			const firstPromptIndex = queuedMessages.findIndex((message) => !ownsCommand(message.text));
 			if (firstPromptIndex === -1) {
 				// All extension commands - execute them all
 				for (const message of queuedMessages) {
-					await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(message.text));
+					await runInTabConsole(ownerTab, () => ownerSession.prompt(message.text));
 				}
 				return;
 			}
@@ -8901,31 +8946,42 @@ export class InteractiveMode {
 			const rest = queuedMessages.slice(firstPromptIndex + 1);
 
 			for (const message of preCommands) {
-				await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(message.text));
+				await runInTabConsole(ownerTab, () => ownerSession.prompt(message.text));
 			}
 
 			// Start a prompt when idle, or queue it into a run still finishing compaction.
-			const promptPromise = runInTabConsole(this.tabManager?.getActive(), () =>
-				this.session.prompt(firstPrompt.text, { streamingBehavior: firstPrompt.mode }),
+			const promptPromise = runInTabConsole(ownerTab, () =>
+				ownerSession.prompt(firstPrompt.text, { streamingBehavior: firstPrompt.mode }),
 			).catch((error) => {
 				restoreQueue(error);
 			});
 
 			// Queue remaining messages
 			for (const message of rest) {
-				if (this.isExtensionCommand(message.text)) {
-					await runInTabConsole(this.tabManager?.getActive(), () => this.session.prompt(message.text));
+				if (ownsCommand(message.text)) {
+					await runInTabConsole(ownerTab, () => ownerSession.prompt(message.text));
 				} else if (message.mode === "followUp") {
-					await runInTabConsole(this.tabManager?.getActive(), () => this.session.followUp(message.text));
+					await runInTabConsole(ownerTab, () => ownerSession.followUp(message.text));
 				} else {
-					await runInTabConsole(this.tabManager?.getActive(), () => this.session.steer(message.text));
+					await runInTabConsole(ownerTab, () => ownerSession.steer(message.text));
 				}
 			}
-			this.updatePendingMessagesDisplay();
+			repaintPreview();
 			void promptPromise;
 		} catch (error) {
 			restoreQueue(error);
 		}
+	}
+
+	/**
+	 * Flush a tab's parked compaction messages into that tab's session.
+	 *
+	 * A compaction that ends behind another tab still has to deliver the texts the
+	 * user parked for it, so the entry point takes the tab from the compaction's own
+	 * session rather than reading the focused one.
+	 */
+	private flushParkedCompactionQueue(tabId: string, willRetry: boolean): void {
+		void this.flushCompactionQueue({ willRetry, tabId });
 	}
 
 	/** Move pending bash components from pending area to chat */

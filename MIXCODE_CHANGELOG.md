@@ -508,6 +508,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A message parked during `/compact` reaches the tab that queued it, even when that tab is not on
+  screen. The parked queue was keyed by tab, but the flush read the focused tab's queue and sent
+  through the focused session, and only the focused session's `compaction_end` reached the mode, so
+  a compaction that ended behind another tab left the text in its queue: the `Steer (1)` preview
+  stayed and the session never received the turn. The flush now carries the tab that owns the queue,
+  and a background tab's `compaction_end` asks that tab to flush its own queue.
+
 - `/fork` keeps the source tab's parked draft. The `/fork` branch clears the composer itself, and the
   confirmation then parked what was left in it, the command text or an empty string, over the draft
   that tab had stored. A draft typed in an agent tab, parked by Home, and then followed by `/fork` from

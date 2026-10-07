@@ -121,6 +121,8 @@ export interface TabManagerOptions {
 	configureRuntime: (runtime: AgentSessionRuntime) => void;
 	/** Called when a tab the user is not looking at finishes a turn. */
 	onBackgroundCompletion?: () => void;
+	/** Called when a background tab's compaction ends, with its tab id and the retry flag. */
+	onCompactionEnd?: (tabId: string, willRetry: boolean) => void;
 	/** Called after a tab was removed, with its id and the index it occupied. */
 	onTabClosed?: (tabId: string, removedIndex: number) => void;
 }
@@ -132,6 +134,7 @@ export class TabManager {
 	private readonly onLayoutChanged: (() => void) | undefined;
 	private readonly configureRuntime: (runtime: AgentSessionRuntime) => void;
 	private readonly onBackgroundCompletion: (() => void) | undefined;
+	private readonly onCompactionEnd: ((tabId: string, willRetry: boolean) => void) | undefined;
 	private readonly onTabClosed: ((tabId: string, removedIndex: number) => void) | undefined;
 	private readonly tabs: AgentTab[] = [];
 	private activeId: string;
@@ -145,6 +148,7 @@ export class TabManager {
 		this.onLayoutChanged = options.onLayoutChanged;
 		this.configureRuntime = options.configureRuntime;
 		this.onBackgroundCompletion = options.onBackgroundCompletion;
+		this.onCompactionEnd = options.onCompactionEnd;
 		this.onTabClosed = options.onTabClosed;
 		const tab = this.attachTab(options.initialTitle, options.initialRuntime);
 		this.activeId = tab.id;
@@ -776,6 +780,12 @@ export class TabManager {
 				if (!isActive) this.onBackgroundCompletion?.();
 				tab.unread = !isActive;
 				break;
+			}
+			case "compaction_end": {
+				// A message parked during this compaction waits for this tab, which may not
+				// be the focused one; the focused tab flushes it from its own event handler.
+				if (tab.id !== this.activeId) this.onCompactionEnd?.(tab.id, event.willRetry);
+				return;
 			}
 			case "session_info_changed": {
 				if (tab.titleLocked) return;
