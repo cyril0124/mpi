@@ -127,10 +127,12 @@ choice, so none of those can be taken from them; above every other app id.
 1. MixCode Home is on screen: nothing happens. Home is a navigation surface that owns an ephemeral
    composer, so `Escape` never reaches the tab behind it; interrupt that run from its own tab, and
    leave Home with `right` on a row or `tab`.
-2. A queued steer message sends now: the run is aborted and the steer queue is flushed as one turn.
-   Follow-up rounds are never promoted this way. A compaction owns the queue until it ends, so
-   while one runs this step declines and `Escape` falls through to the steps below.
-3. The session is streaming: the first `Escape` only arms a 1 s confirm window and says so; a
+2. A compaction is running on the tab on screen: it is cancelled, which is what the status line that
+   announced the compaction says. A compaction on a tab behind another one is left alone; switch to
+   that tab to cancel it.
+3. A queued steer message sends now: the run is aborted and the steer queue is flushed as one turn.
+   Follow-up rounds are never promoted this way.
+4. The session is streaming: the first `Escape` only arms a 1 s confirm window and says so; a
    second `Escape` inside that window interrupts the run, and one after it arms again. A turn that
    has not produced anything readable yet - no assistant text, no thinking, no tool call, no
    displayed extension message or rendered custom entry - with an empty composer and no queued
@@ -138,9 +140,9 @@ choice, so none of those can be taken from them; above every other app id.
    message and the text returns to the composer, so a prompt sent too early can be edited and sent
    again. Every other run aborts as before: a queued steer text returns to the editor, while a
    queued follow-up round stays in the queue, paused.
-4. A bash command is running: the bash command is aborted.
-5. The composer is in `!` bash mode: the editor is cleared and bash mode is left.
-6. The editor is empty: a second `Escape` within 500 ms opens the session tree or the fork
+5. A bash command is running: the bash command is aborted.
+6. The composer is in `!` bash mode: the editor is cleared and bash mode is left.
+7. The editor is empty: a second `Escape` within 500 ms opens the session tree or the fork
    selector, whichever `doubleEscapeAction` selects; `none` disables it.
 
 A capturing overlay consumes the key before the composer sees it. The confirm window belongs to the

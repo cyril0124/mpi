@@ -936,9 +936,6 @@ export class InteractiveMode {
 	// Track pending bash components (shown in pending area, moved to chat on submit)
 	private pendingBashComponents: BashExecutionComponent[] = [];
 
-	// Auto-compaction state
-	private autoCompactionEscapeHandler?: () => void;
-
 	// Auto-retry state
 	private retryEscapeHandler?: () => void;
 
@@ -6355,6 +6352,13 @@ export class InteractiveMode {
 			// Home is a navigation surface that owns an ephemeral composer, so `Escape` stays inert
 			// there: neither the interrupt nor the double-escape selector belongs to it.
 			if (this.homeSelection.active) return;
+			// A compaction owns the session, so `Escape` cancels it, as its status indicator says.
+			// The mounted session reports its own compaction state, so this follows the tab in front.
+			if (this.session.isCompacting) {
+				this.session.abortCompaction();
+				this.endInterruptArm();
+				return;
+			}
 			// A queued steer message sends immediately: abort the run and flush the
 			// steer queue as one turn. Follow-up rounds are never promoted.
 			if (this.tryFlushSteerQueue()) {
@@ -7210,10 +7214,6 @@ export class InteractiveMode {
 				}
 				// Keep editor active; submissions are queued during compaction.
 				this.endInterruptArm();
-				this.autoCompactionEscapeHandler = this.defaultEditor.onEscape;
-				this.defaultEditor.onEscape = () => {
-					this.session.abortCompaction();
-				};
 				this.showStatusIndicator(
 					new CompactionStatusIndicator(this.ui, event.reason, this.compactionModelRefs.get(this.session)),
 				);
@@ -7226,10 +7226,6 @@ export class InteractiveMode {
 				this.compactionModelRefs.delete(this.session);
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
-				}
-				if (this.autoCompactionEscapeHandler) {
-					this.defaultEditor.onEscape = this.autoCompactionEscapeHandler;
-					this.autoCompactionEscapeHandler = undefined;
 				}
 				this.clearStatusIndicator("compaction");
 				if (event.aborted) {
