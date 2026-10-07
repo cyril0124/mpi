@@ -508,6 +508,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/delete-session` and `/delete-all-sessions` honor a vetoed session replacement. An extension can
+  cancel `session_before_switch`, which the shipped `confirm-destructive` and `dirty-repo-guard`
+  examples do when the user declines a confirmation or the repo is dirty. The delete ignored that
+  result and moved the file to the trash while the tab kept its conversation, so the live session
+  recreated the path without the session header. It now reports `Session delete cancelled.` and
+  leaves the file where the session writes.
+
 - `ctrl+u` takes a message queued during `/compact` out of the compaction queue as well as out of
   the preview. `queueCompactionMessage` parks the text in `compactionQueuedMessages` and mirrors it
   into `pendingSteer`; the dequeue popped only the mirror, so `flushCompactionQueue` still sent the

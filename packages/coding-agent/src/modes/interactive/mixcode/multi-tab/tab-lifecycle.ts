@@ -267,6 +267,7 @@ export async function handleDeleteTabs(
 
 	const errors: string[] = [];
 	let deleted = 0;
+	let replacementVetoed = false;
 	const record = (outcome: { deleted: number; error?: string }): void => {
 		deleted += outcome.deleted;
 		if (outcome.error) errors.push(outcome.error);
@@ -282,7 +283,14 @@ export async function handleDeleteTabs(
 				host.disposeTabUi(tab.id);
 			}
 			const keepPath = keep.runtime.session.sessionFile;
-			await host.runtimeHost.newSession();
+			// An extension can veto the replacement through `session_before_switch`. The tab then keeps
+			// its conversation, so its file has to stay where that session writes: moving it to the
+			// trash leaves the live session appending to a path that is no longer there.
+			const replacement = await host.runtimeHost.newSession();
+			if (replacement.cancelled) {
+				replacementVetoed = true;
+				return;
+			}
 			if (keepPath) record(deleteOutcome(await deleteSessionFile(keepPath, { title: keep.title })));
 			await host.enqueueTabSwitch(() => host.switchActiveTab(tabManager.getActive()));
 		} else {
@@ -296,6 +304,13 @@ export async function handleDeleteTabs(
 	await (host.sharedTabLayout?.transaction(runDelete) ?? runDelete());
 
 	if (errors.length > 0) host.showError(`Delete failed: ${errors.join("; ")}`);
+	if (replacementVetoed) {
+		// The kept tab holds its conversation; other tabs' files were already removed above.
+		host.showStatus(
+			deleted > 0 ? `Session delete cancelled after removing ${deleted} file(s).` : "Session delete cancelled.",
+		);
+		return;
+	}
 	if (deleted > 0) host.showStatus(`Removed ${deleted} session file(s).`);
 	else if (errors.length === 0) host.showStatus("No session file to delete.");
 }

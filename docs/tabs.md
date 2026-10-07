@@ -271,7 +271,9 @@ load.
 `/delete-session`, `/delete-all-sessions`, and the session selector refuse to delete a session
 file that an open tab holds, and name that tab: it keeps appending to the path, so removing the file
 under it leaves a headerless replacement that no restart can load. A tab with a turn in progress
-reports what it is busy with instead.
+reports what it is busy with instead. The two session commands also replace the session of the tab
+they keep, so an extension that cancels `session_before_switch` cancels the delete with it and the
+file stays where that tab writes.
 
 ## Reset
 
