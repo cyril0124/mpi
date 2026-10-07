@@ -277,7 +277,9 @@ load.
 ## Session deletion
 
 `/delete-session`, `/delete-all-sessions`, and the session selector refuse to delete a session
-file whose tab has a turn in progress, and report why: another tab may still be writing it.
+file that an open tab holds, and name that tab: it keeps appending to the path, so removing the file
+under it leaves a headerless replacement that no restart can load. A tab with a turn in progress
+reports what it is busy with instead.
 
 ## Reset
 

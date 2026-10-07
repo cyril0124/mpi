@@ -509,6 +509,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The `/resume` session selector refuses to delete a session file that any open tab holds, not only
+  one whose tab is busy. It removed the file of an idle tab, and that tab kept appending to the path,
+  which recreated it without the session header, so the tab's later conversation could no longer be
+  loaded. `/resume-trash` already refused every open tab's file; both selectors share the check now.
+
 - Session renames update ordinary tab titles even after a previous automatic rename, `/rename`,
   or resume, so `/auto-rename-force` no longer leaves the tab showing its old name. Batch-locked
   titles remain protected.

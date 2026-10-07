@@ -10180,6 +10180,17 @@ export class InteractiveMode {
 		});
 	}
 
+	/**
+	 * Refuse deleting a session file that any open tab holds: the tab keeps appending to that path,
+	 * which recreates it without the session header.
+	 */
+	private sessionOpenInTabGuard(sessionPath: string): string | undefined {
+		const tab = this.tabManager?.list().find((item) => item.runtime.session.sessionFile === sessionPath);
+		if (!tab) return undefined;
+		const reason = tabBusyReason(tab);
+		return reason ? `Cannot delete a session while ${reason}` : `Cannot delete a session open in tab: ${tab.title}`;
+	}
+
 	private showSessionSelector(): void {
 		this.showSelector((done) => {
 			const selector = new SessionSelectorComponent(
@@ -10219,13 +10230,7 @@ export class InteractiveMode {
 
 				this.sessionManager.getSessionFile(),
 			);
-			// A session file that another tab is still writing must not be deleted
-			// from the selector either.
-			selector.setSessionDeleteGuard((sessionPath: string) => {
-				const tab = this.tabManager?.list().find((item) => item.runtime.session.sessionFile === sessionPath);
-				const reason = tab ? tabBusyReason(tab) : undefined;
-				return reason ? `Cannot delete a session while ${reason}` : undefined;
-			});
+			selector.setSessionDeleteGuard((sessionPath) => this.sessionOpenInTabGuard(sessionPath));
 			return { component: selector, focus: selector };
 		});
 	}
@@ -10264,12 +10269,8 @@ export class InteractiveMode {
 				},
 				this.sessionManager.getSessionFile(),
 			);
-			// A trash file can be the open session of a tab (an unindexed file opens in
-			// place), so refuse a delete for a session any tab holds, not only a busy one.
-			selector.setSessionDeleteGuard((sessionPath: string) => {
-				const tab = this.tabManager?.list().find((item) => item.runtime.session.sessionFile === sessionPath);
-				return tab ? `Cannot delete a session open in tab: ${tab.title}` : undefined;
-			});
+			// An unindexed trash file opens in place, so a row here can be an open tab's session.
+			selector.setSessionDeleteGuard((sessionPath) => this.sessionOpenInTabGuard(sessionPath));
 			return { component: selector, focus: selector };
 		});
 	}
