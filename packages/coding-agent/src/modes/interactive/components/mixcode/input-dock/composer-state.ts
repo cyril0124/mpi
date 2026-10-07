@@ -54,7 +54,7 @@ export function composerPlaceholder(context: ComposerContext): string {
 		);
 	}
 	if (context.vimActive) {
-		return theme.fg("dim", "Vim: → newer · Shift+→ older · j/k scroll · q exit");
+		return theme.fg("dim", "Vim: → newer · Shift+→ older · j/k scroll · gg top · G bottom · q exit");
 	}
 	const hints = composerKeyHints(context.uiMode);
 	return theme.fg("dim", `Describe your next change...${FILES_COMMANDS_HINT}${hints}`);
