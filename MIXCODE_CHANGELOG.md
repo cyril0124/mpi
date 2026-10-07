@@ -508,6 +508,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/fork` keeps the source tab's parked draft. The `/fork` branch clears the composer itself, and the
+  confirmation then parked what was left in it, the command text or an empty string, over the draft
+  that tab had stored. A draft typed in an agent tab, parked by Home, and then followed by `/fork` from
+  Home's composer was gone when the tab came back. The confirmation now parks the composer only while
+  it still belongs to the source tab, so neither Home's ephemeral composer nor a command's text touches
+  that stored draft.
+
 - The composer-level queue keys no longer act on the tab behind MixCode Home. `ctrl+u`
   (`app.message.dequeue`) popped that tab's queued round into Home's ephemeral composer, which the
   next `tab` discarded, so the message ended up in no queue and in no session; `alt+enter`

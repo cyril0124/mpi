@@ -6667,7 +6667,7 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/fork") {
-				this.showUserMessageSelector();
+				this.showUserMessageSelector({ composerHoldsCommand: true });
 				this.editor.setText("");
 				return;
 			}
@@ -9866,7 +9866,12 @@ export class InteractiveMode {
 		});
 	}
 
-	private showUserMessageSelector(): void {
+	/**
+	 * Ask which user message to fork before. `composerHoldsCommand` marks a caller whose composer
+	 * text a command owns (`/fork` clears the composer itself), so the confirmation leaves the source
+	 * tab's stored draft alone instead of parking that text on it.
+	 */
+	private showUserMessageSelector(options?: { composerHoldsCommand?: boolean }): void {
 		const userMessages = this.session.getUserMessagesForForking();
 
 		if (userMessages.length === 0) {
@@ -9884,7 +9889,11 @@ export class InteractiveMode {
 					done();
 					try {
 						if (this.tabManager && sourceTab) {
-							this.tabManager.setDraft(sourceTab.id, this.editorText());
+							// Home's composer is ephemeral and a command's text is not a draft, so only a
+							// composer that still belongs to the source tab parks its text here.
+							if (!options?.composerHoldsCommand && !this.homeSelection.active) {
+								this.tabManager.setDraft(sourceTab.id, this.editorText());
+							}
 							const result = await this.tabManager.forkTab(sourceTab.id, entryId);
 							const tab = result.tab;
 							if (tab) {
