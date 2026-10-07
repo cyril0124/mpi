@@ -7120,6 +7120,9 @@ export class InteractiveMode {
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
 					this.addMessageToChat(event.message);
+					// A sent message ends the user's reading: jump to the end and follow again, so the
+					// message and the reply below it stay visible instead of arriving off screen.
+					this.viewportTui()?.scrollToBottom();
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
