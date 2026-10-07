@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { AgentSessionEventListener } from "../../src/core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../src/core/agent-session-runtime.ts";
 import { TabManager } from "../../src/core/mixcode/multi-tab/tab-manager.ts";
 
@@ -14,7 +15,7 @@ function stubRuntime(name?: string): AgentSessionRuntime {
 }
 
 /**
- * A runtime whose session is swapped in place, the way `/clear` and `/resume` do it:
+ * A runtime whose session is swapped in place, the way `/clear` does it:
  * the tab keeps the same runtime object and only `session` changes.
  */
 function replaceableRuntime(): {
@@ -45,7 +46,7 @@ function createManager(initialRuntime: AgentSessionRuntime = stubRuntime()): {
 	const manager = new TabManager({
 		initialRuntime,
 		initialTitle: "Agent-01",
-		createRuntime: (() => Promise.reject(new Error("not used"))) as never,
+		createRuntime: () => Promise.reject(new Error("not used")),
 		agentDir: "/tmp",
 		onTabsChanged: () => {
 			counters.tabsChanges += 1;
@@ -108,7 +109,7 @@ describe("tab layout persistence", () => {
  * name into the session, so replacing the session with an unnamed one has to drop
  * the title; keeping it leaves the tab announcing a conversation that is gone.
  */
-describe("tab title after a session replacement", () => {
+describe("tab titles", () => {
 	it("drops a custom title when the replacement session has no name", () => {
 		const { runtime, replaceSession } = replaceableRuntime();
 		const { manager, counters } = createManager(runtime);
@@ -147,19 +148,46 @@ describe("tab title after a session replacement", () => {
 
 		expect(manager.getActive().title).toBe("A");
 	});
-	it("does not let a later automatic session name replace an explicit tab title", () => {
+
+	it.each(["generated", "renamed", "resumed"] as const)(
+		"keeps a %s tab title in sync across successive session renames",
+		(titleSource) => {
+			const runtime = stubRuntime(titleSource === "resumed" ? "saved-title" : undefined);
+			let listener: AgentSessionEventListener | undefined;
+			runtime.session.subscribe = (next) => {
+				listener = next;
+				return () => {};
+			};
+			const { manager, counters } = createManager(runtime);
+			const tab = manager.getActive();
+			if (titleSource === "renamed") manager.rename(tab.id, "manual-title");
+
+			for (const name of ["first-generated-title", "second-generated-title"]) {
+				const before = { ...counters };
+				listener?.({ type: "session_info_changed", name });
+
+				expect(tab.title).toBe(name);
+				expect(counters.layoutChanges).toBe(before.layoutChanges + 1);
+				expect(counters.tabsChanges).toBe(before.tabsChanges + 1);
+			}
+		},
+	);
+
+	it("keeps a batch-locked title when the session is renamed", () => {
 		const runtime = stubRuntime();
-		let listener: ((event: unknown) => void) | undefined;
-		runtime.session.subscribe = ((next: (event: unknown) => void) => {
+		let listener: AgentSessionEventListener | undefined;
+		runtime.session.subscribe = (next) => {
 			listener = next;
 			return () => {};
-		}) as never;
-		const { manager } = createManager(runtime);
-		manager.rename(manager.getActive().id, "A");
+		};
+		const { manager, counters } = createManager(runtime);
+		manager.lockTitle(manager.getActive().id, "A");
+		const before = { ...counters };
 
 		listener?.({ type: "session_info_changed", name: "B" });
 
 		expect(manager.getActive().title).toBe("A");
+		expect(counters).toEqual(before);
 	});
 
 	it("follows the session name when the replacement carries one", () => {

@@ -509,6 +509,10 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Session renames update ordinary tab titles even after a previous automatic rename, `/rename`,
+  or resume, so `/auto-rename-force` no longer leaves the tab showing its old name. Batch-locked
+  titles remain protected.
+
 - Returning to a tab during an assistant response keeps its streaming text and final answer visible.
   A tab switch reset the live message component while replaying only persisted messages, so later
   updates and the completed answer were discarded by the UI even though the session saved them.

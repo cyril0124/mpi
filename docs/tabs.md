@@ -192,6 +192,9 @@ the session with an unnamed one (`/clear`) drops a custom title back to a free `
 that was already generated keeps its number. A resumed session names its own new tab: the name
 recorded in the session file, or a free `Agent-NN` for a session nobody named.
 
+Session name changes, including extension calls to `pi.setSessionName()`, update ordinary
+tab titles even if they already have a name. Titles locked by a batch request keep the batch name.
+
 ## Persistence
 
 Tab state is per working directory, in the directory mixcode-pi (`mpi`) also uses:

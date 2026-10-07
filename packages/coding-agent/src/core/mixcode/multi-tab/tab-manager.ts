@@ -778,7 +778,7 @@ export class TabManager {
 				break;
 			}
 			case "session_info_changed": {
-				if (tab.titleLocked || !tab.autoTitle) return;
+				if (tab.titleLocked) return;
 				const name = event.name?.trim();
 				if (!name) return;
 				this.applySessionTitle(tab, name);
