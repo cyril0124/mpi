@@ -3183,10 +3183,13 @@ export class InteractiveMode {
 			this.ui.requestRender();
 			return;
 		}
-		// Home's composer is ephemeral: never store its text as a tab draft. The
-		// manager's focus can already be `tab` while another tab's UI is mounted,
-		// so only save when the tab being left is a different one.
-		if (!leavingHome && current.id !== tab.id) manager.setDraft(current.id, this.editorText());
+		// Home's composer is ephemeral: never store its text as a tab draft, and a command Home
+		// dispatched keeps its own text there until it returns. The manager's focus can already
+		// be `tab` while another tab's UI is mounted, so only save when the tab being left is a
+		// different one.
+		if (!leavingHome && this.homeCommandDepth === 0 && current.id !== tab.id) {
+			manager.setDraft(current.id, this.editorText());
+		}
 		const active = manager.activate(tab.id);
 		await this.enqueueTabSwitch(() => this.switchActiveTab(active));
 	}

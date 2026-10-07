@@ -524,7 +524,9 @@ point `## [Unreleased]` at the new tag.
   <title>` typed in Home's composer closes the `/` autocomplete list, so the key reaches Home's send
   handler, which attaches the selected tab before dispatching; the command's own branch then clears
   the composer, and the draft handover parked that emptiness over the draft the tab had left with
-  Home. The handover now stays suspended for the run of a command Home dispatches.
+  Home. The handover stays suspended for the run of a command Home dispatches, and the one
+  `activateTab` performs suspends itself the same way, so a command that moves focus, such as `/tab
+  <index>`, keeps the draft too.
 
 - A draft typed in an agent tab survives a visit to Home followed by `/resume` (or `/new-session`).
   `handleResumeIntoTab` and `handleNewTab` parked the composer's text unconditionally, and from
