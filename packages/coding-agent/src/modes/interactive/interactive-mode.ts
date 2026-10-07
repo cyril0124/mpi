@@ -6406,6 +6406,9 @@ export class InteractiveMode {
 		// Set up handlers on defaultEditor - they use this.editor for text access
 		// so they work correctly regardless of which editor is active
 		this.defaultEditor.onEscape = () => {
+			// Home is a navigation surface that owns an ephemeral composer, so `Escape` stays inert
+			// there: neither the interrupt nor the double-escape selector belongs to it.
+			if (this.homeSelection.active) return;
 			// A queued steer message sends immediately: abort the run and flush the
 			// steer queue as one turn. Follow-up rounds are never promoted.
 			if (this.tryFlushSteerQueue()) {
