@@ -50,6 +50,13 @@ function makeDequeueContext() {
 			kind === "steering" ? state.pendingSteer : state.pendingFollowUps,
 		// The real stash path reads this fake instance.
 		stashEditorInput: Reflect.get(InteractiveMode.prototype, "stashEditorInput") as (this: unknown) => void,
+		// The dequeue also clears a compaction-parked copy; these tests park none.
+		compactionQueuedMessages: [] as Array<{ text: string; mode: "steer" | "followUp" }>,
+		discardCompactionQueuedMessage: Reflect.get(InteractiveMode.prototype, "discardCompactionQueuedMessage") as (
+			this: unknown,
+			kind: "steering" | "followUp",
+			text: string,
+		) => void,
 		homeSelection: { active: false },
 		activeTabIdForUi: "tab-1",
 		stashedPrompts: new Map<string, string[]>(),

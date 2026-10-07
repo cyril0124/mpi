@@ -508,6 +508,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `ctrl+u` takes a message queued during `/compact` out of the compaction queue as well as out of
+  the preview. `queueCompactionMessage` parks the text in `compactionQueuedMessages` and mirrors it
+  into `pendingSteer`; the dequeue popped only the mirror, so `flushCompactionQueue` still sent the
+  retracted message and left its text in the editor.
+
 - `ctrl+u` keeps the composer draft when it pops a queued message back into the editor. The draft
 went into the follow-up display mirror, which every queue sync rebuilds from the local rounds, so the
 box showed it as an SDK continuation (`SDK · <draft>`) and then dropped it. It is now parked through

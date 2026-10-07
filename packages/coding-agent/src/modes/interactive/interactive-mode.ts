@@ -8332,11 +8332,28 @@ export class InteractiveMode {
 			this.showWarning(`${kind === "steering" ? "Steer" : "Follow-up"} queue is empty`);
 			return;
 		}
+		// A text submitted during compaction lives in the compaction queue as well as in the
+		// preview mirror; pulling it back into the editor has to clear both, or the compaction-end
+		// flush sends the message the user just retracted.
+		this.discardCompactionQueuedMessage(kind, text);
 		const draft = this.editorText();
 		if (draft.trim()) this.stashEditorInput();
 		this.editor.setText(text);
 		this.updatePendingMessagesDisplay();
 		this.ui.requestRender();
+	}
+
+	/** Remove one parked compaction message, newest match first. */
+	private discardCompactionQueuedMessage(kind: QueueKind, text: string): void {
+		const mode = kind === "steering" ? "steer" : "followUp";
+		const queue = this.compactionQueuedMessages;
+		for (let index = queue.length - 1; index >= 0; index -= 1) {
+			const entry = queue[index];
+			if (entry && entry.mode === mode && entry.text === text) {
+				queue.splice(index, 1);
+				return;
+			}
+		}
 	}
 
 	private updateEditorBorderColor(): void {
