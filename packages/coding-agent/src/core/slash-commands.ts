@@ -61,9 +61,6 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "toggle-zen-mode", description: "Toggle Zen mode (hide the tab bar; Tab stops switching agents)" },
 	{ name: "toggle-inline-widgets", description: "Show extension widgets in the chat tail or in the dock" },
 	{ name: "widgets", description: "Expand or collapse widgets", argumentHint: "[expand|collapse|toggle] [key]" },
-	{ name: "save-workspace", description: "Save the open tab layout", argumentHint: "[name]" },
-	{ name: "restore-workspace", description: "Restore a saved tab layout", argumentHint: "[name]" },
-	{ name: "delete-workspace", description: "Delete a saved tab layout", argumentHint: "[name]" },
 	{
 		name: "compact",
 		description: "Manually compact the session context, optionally using a given model for the summary",

@@ -144,7 +144,6 @@ export async function createTabClient(options: {
 				manager.setDraft(manager.getActive().id, editorText);
 			},
 			disposeTabUi,
-			queueRestoredTabBinds: () => {},
 			showError: (message: string) => {
 				errors.push(message);
 			},

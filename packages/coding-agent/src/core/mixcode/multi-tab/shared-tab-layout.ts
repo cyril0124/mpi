@@ -148,7 +148,7 @@ export class SharedTabLayout {
 		}
 	}
 
-	/** Batch a local workflow into one publication; workspace replacement explicitly owns the set. */
+	/** Batch a local workflow into one publication. */
 	async transaction(operation: () => Promise<void>, options: { replace?: boolean } = {}): Promise<void> {
 		this.suspensionDepth++;
 		try {

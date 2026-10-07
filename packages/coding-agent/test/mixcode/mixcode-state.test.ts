@@ -3,17 +3,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-	deleteWorkspaceRecord,
 	openTabsFilePath,
 	readOpenTabs,
 	readTabMeta,
-	readWorkspaces,
 	resolveSessionPath,
 	saveTabMeta,
 	scopedStateDir,
 	stateFilePath,
-	upsertWorkspace,
-	workspacesFilePath,
 	writeOpenTabs,
 } from "../../src/core/mixcode/multi-tab/mixcode-state.ts";
 
@@ -49,7 +45,6 @@ describe("state location", () => {
 		expect(scoped.split("/").pop()).toMatch(/^[0-9a-f]{16}$/);
 		expect(openTabsFilePath(workdir)).toBe(join(scoped, "open_tabs.json"));
 		expect(stateFilePath(workdir)).toBe(join(scoped, "mixcode_state.json"));
-		expect(workspacesFilePath(workdir)).toBe(join(scoped, "workspaces.json"));
 	});
 
 	it("normalizes trailing slashes and surrounding whitespace before hashing", () => {
@@ -131,56 +126,6 @@ describe("mixcode_state.json", () => {
 		const meta = readTabMeta(workdir);
 		expect(meta.get("s1")?.color).toBeUndefined();
 		expect(meta.has("gone")).toBe(false);
-	});
-});
-
-describe("workspaces.json", () => {
-	const record = (name: string, sessionId = "s1") => ({
-		name,
-		startup_workdir: workdir,
-		updated_at: "2026-01-01T00:00:00.000Z",
-		tabs: [{ session_id: sessionId, title: "t", workdir }],
-	});
-
-	it("stores a top-level array and replaces a record of the same name", () => {
-		upsertWorkspace(workdir, record("beta"));
-		upsertWorkspace(workdir, record("alpha"));
-		upsertWorkspace(workdir, record("alpha", "s2"));
-		const stored = JSON.parse(readFileSync(workspacesFilePath(workdir), "utf-8"));
-		expect(Array.isArray(stored)).toBe(true);
-		expect(stored.map((item: { name: string }) => item.name)).toEqual(["alpha", "beta"]);
-		expect(stored[0].tabs[0].session_id).toBe("s2");
-	});
-
-	it("normalizes records on write", () => {
-		upsertWorkspace(workdir, {
-			name: " padded ",
-			startup_workdir: `${workdir}///`,
-			updated_at: "2026-01-01T00:00:00.000Z",
-			tabs: [
-				{ session_id: " s1 ", title: "t", workdir: `${workdir}///` },
-				{ session_id: "   ", title: "blank", workdir },
-			],
-		});
-		const [stored] = JSON.parse(readFileSync(workspacesFilePath(workdir), "utf-8"));
-		expect(stored.name).toBe("padded");
-		expect(stored.startup_workdir).toBe(workdir);
-		expect(stored.tabs).toHaveLength(1);
-		expect(stored.tabs[0].session_id).toBe("s1");
-		expect(stored.tabs[0].workdir).toBe(workdir);
-		expect(() => upsertWorkspace(workdir, record("   "))).toThrow(/name/i);
-	});
-
-	it("rejects an entry whose tabs are not an array", () => {
-		writeRaw(workspacesFilePath(workdir), JSON.stringify([{ name: "broken", tabs: {} }]));
-		expect(() => readWorkspaces(workdir)).toThrow(/tabs must be an array/);
-	});
-
-	it("deletes by name, removes the file with the last record, and rejects unknown names", () => {
-		upsertWorkspace(workdir, record("only"));
-		expect(() => deleteWorkspaceRecord(workdir, "missing")).toThrow(/Unknown workspace: missing/);
-		deleteWorkspaceRecord(workdir, "only");
-		expect(readWorkspaces(workdir)).toEqual([]);
 	});
 });
 

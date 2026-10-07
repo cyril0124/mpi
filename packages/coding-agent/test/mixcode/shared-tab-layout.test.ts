@@ -9,7 +9,6 @@ import {
 	mutateOpenTabs,
 	readOpenTabs,
 	readTabMeta,
-	readWorkspaces,
 	resolveSessionPath,
 	saveTabMeta,
 } from "../../src/core/mixcode/multi-tab/mixcode-state.ts";
@@ -61,7 +60,7 @@ function storedIds(): string[] {
 }
 
 describe("shared tab runtime integration", () => {
-	it("preserves 50 tabs, titles, unread badges and named workspaces written by two concurrent processes", async () => {
+	it("preserves 50 tabs, titles and unread badges written by two concurrent processes", async () => {
 		const file = fileURLToPath(new URL("./fixtures/shared-state-writer.ts", import.meta.url));
 		const writers = ["a", "b"].map((instance) => {
 			const child = fork(file, [workdir, instance], {
@@ -93,7 +92,6 @@ describe("shared tab runtime integration", () => {
 			for (const writer of writers) writer.child.send("start");
 			await Promise.all(writers.map((writer) => writer.done));
 			expect(storedIds()).toHaveLength(50);
-			expect(readWorkspaces(workdir)).toHaveLength(50);
 			const meta = readTabMeta(workdir);
 			for (const instance of ["a", "b"]) {
 				for (let index = 0; index < 25; index++) {
@@ -231,7 +229,7 @@ describe("shared tab runtime integration", () => {
 		expect(ids(a.manager)).toEqual(storedIds());
 	});
 
-	it("publishes a workspace replacement once and keeps a busy removed tab until idle", async () => {
+	it("publishes a layout replacement once and keeps a busy removed tab until idle", async () => {
 		const a = await createClient();
 		const b = await createClient(a.manager.getActive().runtime.session.sessionFile);
 		const keep = await a.manager.createTab({ title: "Keep" });

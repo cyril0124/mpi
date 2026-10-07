@@ -4,8 +4,7 @@
  *
  * `CommandSource` is what the list needs from the interactive mode: the session,
  * settings, the skill-command map it fills in, and the helpers the mode owns
- * (command descriptions, login providers, and the tab, workspace and widget
- * argument lists).
+ * (command descriptions, login providers, and the tab and widget argument lists).
  */
 import { type AutocompleteItem, fuzzyFilter, type SlashCommand } from "@earendil-works/pi-tui";
 import type { AgentSession } from "../../../core/agent-session.ts";
@@ -27,8 +26,6 @@ export type CommandSource = {
 	loginProviders(): AuthSelectorProvider[];
 	/** Open agent tabs offered as `/tab` argument completions; empty without multi-tab. */
 	tabArguments(): TabArgumentOption[];
-	/** Saved workspace names offered by the `/...-workspace` argument completions. */
-	workspaceNames(): string[];
 	/** Widget keys of the active tab, offered as `/widgets` argument completions. */
 	widgetKeys(): string[];
 };
@@ -63,7 +60,7 @@ function createFuzzyAutocompleteItems<T>(
 
 /**
  * Attach a plain string-list completion to each named command. `values` is read
- * per keystroke, so tab and workspace commands always see current state. Throws
+ * per keystroke, so the offered values always reflect current state. Throws
  * when a name is not a builtin, so a renamed command fails loudly instead of
  * silently losing its completions.
  */
@@ -220,7 +217,6 @@ export function collectSlashCommands(source: CommandSource): SlashCommand[] {
 
 	attachValueCompletions(slashCommands, ["color"], () => [...TAB_COLOR_NAMES, "clear"]);
 	attachValueCompletions(slashCommands, ["close-session", "delete-session"], () => ["yes", "y"]);
-	attachValueCompletions(slashCommands, ["restore-workspace", "delete-workspace"], () => source.workspaceNames());
 
 	// `/follow-up`: offer the batch flag while the argument is still an
 	// incomplete flag token; any other text already names its message.

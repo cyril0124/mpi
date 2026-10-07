@@ -7,12 +7,10 @@
  *   <agentDir>/mixcode-pi/workdirs/<sha16(workdir)>/
  *     open_tabs.json     { version, sessionIds: string[], updatedAt }  (open set and order)
  *     mixcode_state.json { children, workdirs, tab_titles, tab_colors, startup_workdir, unseen_done }
- *     workspaces.json    named layouts (snake_case fields)
  *
  * `open_tabs.json` holds the authoritative shared order. Normal UI mutations
- * publish deltas under its lock; explicit workspace replacement writes a new set.
- * `mixcode_state.json` merges changed per-session metadata under a separate lock.
- * `workspaces.json` locks the entire named-layout read-modify-write.
+ * publish deltas under its lock. `mixcode_state.json` merges changed per-session
+ * metadata under a separate lock.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -47,11 +45,6 @@ export function openTabsFilePath(workdir: string): string {
 /** `mixcode_state.json`: titles, colors, workdirs and unread badges per tab. */
 export function stateFilePath(workdir: string): string {
 	return join(scopedStateDir(workdir), "mixcode_state.json");
-}
-
-/** `workspaces.json`: the named layouts of `mixcode-pi`. */
-export function workspacesFilePath(workdir: string): string {
-	return join(scopedStateDir(workdir), "workspaces.json");
 }
 
 function ensureDir(filePath: string): void {
@@ -205,8 +198,8 @@ export interface MixcodeTabMeta {
  * The tolerant reader of `mixcode_state.json`: a missing, corrupt, or non-object
  * file reads as `{}` instead of failing. Everything it holds is cosmetic (titles,
  * colors, workdirs, unread badges), so a bad file costs a lost label, not the tab.
- * `readOpenTabs` and `readWorkspaces` guard data the user would notice losing, so
- * they report corruption instead.
+ * `readOpenTabs` guards data the user would notice losing, so it reports
+ * corruption rather than reading as `{}`.
  */
 function readStateJson(workdir: string): Record<string, unknown> {
 	const filePath = stateFilePath(workdir);
@@ -336,106 +329,6 @@ export function saveTabMeta(workdir: string, tabs: readonly TabMetaUpdate[]): vo
 			unseen_done: [...unseen].filter((id) => children.includes(id)),
 		};
 		atomicWrite(stateFile, `${JSON.stringify(next, null, 2)}\n`);
-	});
-}
-
-// ---------------------------------------------------------------------------
-// workspaces.json (snake_case schema)
-// ---------------------------------------------------------------------------
-
-export interface MixcodeWorkspaceModel {
-	provider: string;
-	model_id: string;
-	display_name: string;
-	context_window: number;
-	reasoning?: boolean;
-	thinking_level_map?: unknown;
-}
-
-export interface MixcodeWorkspaceTab {
-	session_id: string;
-	session_path?: string;
-	title?: string;
-	workdir?: string;
-	model?: MixcodeWorkspaceModel;
-	thinking_level?: string;
-}
-
-export interface MixcodeWorkspace {
-	name: string;
-	startup_workdir: string;
-	updated_at: string;
-	active_session_id?: string;
-	tabs: MixcodeWorkspaceTab[];
-}
-
-/** Saved layouts from `workspaces.json`. Throws when the file is unreadable or malformed. */
-export function readWorkspaces(workdir: string): MixcodeWorkspace[] {
-	const filePath = workspacesFilePath(workdir);
-	if (!existsSync(filePath)) return [];
-	try {
-		const parsed = JSON.parse(stripBom(readFileSync(filePath, "utf-8"))) as unknown;
-		if (!Array.isArray(parsed)) throw new Error("top level must be an array");
-		const entries = parsed.filter(
-			(entry) => entry && typeof entry === "object" && typeof entry.name === "string",
-		) as MixcodeWorkspace[];
-		for (const entry of entries) {
-			if (!Array.isArray(entry.tabs)) throw new Error(`workspaces[${entry.name}].tabs must be an array`);
-		}
-		return entries;
-	} catch (error) {
-		throw new Error(`Invalid workspace file: ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
-	}
-}
-
-/** Drop blank names and tabs without a session id, and normalize the paths. */
-function normalizeWorkspace(record: MixcodeWorkspace): MixcodeWorkspace | undefined {
-	const name = record.name?.trim();
-	if (!name) return undefined;
-	const tabs = (Array.isArray(record.tabs) ? record.tabs : [])
-		.filter((tab) => typeof tab.session_id === "string" && tab.session_id.trim())
-		.map((tab) => ({
-			...tab,
-			session_id: tab.session_id.trim(),
-			...(tab.session_path?.trim() ? { session_path: tab.session_path.trim() } : {}),
-			...(tab.workdir ? { workdir: normalizeWorkdir(tab.workdir) } : {}),
-		}));
-	return { ...record, name, startup_workdir: normalizeWorkdir(record.startup_workdir ?? ""), tabs };
-}
-
-/** Write the cleaned workspace list without acquiring a lock (caller holds one). */
-function writeWorkspacesUnlocked(workdir: string, workspaces: readonly MixcodeWorkspace[]): void {
-	const cleaned = workspaces
-		.map((workspace) => normalizeWorkspace(workspace))
-		.filter((workspace): workspace is MixcodeWorkspace => workspace !== undefined);
-	atomicWrite(workspacesFilePath(workdir), `${JSON.stringify(cleaned, null, 2)}\n`);
-}
-
-/** Insert or replace a saved layout by name, keeping the file sorted. Throws on an empty name. */
-export function upsertWorkspace(workdir: string, record: MixcodeWorkspace): void {
-	const normalized = normalizeWorkspace(record);
-	if (!normalized) throw new Error("Workspace name cannot be empty");
-	const filePath = workspacesFilePath(workdir);
-	withStateLock(`${filePath}.lock`, () => {
-		const next = readWorkspaces(workdir).filter((workspace) => workspace.name !== normalized.name);
-		next.push(normalized);
-		next.sort((a, b) => a.name.localeCompare(b.name));
-		writeWorkspacesUnlocked(workdir, next);
-	});
-}
-
-/** Remove a saved layout. Unknown names are an error; removing the last one deletes the file. */
-export function deleteWorkspaceRecord(workdir: string, name: string): void {
-	const filePath = workspacesFilePath(workdir);
-	withStateLock(`${filePath}.lock`, () => {
-		const existing = readWorkspaces(workdir);
-		const next = existing.filter((workspace) => workspace.name !== name);
-		if (next.length === existing.length) throw new Error(`Unknown workspace: ${name}`);
-		if (next.length === 0) {
-			rmSync(filePath, { force: true });
-			return;
-		}
-		writeWorkspacesUnlocked(workdir, next);
 	});
 }
 

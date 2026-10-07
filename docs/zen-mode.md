@@ -49,7 +49,7 @@ before zen sees it.
 
 Zen is a per-tab flag that follows focus, like vim mode: focusing another agent hands zen to it and
 clears it on the agent you left, and at most one tab is in zen. Opening a tab focuses it, so a tab
-created with `/new-session` or opened from a workspace takes zen over from the agent that had it.
+created with `/new-session` takes zen over from the agent that had it.
 Home is a different surface, not a tab, so opening it puts the full tab bar back and leaves zen on
 the agent behind it. Closing the tab that holds zen ends zen with it, because the tab it belonged to
 is gone.

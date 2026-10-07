@@ -49,9 +49,6 @@ start-up instructions do not name the toggle, and `/hotkeys` reports it with a n
 | `/group-colored-tabs` | Sort tabs so colored ones lead, aggregated by color in palette order. |
 | `/mark-done` | Flag the current tab as finished in the tab bar. |
 | `/toggle-zen-mode` | Hide the focused tab's tab-bar chips so the transcript gets the row; the separator stays and reports the other agents. `tab` and `shift+tab` stop switching while it is on. See [Zen Mode](zen-mode.md). |
-| `/save-workspace <name>` | Save the current tab layout under a name. |
-| `/restore-workspace <name>` | Reopen a saved layout, closing tabs that are not part of it. |
-| `/delete-workspace <name>` | Delete a saved tab layout. |
 
 The session confirmations (`/close-session`, `/delete-session` and the two all-sessions variants)
 take `y` to confirm and `n` or `esc` to cancel, in addition to the arrow-key selector.
@@ -203,7 +200,6 @@ Tab state is per working directory, in the directory mixcode-pi (`mpi`) also use
 <agentDir>/mixcode-pi/workdirs/<sha16(workdir)>/
   open_tabs.json      { version, sessionIds, updatedAt }   open set and order (authoritative membership)
   mixcode_state.json  { children, workdirs, tab_titles, tab_colors, startup_workdir, unseen_done }
-  workspaces.json     named layouts
 ```
 
 `<agentDir>` is `PI_CODING_AGENT_DIR` or `~/.pi/agent`. The workdir is hashed the same way
@@ -211,9 +207,6 @@ mixcode-pi hashes it, so both agents share one directory: tabs opened in one app
 
 The files are written when the tab set, its order, a title, or a color changes, and once when
 the process exits. Focusing a tab does not write them.
-
-A saved workspace stores `name`, `startup_workdir`, `updated_at`, `active_session_id`, and one
-entry per tab (`session_id`, `session_path`, `title`, `workdir`, `model`, `thinking_level`).
 
 ## Concurrency
 
@@ -234,13 +227,12 @@ queue as local tab operations and do not steal editor focus. A running or compac
 open until idle, and a session whose file is not yet available is retried on a later poll.
 
 Changed titles, colors, workdirs, and unread badges are merged per session under a lock;
-unchanged local metadata is not republished over a peer's newer values. Named workspace updates
-also lock their read-modify-write. These locks coordinate writers in this fork; other applications
-writing the same files need to follow the same locking protocol.
+unchanged local metadata is not republished over a peer's newer values. These locks coordinate
+writers in this fork; other applications writing the same files need to follow the same locking
+protocol.
 
-Startup joins the stored layout without discarding peer entries. An explicit workspace restore
-replaces the shared set and order, so other instances follow that layout on their next poll.
-`--no-session` sessions do not participate in shared persistence or polling.
+Startup joins the stored layout without discarding peer entries. `--no-session` sessions do not
+participate in shared persistence or polling.
 
 ## Settings
 

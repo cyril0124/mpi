@@ -168,7 +168,6 @@ import {
 	type MixcodeTabMeta,
 	readOpenTabs,
 	readTabMeta,
-	readWorkspaces,
 	replaceOpenTabSessionIds,
 	resolveSessionPath,
 } from "../../core/mixcode/multi-tab/mixcode-state.ts";
@@ -380,12 +379,6 @@ import {
 	handleDeleteSession as handleDeleteSessionImpl,
 	type SessionActionHost,
 } from "./mixcode/multi-tab/tab-session-actions.ts";
-import {
-	deleteWorkspaceCommand as deleteWorkspaceCommandImpl,
-	restoreWorkspaceCommand as restoreWorkspaceCommandImpl,
-	saveWorkspaceCommand as saveWorkspaceCommandImpl,
-	type WorkspaceHost,
-} from "./mixcode/multi-tab/tab-workspace.ts";
 import { createMouseSelectionOptions } from "./mixcode/selection/selection-surface.ts";
 import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
 import { shareSession } from "./session-share.ts";
@@ -1297,7 +1290,6 @@ export class InteractiveMode {
 			describe: (description, sourceInfo) => mode.prefixAutocompleteDescription(description, sourceInfo),
 			loginProviders: () => mode.getLoginProviderOptions(),
 			tabArguments: () => mode.getTabArgumentOptions(),
-			workspaceNames: () => mode.getWorkspaceNames(),
 			widgetKeys: () => mode.getWidgetKeys(),
 		};
 	}
@@ -2788,13 +2780,6 @@ export class InteractiveMode {
 		return ui;
 	}
 
-	/** Queue every restored tab for the background bind pass. */
-	private queueRestoredTabBinds(): void {
-		const manager = this.tabManager;
-		if (!manager) return;
-		for (const tab of manager.list()) this.queueTabBind(tab);
-	}
-
 	private applyRuntimeSettings(): void {
 		setCapabilityOverrides(this.settingsManager.getTerminalCapabilityOverrides());
 		configureHttpDispatcher(this.settingsManager.getHttpIdleTimeoutMs());
@@ -2919,23 +2904,6 @@ export class InteractiveMode {
 			...this.tabLifecycleHost(),
 			session: this.session,
 			showExtensionConfirm: (title, msg) => this.showExtensionConfirm(title, msg),
-		};
-	}
-
-	private workspaceHost(): WorkspaceHost {
-		return {
-			tabManager: this.tabManager,
-			sharedTabLayout: this.sharedTabLayout,
-			tabsWorkdir: this.tabsWorkdir,
-			session: this.session,
-			enqueueTabSwitch: (run) => this.enqueueTabSwitch(run),
-			switchActiveTab: (tab) => this.switchActiveTab(tab),
-			disposeTabUi: (id) => this.disposeTabUi(id),
-			queueRestoredTabBinds: () => this.queueRestoredTabBinds(),
-			showExtensionConfirm: (title, msg) => this.showExtensionConfirm(title, msg),
-			showError: (msg) => this.showError(msg),
-			showWarning: (msg) => this.showWarning(msg),
-			showStatus: (msg) => this.showStatus(msg),
 		};
 	}
 
@@ -4580,16 +4548,6 @@ export class InteractiveMode {
 		}));
 	}
 
-	/** Saved workspace names for the `/...-workspace` argument completions. */
-	private getWorkspaceNames(): string[] {
-		try {
-			return readWorkspaces(this.tabsWorkdir).map((workspace) => workspace.name);
-		} catch {
-			// A corrupt workspaces file must not break the editor; the command reports it.
-			return [];
-		}
-	}
-
 	/** `/color [name|clear]` sets or clears the active tab's chip color. */
 	private colorActiveTab(arg: string): void {
 		const manager = this.tabManager;
@@ -4640,18 +4598,6 @@ export class InteractiveMode {
 		// The reorder re-clamps the selection against the new order, so follow the id
 		// captured before it rather than an index that may already have moved.
 		selectHomeTabById(this.homeSelection, manager.list(), selectedId);
-	}
-
-	private saveWorkspaceCommand(name: string): void {
-		saveWorkspaceCommandImpl(this.workspaceHost(), name);
-	}
-
-	private async restoreWorkspaceCommand(name: string): Promise<void> {
-		await restoreWorkspaceCommandImpl(this.workspaceHost(), name);
-	}
-
-	private deleteWorkspaceCommand(name: string): void {
-		deleteWorkspaceCommandImpl(this.workspaceHost(), name);
 	}
 
 	private async handleFatalRuntimeError(prefix: string, error: unknown): Promise<never> {
@@ -6834,35 +6780,6 @@ export class InteractiveMode {
 				const args = text.startsWith("/widgets ") ? text.slice("/widgets ".length) : "";
 				this.editor.setText("");
 				this.handleWidgetsCommand(args);
-				return;
-			}
-			if (text === "/save-workspace" || text.startsWith("/save-workspace ")) {
-				const name = text.startsWith("/save-workspace ") ? text.slice("/save-workspace ".length).trim() : "";
-				this.editor.setText("");
-				if (name) this.saveWorkspaceCommand(name);
-				else this.showError("Usage: /save-workspace <name>");
-				return;
-			}
-			if (text === "/restore-workspace" || text.startsWith("/restore-workspace ")) {
-				const name = text.startsWith("/restore-workspace ") ? text.slice("/restore-workspace ".length).trim() : "";
-				this.editor.setText("");
-				if (!name) {
-					const names = readWorkspaces(this.tabsWorkdir).map((workspace) => workspace.name);
-					this.showError(
-						names.length > 0
-							? `Usage: /restore-workspace <name> (saved: ${names.join(", ")})`
-							: "Usage: /restore-workspace <name> (no saved workspaces)",
-					);
-					return;
-				}
-				await this.restoreWorkspaceCommand(name);
-				return;
-			}
-			if (text === "/delete-workspace" || text.startsWith("/delete-workspace ")) {
-				const name = text.startsWith("/delete-workspace ") ? text.slice("/delete-workspace ".length).trim() : "";
-				this.editor.setText("");
-				if (name) this.deleteWorkspaceCommand(name);
-				else this.showError("Usage: /delete-workspace <name>");
 				return;
 			}
 			if (text === "/clear") {
@@ -10288,9 +10205,9 @@ export class InteractiveMode {
 
 	/**
 	 * `/resume` and `/resume-trash`: the picked session opens in a tab of its own,
-	 * the way `/clone` and a restored workspace entry do, so the focused tab keeps
-	 * its session. A host without a tab manager has no tab to open, and there the
-	 * session replaces the current one as upstream does.
+	 * the way `/clone` does, so the focused tab keeps its session. A host without a
+	 * tab manager has no tab to open, and there the session replaces the current one
+	 * as upstream does.
 	 */
 	private async handleResumeIntoTab(sessionPath: string): Promise<void> {
 		if (!this.tabManager) {

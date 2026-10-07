@@ -250,12 +250,11 @@ point `## [Unreleased]` at the new tag.
   color cue: the wave sweeps to the right edge and back over 2 s, rests for 1 s, and eases
   into each turnaround. A colored chip inverts the lit cells instead, because theme
   foregrounds have no contrast over a chip color.
-- Open tabs and named workspace layouts persist per workdir as `open_tabs.json` and
-  `workspaces.json` in the agent state directory, so a restart reopens the same tabs.
+- Open tabs persist per workdir as `open_tabs.json` in the agent state directory, so a restart
+  reopens the same tabs.
 - Tab slash commands: `/new-session`, `/close-session`, `/close-all-sessions`,
   `/delete-session`, `/delete-all-sessions`, `/rename`, `/tabs`, `/tab`, `/color`,
-  `/group-colored-tabs`, `/mark-done`, plus the workspace commands `/save-workspace`,
-  `/restore-workspace`, `/delete-workspace`. `app.tab.new` and `app.tab.close` ship unbound,
+  `/group-colored-tabs`, `/mark-done`. `app.tab.new` and `app.tab.close` ship unbound,
   so the commands are the only way to open or close a tab.
 - Keybindings `app.tab.next` (`tab`, `ctrl+shift+right`) and `app.tab.previous`
   (`shift+tab`, `ctrl+shift+left`).
@@ -359,7 +358,7 @@ point `## [Unreleased]` at the new tag.
   retracted, since rewinding to an older user message would drop completed turns. See
   [Keybindings](docs/keybindings.md#escape).
 - `/resume` and `/resume-trash` open the picked session in a tab of its own instead of replacing the
-  focused tab's session, matching `/clone` and a restored workspace entry. A session that is already
+  focused tab's session, matching `/clone` and a tab opened for a peer. A session that is already
   open in a tab is focused rather than opened twice, because two runtimes on one session file would
   append to it concurrently. The extension API's `ctx.switchSession` and a host without a tab manager
   keep the in-place replacement, and a resume that mounts a tab reaches extensions as a
@@ -782,8 +781,7 @@ point `## [Unreleased]` at the new tag.
   2 seconds through the tab operation queue, preserve editor focus, and defer closing busy tabs.
   Empty persisted sessions are written before their ids are published, so peers can resume them.
 - Tab metadata merges only changed per-session values under a lock, preserving peer titles,
-  colors and unread badges. Named workspace updates lock their read-modify-write; workspace
-  restoration explicitly replaces the shared layout. See [Agent Tabs](docs/tabs.md#concurrency).
+  colors and unread badges. See [Agent Tabs](docs/tabs.md#concurrency).
 - Pointer hover stopped painting on message blocks: the render memo added for tab-switch performance
   cached the hover-painted rows, and a passive move requests a render without invalidating, so the
   cached pre-hover rows were served and the cue never appeared. The tool card now memoizes only the

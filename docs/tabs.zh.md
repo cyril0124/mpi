@@ -42,9 +42,6 @@
 | `/group-colored-tabs` | 重排标签页：有颜色的排前面，按调色板顺序聚合。 |
 | `/mark-done` | 在标签栏把当前标签页标记为已完成。 |
 | `/toggle-zen-mode` | 隐藏当前聚焦标签页的标签块，把这行让给对话区；分隔线保留并汇报其他 agent。开启期间 `tab` 与 `shift+tab` 不再切换。见 [Zen 专注模式](zen-mode.zh.md)。 |
-| `/save-workspace <name>` | 把当前标签页布局存成命名工作区。 |
-| `/restore-workspace <name>` | 恢复命名工作区，关闭不属于该布局的标签页。 |
-| `/delete-workspace <name>` | 删除命名工作区。 |
 
 会话确认框（`/close-session`、`/delete-session` 以及两个 all-sessions 变体）除方向键选择器外，
 也可以按 `y` 确认、按 `n` 或 `esc` 取消。
@@ -144,14 +141,11 @@
 <agentDir>/mixcode-pi/workdirs/<sha16(workdir)>/
   open_tabs.json      { version, sessionIds, updatedAt }   打开的集合与顺序（成员权威来源）
   mixcode_state.json  { children, workdirs, tab_titles, tab_colors, startup_workdir, unseen_done }
-  workspaces.json     命名布局
 ```
 
 `<agentDir>` 是 `PI_CODING_AGENT_DIR` 或 `~/.pi/agent`。工作目录的哈希算法与 mixcode-pi 一致，所以两者共用一个目录：在其中一个里打开的标签页，另一个也能看到。
 
 标签页集合、顺序、标题、颜色发生变化时写这两个文件，进程退出时再写一次；切换焦点不会写。
-
-保存的工作区包含 `name`、`startup_workdir`、`updated_at`、`active_session_id`，以及每个标签页一项（`session_id`、`session_path`、`title`、`workdir`、`model`、`thinking_level`）。
 
 ## 并发访问
 
@@ -161,9 +155,9 @@
 
 共享同一工作目录的实例每 2 秒轮询 `open_tabs.json`。打开、关闭、重排和替换会话时，只发布相对于上次本地布局的变化，因此尚未看到对端新标签的实例不会把它删除。对端变化复用本地标签操作的队列，不抢编辑器焦点。正在运行或压缩的标签保留到空闲；会话文件尚不可用时，后续轮询重试。
 
-标题、颜色、工作目录和未读标记只合并发生变化的 session 元数据，并由锁保护；未变的本地值不会覆盖对端的新值。命名工作区的读改写也在锁内完成。这些锁协调本 fork 的写入；写同一文件的其他应用也需要遵循相同加锁协议。
+标题、颜色、工作目录和未读标记只合并发生变化的 session 元数据，并由锁保护；未变的本地值不会覆盖对端的新值。这些锁协调本 fork 的写入；写同一文件的其他应用也需要遵循相同加锁协议。
 
-启动恢复加入已存布局，不丢弃对端条目。显式恢复工作区会替换共享集合与顺序，其他实例在下一次轮询跟随该布局。`--no-session` 会话不参与共享持久化和轮询。
+启动恢复加入已存布局，不丢弃对端条目。`--no-session` 会话不参与共享持久化和轮询。
 
 ## 设置
 

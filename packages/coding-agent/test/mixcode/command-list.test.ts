@@ -18,13 +18,7 @@ const TABS: TabArgumentOption[] = [
 	{ index: 2, title: "Fix tab", description: "running" },
 ];
 
-const WORKSPACES = ["dev", "review"];
-
-function makeSource(
-	tabs: TabArgumentOption[] = TABS,
-	workspaces: string[] = WORKSPACES,
-	widgets: string[] = [],
-): CommandSource {
+function makeSource(tabs: TabArgumentOption[] = TABS, widgets: string[] = []): CommandSource {
 	const session = {
 		promptTemplates: [],
 		extensionRunner: { getRegisteredCommands: () => [] },
@@ -40,7 +34,6 @@ function makeSource(
 		describe: (description) => description,
 		loginProviders: () => [],
 		tabArguments: () => tabs,
-		workspaceNames: () => workspaces,
 		widgetKeys: () => widgets,
 	};
 }
@@ -75,11 +68,6 @@ describe("builtin argument completions", () => {
 		expect(await values("/tab fix")).toEqual(["Fix tab"]);
 	});
 
-	it("completes the workspace commands with saved names", async () => {
-		expect(await values("/restore-workspace ")).toEqual(["dev", "review"]);
-		expect(await values("/delete-workspace rev")).toEqual(["review"]);
-	});
-
 	it("completes the confirmation argument of the session commands", async () => {
 		expect(await valueSet("/close-session ")).toEqual(["y", "yes"]);
 		expect(await valueSet("/delete-session y")).toEqual(["y", "yes"]);
@@ -91,6 +79,6 @@ describe("builtin argument completions", () => {
 	});
 
 	it("drops tab completions when multi-tab is unavailable", async () => {
-		expect(await values("/tab ", makeSource([], []))).toBeNull();
+		expect(await values("/tab ", makeSource([]))).toBeNull();
 	});
 });

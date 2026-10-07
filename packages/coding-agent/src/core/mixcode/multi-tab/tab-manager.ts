@@ -384,7 +384,7 @@ export class TabManager {
 	}
 
 	/**
-	 * Open an existing session file in a new tab (`/resume`, `/restore-workspace`).
+	 * Open an existing session file in a new tab.
 	 * `id` as in `createTab`; `projectTrustContextFactory` resolves the trust
 	 * decision for the opened session's cwd, the way `switchSession` does.
 	 */
