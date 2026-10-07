@@ -130,9 +130,12 @@ choice, so none of those can be taken from them; above every other app id.
 2. A compaction is running on the tab on screen: it is cancelled, which is what the status line that
    announced the compaction says. A compaction on a tab behind another one is left alone; switch to
    that tab to cancel it.
-3. A queued steer message sends now: the run is aborted and the steer queue is flushed as one turn.
+3. An automatic retry is waiting on the tab on screen: it is cancelled, which is what the status line
+   that announced it says. A retry on a tab behind another one is left alone; switch to that tab to
+   cancel it.
+4. A queued steer message sends now: the run is aborted and the steer queue is flushed as one turn.
    Follow-up rounds are never promoted this way.
-4. The session is streaming: the first `Escape` only arms a 1 s confirm window and says so; a
+5. The session is streaming: the first `Escape` only arms a 1 s confirm window and says so; a
    second `Escape` inside that window interrupts the run, and one after it arms again. A turn that
    has not produced anything readable yet - no assistant text, no thinking, no tool call, no
    displayed extension message or rendered custom entry - with an empty composer and no queued
@@ -140,9 +143,9 @@ choice, so none of those can be taken from them; above every other app id.
    message and the text returns to the composer, so a prompt sent too early can be edited and sent
    again. Every other run aborts as before: a queued steer text returns to the editor, while a
    queued follow-up round stays in the queue, paused.
-5. A bash command is running: the bash command is aborted.
-6. The composer is in `!` bash mode: the editor is cleared and bash mode is left.
-7. The editor is empty: a second `Escape` within 500 ms opens the session tree or the fork
+6. A bash command is running: the bash command is aborted.
+7. The composer is in `!` bash mode: the editor is cleared and bash mode is left.
+8. The editor is empty: a second `Escape` within 500 ms opens the session tree or the fork
    selector, whichever `doubleEscapeAction` selects; `none` disables it.
 
 A capturing overlay consumes the key before the composer sees it. The confirm window belongs to the

@@ -936,9 +936,6 @@ export class InteractiveMode {
 	// Track pending bash components (shown in pending area, moved to chat on submit)
 	private pendingBashComponents: BashExecutionComponent[] = [];
 
-	// Auto-retry state
-	private retryEscapeHandler?: () => void;
-
 	/** Parked compaction messages, one queue per tab. */
 	private readonly compactionQueues = new Map<string, CompactionQueuedMessage[]>();
 	/** Follow-up rounds and steer/follow-up queue bookkeeping (see core/mixcode/follow-up/). */
@@ -6359,6 +6356,13 @@ export class InteractiveMode {
 				this.endInterruptArm();
 				return;
 			}
+			// An automatic retry owns the session too, so `Escape` cancels it, as its status indicator
+			// says. The mounted session reports its own retry state, so this follows the tab in front.
+			if (this.session.isRetrying) {
+				this.session.abortRetry();
+				this.endInterruptArm();
+				return;
+			}
 			// A queued steer message sends immediately: abort the run and flush the
 			// steer queue as one turn. Follow-up rounds are never promoted.
 			if (this.tryFlushSteerQueue()) {
@@ -6949,12 +6953,6 @@ export class InteractiveMode {
 				this.runStartLeafId = this.sessionManager.getLeafId();
 				this.runVisibleOutput = false;
 				this.endInterruptArm();
-				// Restore main escape handler if retry handler is still active
-				// (retry success event fires later, but we need main handler now)
-				if (this.retryEscapeHandler) {
-					this.defaultEditor.onEscape = this.retryEscapeHandler;
-					this.retryEscapeHandler = undefined;
-				}
 				break;
 
 			case "turn_start":
@@ -7274,12 +7272,7 @@ export class InteractiveMode {
 			}
 
 			case "auto_retry_start": {
-				// Set up escape to abort retry
 				this.endInterruptArm();
-				this.retryEscapeHandler = this.defaultEditor.onEscape;
-				this.defaultEditor.onEscape = () => {
-					this.session.abortRetry();
-				};
 				this.showStatusIndicator(
 					new RetryStatusIndicator(this.ui, event.attempt, event.maxAttempts, event.delayMs),
 				);
@@ -7288,11 +7281,6 @@ export class InteractiveMode {
 			}
 
 			case "auto_retry_end": {
-				// Restore escape handler
-				if (this.retryEscapeHandler) {
-					this.defaultEditor.onEscape = this.retryEscapeHandler;
-					this.retryEscapeHandler = undefined;
-				}
 				this.clearStatusIndicator("retry");
 				// Show error only on final failure (success shows normal response)
 				if (!event.success) {
