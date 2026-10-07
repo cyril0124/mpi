@@ -508,6 +508,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `ctrl+u` keeps the composer draft when it pops a queued message back into the editor. The draft
+went into the follow-up display mirror, which every queue sync rebuilds from the local rounds, so the
+box showed it as an SDK continuation (`SDK · <draft>`) and then dropped it. It is now parked through
+`ctrl+c`'s stash: `up` recalls it, and neither a steer flush nor a follow-up drain delivers text the
+user has not submitted.
+
 - Clicking a partially measured fullscreen transcript keeps the visible rows in place. Word
   selection and copying read only the requested rows in the window's coordinate space; rendering
   the whole history during a press changed estimated heights while retaining the old scroll offset,

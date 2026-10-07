@@ -8337,7 +8337,7 @@ export class InteractiveMode {
 		return true;
 	}
 
-	/** Pop the last entry of one queue into the editor, preserving a non-empty draft. */
+	/** Pop one queue's last entry into the editor, parking a displaced draft in the prompt history. */
 	private popQueuedIntoEditor(kind: QueueKind): void {
 		const text = popQueuedMessage(this.followUpState, this.followUpHost, kind);
 		if (text === undefined) {
@@ -8345,9 +8345,7 @@ export class InteractiveMode {
 			return;
 		}
 		const draft = this.editorText();
-		if (draft.trim()) {
-			this.pendingListFor(kind).unshift(draft);
-		}
+		if (draft.trim()) this.stashEditorInput();
 		this.editor.setText(text);
 		this.updatePendingMessagesDisplay();
 		this.ui.requestRender();

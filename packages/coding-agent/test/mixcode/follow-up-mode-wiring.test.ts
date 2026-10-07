@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { KeybindingsManager } from "../../src/core/keybindings.ts";
-import { createFollowUpQueueState } from "../../src/core/mixcode/follow-up/runtime-follow-up-queue.ts";
+import {
+	createFollowUpQueueState,
+	syncFollowUpPreview,
+} from "../../src/core/mixcode/follow-up/runtime-follow-up-queue.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 
 /** The InteractiveMode fields the agent_settled branch of `handleEvent` reads. */
@@ -22,7 +25,76 @@ const handleEvent = Reflect.get(InteractiveMode.prototype, "handleEvent") as (
 	event: { type: "agent_settled" },
 ) => Promise<void>;
 
+/** The InteractiveMode fields the dequeue and its stash path read, plus a mutable composer. */
+function makeDequeueContext() {
+	const state = createFollowUpQueueState();
+	const composer = { text: "" };
+	const context = {
+		followUpState: state,
+		followUpHost: {
+			session: { getFollowUpMessages: () => [] as string[] },
+			isQueuedCommandText: () => false,
+			onQueueChanged: vi.fn(),
+		},
+		editorText: () => composer.text,
+		editor: {
+			setText: (text: string) => {
+				composer.text = text;
+			},
+			getText: () => composer.text,
+		},
+		updatePendingMessagesDisplay: vi.fn(),
+		ui: { requestRender: vi.fn() },
+		showWarning: vi.fn(),
+		pendingListFor: (kind: "steering" | "followUp") =>
+			kind === "steering" ? state.pendingSteer : state.pendingFollowUps,
+		// The real stash path reads this fake instance.
+		stashEditorInput: Reflect.get(InteractiveMode.prototype, "stashEditorInput") as (this: unknown) => void,
+		homeSelection: { active: false },
+		activeTabIdForUi: "tab-1",
+		stashedPrompts: new Map<string, string[]>(),
+		syncEditorHistory: vi.fn(),
+	};
+	return { state, composer, context };
+}
+
+type DequeueContext = ReturnType<typeof makeDequeueContext>["context"];
+
+const popQueuedIntoEditor = Reflect.get(InteractiveMode.prototype, "popQueuedIntoEditor") as (
+	this: DequeueContext,
+	kind: "steering" | "followUp",
+) => void;
+
 describe("follow-up wiring in interactive mode", () => {
+	it("parks the composer draft in the prompt history when a dequeue pops a follow-up", () => {
+		const { state, composer, context } = makeDequeueContext();
+		state.followUpQueue = [{ text: "queued round", kind: "next" }];
+		syncFollowUpPreview(state, []);
+		composer.text = "DRAFT-KEEP-ME";
+
+		popQueuedIntoEditor.call(context, "followUp");
+
+		expect(composer.text).toBe("/follow-up queued round");
+		expect(context.stashedPrompts.get("tab-1")).toEqual(["DRAFT-KEEP-ME"]);
+		expect(context.syncEditorHistory).toHaveBeenCalledOnce();
+		// Draft text the user has not submitted stays out of every queue a flush reads.
+		expect(state.pendingSteer).toEqual([]);
+		expect(state.followUpQueue).toEqual([]);
+		expect(state.pendingFollowUps).toEqual([]);
+	});
+
+	it("parks the composer draft in the prompt history when a dequeue pops a steering message", () => {
+		const { state, composer, context } = makeDequeueContext();
+		state.pendingSteer = ["steer text"];
+		composer.text = "DRAFT-KEEP-ME";
+
+		popQueuedIntoEditor.call(context, "steering");
+
+		expect(composer.text).toBe("steer text");
+		expect(context.stashedPrompts.get("tab-1")).toEqual(["DRAFT-KEEP-ME"]);
+		expect(state.pendingSteer).toEqual([]);
+	});
+
 	it("agent_settled pauses the queue after a run the drain did not start", async () => {
 		const state = createFollowUpQueueState();
 		state.followUpQueue = [{ text: "waiting round", kind: "next" }];
