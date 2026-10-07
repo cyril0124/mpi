@@ -1411,8 +1411,10 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 
 	private getSelectionSourceLine(point: SelectionPoint): string {
 		if (point.scrollView && this.currentLayout) {
-			const lines = materializeScrollLines(this.currentLayout, point.scrollView);
-			if (lines) return lines[point.row] ?? "";
+			// Selection rows belong to the displayed window's estimated coordinates. Measuring the
+			// whole history here would move those rows while the pointer still refers to this frame.
+			const provider = getScrollLineProvider(this.currentLayout, point.scrollView);
+			if (provider) return provider.getLines(point.row, 1)[0] ?? "";
 		}
 		return this.previousScreen[point.row] ?? "";
 	}
@@ -1703,15 +1705,17 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const selection = this.getSelectionBounds();
 		if (!selection) return undefined;
 		let sourceLines: readonly string[] = this.previousScreen;
+		let sourceStart = 0;
 		if (selection.start.scrollView) {
 			if (!this.currentLayout) return undefined;
-			const scrollLines = materializeScrollLines(this.currentLayout, selection.start.scrollView);
-			if (!scrollLines) return undefined;
-			sourceLines = scrollLines;
+			const provider = getScrollLineProvider(this.currentLayout, selection.start.scrollView);
+			if (!provider) return undefined;
+			sourceStart = selection.start.row;
+			sourceLines = provider.getLines(sourceStart, selection.end.row - sourceStart + 1);
 		}
 		const lines: string[] = [];
 		for (let row = selection.start.row; row <= selection.end.row; row++) {
-			const line = sourceLines[row] ?? "";
+			const line = sourceLines[row - sourceStart] ?? "";
 			const columns = this.getSelectionColumns(line, row, selection);
 			lines.push(
 				stripTerminalSequences(

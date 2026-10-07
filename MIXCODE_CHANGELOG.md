@@ -508,6 +508,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Clicking a partially measured fullscreen transcript keeps the visible rows in place. Word
+  selection and copying read only the requested rows in the window's coordinate space; rendering
+  the whole history during a press changed estimated heights while retaining the old scroll offset,
+  which jumped the viewport upward and could copy text from a different message.
+
 - The `/resume` session selector refuses to delete a session file that any open tab holds, not only
   one whose tab is busy. It removed the file of an idle tab, and that tab kept appending to the path,
   which recreated it without the session header, so the tab's later conversation could no longer be

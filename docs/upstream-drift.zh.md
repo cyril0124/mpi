@@ -151,7 +151,7 @@
 - `packages/tui/src/mixcode/child-at-row.ts`：`Container` 与 `Box` 共用的行到子组件命中测试
 - `packages/tui/src/mixcode/settings-sections.ts`：列表渲染与命中测试共用的分组标题行计划
 - `packages/tui/src/components/box.ts`：`componentAtRow`，让带内缩的卡片里的行也能解析到画出它的子组件
-- `packages/tui/src/tui-alt-screen.ts`：经提供者读取内容行；`scrollToPrompt` 改为公开；
+- `packages/tui/src/tui-alt-screen.ts`：经提供者读取内容行；选中操作只读取所需行，避免测量屏幕外历史时使指针的行坐标失效；`scrollToPrompt` 改为公开；
   `onCopyResult` 选项让宿主自行确认复制结果，替代该屏幕自带的一行 flash，并按 grapheme 数报告复制长度；
   跟踪被 hover 的组件，以便后续移动到别处、打开浮层或指针被捕获时向其发送 leave 事件；
   `scrollToEndIndicator` 会收到指针是否在标签上；`selection` 选项把拖拽限定到宿主公布的区域，并交给宿主做文本清洗、着色，以及在复制那次松手时清除高亮

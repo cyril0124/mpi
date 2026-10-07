@@ -172,7 +172,9 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/tui/src/mixcode/child-at-row.ts`: the row-to-child hit test `Container` and `Box` share
 - `packages/tui/src/mixcode/settings-sections.ts`: the section-heading row plan the list renders and
   hit-tests against
-- `packages/tui/src/tui-alt-screen.ts`: reads content lines through the provider; public `scrollToPrompt`;
+- `packages/tui/src/tui-alt-screen.ts`: reads content lines through the provider; selection reads
+  only its requested rows so measuring offscreen history cannot invalidate the pointer's row coordinates;
+  public `scrollToPrompt`;
   an `onCopyResult` option lets the host confirm a clipboard write instead of the screen's own flash,
   and reports the copied text as a grapheme count; tracks the hovered component so the next move
   elsewhere, an overlay, or a pointer capture can send it a leave event; `scrollToEndIndicator`
