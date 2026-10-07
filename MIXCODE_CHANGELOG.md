@@ -498,6 +498,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Returning to a tab during an assistant response keeps its streaming text and final answer visible.
+  A tab switch reset the live message component while replaying only persisted messages, so later
+  updates and the completed answer were discarded by the UI even though the session saved them.
+  Streaming tabs now rebuild from history plus the current live message instead of reusing a frozen
+  transcript snapshot.
+
 - Vim mode's locked composer draws no caret. The editor still drew its reverse-video caret
   and emitted the hardware-cursor marker while vim mode owned input, so the accent-framed
   card looked like it took the typing it ignores. `Editor.cursorVisible` turns both off, and

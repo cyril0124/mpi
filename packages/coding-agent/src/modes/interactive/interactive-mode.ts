@@ -3862,7 +3862,8 @@ export class InteractiveMode {
 	/** Re-attach a cached transcript when it is still current. Returns false to rebuild. */
 	private restoreTranscript(tabId: string): boolean {
 		const cached = this.tabTranscript.get(tabId);
-		if (!cached || cached.signature !== this.transcriptSignature()) return false;
+		// Rebuild streaming transcripts so a cached partial reply is not duplicated.
+		if (this.session.isStreaming || !cached || cached.signature !== this.transcriptSignature()) return false;
 		this.chatContainer.clear();
 		for (const child of cached.chat) this.chatContainer.addChild(child);
 		this.loadedResourcesContainer.clear();
@@ -4701,6 +4702,10 @@ export class InteractiveMode {
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
 		this.renderInitialMessages();
+		const streamingMessage = this.session.agent.state.streamingMessage;
+		if (streamingMessage?.role === "assistant") {
+			this.startStreamingMessage(streamingMessage);
+		}
 		this.resyncQueuedMessageMirrors();
 		// Clearing a transcript also clears the queue boxes above the composer.
 		this.updatePendingMessagesDisplay();
@@ -6947,6 +6952,22 @@ export class InteractiveMode {
 		});
 	}
 
+	/** Attach a live assistant message to the transcript and track it for subsequent updates. */
+	private startStreamingMessage(message: AssistantMessage): void {
+		this.streamingComponent = new AssistantMessageComponent(
+			undefined,
+			this.hideThinkingBlock,
+			this.getMarkdownThemeWithSettings(),
+			this.hiddenThinkingLabel,
+			this.outputPad,
+			this.getMarkdownTransformers(),
+			this.mixcodeSettings.ui.boxedHiddenThinking,
+		);
+		this.streamingMessage = message;
+		this.chatContainer.addChild(this.streamingComponent);
+		this.streamingComponent.updateContent(message, true);
+	}
+
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
 		if (!this.isInitialized) {
 			await this.init();
@@ -7051,18 +7072,7 @@ export class InteractiveMode {
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
-					this.streamingComponent = new AssistantMessageComponent(
-						undefined,
-						this.hideThinkingBlock,
-						this.getMarkdownThemeWithSettings(),
-						this.hiddenThinkingLabel,
-						this.outputPad,
-						this.getMarkdownTransformers(),
-						this.mixcodeSettings.ui.boxedHiddenThinking,
-					);
-					this.streamingMessage = event.message;
-					this.chatContainer.addChild(this.streamingComponent);
-					this.streamingComponent.updateContent(this.streamingMessage, true);
+					this.startStreamingMessage(event.message);
 					this.ui.requestRender();
 				}
 				break;
