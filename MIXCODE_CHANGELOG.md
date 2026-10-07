@@ -508,6 +508,15 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `Escape` keeps working on every tab while a branch summary runs. `/tree` followed by a summary
+  choice replaced the composer's `onEscape` with a closure calling
+  `this.session.abortBranchSummary()`, and only `navigateTree` settling restored the previous
+  handler. That closure reads the mounted session, so switching tabs during the summary made
+  `Escape` abort a summary on the wrong session and return, which disabled every other Escape step
+  on every tab - the interrupt confirm, the steer flush, the compaction and retry aborts and the
+  double-`Escape` selector - until the summary finished. The composer's own handler cancels a
+  branch summary the way it already cancels a compaction, so no handler is swapped in or restored.
+
 - `/delete-session` and `/delete-all-sessions` honor a vetoed session replacement. An extension can
   cancel `session_before_switch`, which the shipped `confirm-destructive` and `dirty-repo-guard`
   examples do when the user declines a confirmation or the repo is dirty. The delete ignored that

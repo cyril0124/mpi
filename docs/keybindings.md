@@ -127,9 +127,9 @@ choice, so none of those can be taken from them; above every other app id.
 1. MixCode Home is on screen: nothing happens. Home is a navigation surface that owns an ephemeral
    composer, so `Escape` never reaches the tab behind it; interrupt that run from its own tab, and
    leave Home with `right` on a row or `tab`.
-2. A compaction is running on the tab on screen: it is cancelled, which is what the status line that
-   announced the compaction says. A compaction on a tab behind another one is left alone; switch to
-   that tab to cancel it.
+2. A compaction or a branch summary is running on the tab on screen: it is cancelled, which is what
+   the status line that announced it says. One running on a tab behind another one is left alone;
+   switch to that tab to cancel it.
 3. An automatic retry is waiting on the tab on screen: it is cancelled, which is what the status line
    that announced it says. A retry on a tab behind another one is left alone; switch to that tab to
    cancel it.

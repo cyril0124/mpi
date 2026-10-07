@@ -6349,10 +6349,12 @@ export class InteractiveMode {
 			// Home is a navigation surface that owns an ephemeral composer, so `Escape` stays inert
 			// there: neither the interrupt nor the double-escape selector belongs to it.
 			if (this.homeSelection.active) return;
-			// A compaction owns the session, so `Escape` cancels it, as its status indicator says.
-			// The mounted session reports its own compaction state, so this follows the tab in front.
+			// A compaction or a branch summary owns the session, so `Escape` cancels it, as its
+			// status indicator says. `isCompacting` covers both, and aborting the one that is not
+			// running is a no-op, so this follows the tab in front like every other state.
 			if (this.session.isCompacting) {
 				this.session.abortCompaction();
+				this.session.abortBranchSummary();
 				this.endInterruptArm();
 				return;
 			}
@@ -10019,14 +10021,11 @@ export class InteractiveMode {
 						return;
 					}
 
-					// Set up escape handler and status indicator if summarizing
+					// The composer's `Escape` handler cancels the summary, so this only has to show and
+					// clear its status line.
 					let showingSummaryIndicator = false;
-					const originalOnEscape = this.defaultEditor.onEscape;
 
 					if (wantsSummary) {
-						this.defaultEditor.onEscape = () => {
-							this.session.abortBranchSummary();
-						};
 						this.chatContainer.addChild(new Spacer(1));
 						this.showStatusIndicator(new BranchSummaryStatusIndicator(this.ui));
 						showingSummaryIndicator = true;
@@ -10064,7 +10063,6 @@ export class InteractiveMode {
 						if (showingSummaryIndicator) {
 							this.clearStatusIndicator("branchSummary");
 						}
-						this.defaultEditor.onEscape = originalOnEscape;
 					}
 				},
 				() => {
