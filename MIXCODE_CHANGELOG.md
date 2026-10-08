@@ -508,6 +508,17 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Deleting two sessions that share an id keeps both, instead of the second delete overwriting the
+  first. `/delete-session` and the session selector move a session file into
+  `<agent dir>/mixcode-pi/trash/`, and the trash name was built from the session id alone. Session
+  ids are unique per project directory only, so the same explicit `--session-id` in two directories
+  produced two files under one trash name, and the second delete renamed its file over the first one.
+  That session's conversation was gone for good, and `/resume-trash` in its own project listed
+  nothing to restore. A file now keeps its own name in the trash, and a name another file already
+  holds gets a numeric suffix, so no delete can overwrite a file that is already there. Restoring is
+  addressed by trash path instead of session id, so `/resume-trash` restores the entry that was
+  picked even when two projects trashed the same id.
+
 - Closing an agent tab leaves the other tabs' extension dialogs alone. `TabManager.closeTab` removed the
   tab from its list before awaiting the runtime's disposal, so the disposal's `beforeSessionInvalidate`
   handler resolved no tab and `resetExtensionUI` fell back to its "every tab" branch: it hid and disposed

@@ -10343,7 +10343,7 @@ export class InteractiveMode {
 		const entry = (await listTrash()).find((item) => item.trashPath === trashPath);
 		if (!entry) return trashPath;
 		try {
-			return restoreFromTrash(entry.sessionId).originalPath;
+			return restoreFromTrash(entry.trashPath).originalPath;
 		} catch {
 			return trashPath;
 		}

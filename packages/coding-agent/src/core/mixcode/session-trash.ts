@@ -10,9 +10,12 @@
  * read the same trash. Every move and every index read-modify-write runs inside one
  * `<file>.lock` section, so a file that moves into the trash always lands in the
  * index, and two instances writing the same index cannot drop an entry.
+ *
+ * A file keeps its own name in the trash: the session id is not unique across project
+ * directories, so a name built from it alone would let one delete overwrite another.
  */
-import { copyFileSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { atomicWrite, mixcodeRootStateDir, withStateLock } from "./multi-tab/mixcode-state.ts";
 
 export interface TrashEntry {
@@ -53,13 +56,13 @@ export function isInTrash(file: string): boolean {
  * rename that fails with `EXDEV` is retried as a copy plus unlink.
  */
 export function moveToTrash(file: string, meta: { sessionId: string; title: string }): void {
-	const trashPath = join(trashDir(), `${meta.sessionId}.jsonl`);
 	withStateLock(indexLockPath(), () => {
 		const size = statSync(file).size;
 		// A session past the cap would be evicted by its own move, so refuse it here: the
 		// caller then reports the permanent fallback instead of a restorable move.
 		if (size > TRASH_SIZE_LIMIT_BYTES) throw new Error("Session is larger than the trash size limit");
 		mkdirSync(trashDir(), { recursive: true });
+		const trashPath = trashPathFor(file);
 		movePath(file, trashPath);
 
 		const entry: TrashEntry = {
@@ -108,13 +111,13 @@ export async function listTrash(): Promise<TrashEntry[]> {
 
 /**
  * Restore a trashed session to its original path and drop its index entry, under
- * the index lock. Throws when the id has no entry.
+ * the index lock. Throws when the trash path has no entry.
  */
-export function restoreFromTrash(sessionId: string): TrashEntry {
+export function restoreFromTrash(trashPath: string): TrashEntry {
 	return withStateLock(indexLockPath(), () => {
 		const entries = readIndex();
-		const index = entries.findIndex((entry) => entry.sessionId === sessionId);
-		if (index < 0) throw new Error(`Session ${sessionId} not found in trash`);
+		const index = entries.findIndex((entry) => entry.trashPath === trashPath);
+		if (index < 0) throw new Error(`Trash file ${trashPath} not found`);
 
 		const entry = entries[index]!;
 		mkdirSync(dirname(entry.originalPath), { recursive: true });
@@ -124,6 +127,20 @@ export function restoreFromTrash(sessionId: string): TrashEntry {
 		writeIndex(entries);
 		return entry;
 	});
+}
+
+/**
+ * Where a session file lands in the trash: its own name, because `<sessionId>.jsonl` is not
+ * unique across project directories, and the second delete would overwrite the first file.
+ * A name another file already holds takes a numeric suffix.
+ */
+function trashPathFor(file: string): string {
+	const stem = basename(file).replace(/\.jsonl$/, "");
+	let candidate = join(trashDir(), `${stem}.jsonl`);
+	for (let suffix = 2; existsSync(candidate); suffix += 1) {
+		candidate = join(trashDir(), `${stem}-${suffix}.jsonl`);
+	}
+	return candidate;
 }
 
 /** Rename across filesystems by copying and unlinking. */
