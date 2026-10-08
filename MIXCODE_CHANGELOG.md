@@ -508,6 +508,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The queue-edit choice (`s`/`f` after the dequeue key) works in an extension's editor.
+  `setEditorComponent()` copies the app's special handlers onto editor components that extend
+  `CustomEditor`, so the app's keys keep working there; `onQueueEditArmKey` was missing from that list
+  and the armed `ctrl+u` choice fell through to `CustomEditor.handleInput`, which typed the printable
+  `s` into the composer instead of pulling the queued steer back into it.
+
 - Vim entry checks the surface it enters on. In regular (non-fullscreen) mode the modal surface does
   not exist, but the empty-queue `ctrl+u` arm still fired: it promised vim in a flash line instead of
   letting the key reach the queue's own binding, and then ate the confirmation key with a refusal.

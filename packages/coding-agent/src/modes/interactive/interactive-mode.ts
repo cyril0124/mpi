@@ -5905,6 +5905,9 @@ export class InteractiveMode {
 				if (!customEditor.onWidgetPanelKey) {
 					customEditor.onWidgetPanelKey = (data: string) => this.defaultEditor.onWidgetPanelKey?.(data) ?? false;
 				}
+				if (!customEditor.onQueueEditArmKey) {
+					customEditor.onQueueEditArmKey = (data: string) => this.defaultEditor.onQueueEditArmKey?.(data) ?? false;
+				}
 				// Copy action handlers (clear, suspend, model switching, etc.)
 				for (const [action, handler] of this.defaultEditor.actionHandlers) {
 					customEditor.actionHandlers.set(action, handler);
