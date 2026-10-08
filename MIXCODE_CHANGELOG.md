@@ -508,6 +508,10 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Subagent lists remain keyboard navigable after attaching a tab from MixCode Home. Home parks
+  each tab's input listeners; attaching restores them even when the tab UI is already mounted.
+  Home keeps its own arrow-key navigation.
+
 - The queue-edit choice (`s`/`f` after the dequeue key) works in an extension's editor.
   `setEditorComponent()` copies the app's special handlers onto editor components that extend
   `CustomEditor`, so the app's keys keep working there; `onQueueEditArmKey` was missing from that list

@@ -3137,9 +3137,12 @@ export class InteractiveMode {
 		// startup restore moves the focus without switching the UI, so the two can
 		// disagree and skipping the switch would leave the previous transcript up.
 		if (tab.id === this.activeTabIdForUi) {
-			// Home cleared the composer when it took the slot, so the draft it parked comes
-			// back here; a full switch would restore it the same way.
-			if (leavingHome) this.setEditorText(tab.draftInput);
+			// Home cleared the composer and parked the tab's input listeners. The mounted
+			// tab skips the full switch that would restore both.
+			if (leavingHome) {
+				this.setEditorText(tab.draftInput);
+				this.attachExtensionTerminalInputListeners(tab.id);
+			}
 			// The bound tab is already the one to focus, so nothing is rebuilt and the
 			// render path that seeds the composer history does not run; seed it here.
 			this.syncEditorHistory();
@@ -3181,7 +3184,10 @@ export class InteractiveMode {
 			// Home covers every tab, so a parked dialog is not shown here either; the chip and
 			// the roster card report the wait until the user goes back to the tab.
 			// Mounting is keyed to the attached tab, which is not always the manager's focus.
-			if (this.activeTabIdForUi) this.parkTabInteractions(this.activeTabIdForUi);
+			if (this.activeTabIdForUi) {
+				this.parkTabInteractions(this.activeTabIdForUi);
+				this.detachExtensionTerminalInputListeners(this.activeTabIdForUi);
+			}
 			this.homeSelection.active = true;
 			this.applyFullscreenScrollbarSetting();
 			// Vim is a modal surface over an agent transcript; Home is a different

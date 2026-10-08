@@ -39,7 +39,7 @@ interface ListenerHost {
 	extensionTerminalInputSubscriptions: Set<unknown>;
 	activeTabIdForUi: string | undefined;
 	homeSelection: { active: boolean };
-	tabManager: undefined;
+	tabManager: { getActive(): { id: string; draftInput: string } } | undefined;
 	addExtensionTerminalInputListener(tabId: string | undefined, handler: TerminalInputHandler): () => void;
 	attachExtensionTerminalInputListeners(tabId: string): void;
 	detachExtensionTerminalInputListeners(tabId: string): void;
@@ -95,6 +95,36 @@ describe("extension terminal-input listeners across tabs", () => {
 		host.attachExtensionTerminalInputListeners("tab-a");
 		terminal.sendInput("w");
 		expect(received).toEqual(["y", "w"]);
+
+		host.ui.stop();
+	});
+
+	test("a listener registered on Home receives keys after returning to the mounted tab", async () => {
+		const { host, terminal } = createHost("tab-a");
+		const tab = { id: "tab-a", draftInput: "" };
+		const received: string[] = [];
+		Object.assign(host, {
+			homeSelection: { active: true },
+			tabManager: { getActive: () => tab },
+			leaveHome: () => {
+				host.homeSelection.active = false;
+			},
+			setEditorText: () => {},
+			syncEditorHistory: () => {},
+			focusTabInteractions: () => {},
+		});
+		host.ui.start();
+		host.addExtensionTerminalInputListener(tab.id, recordingListener(received));
+
+		terminal.sendInput("\u001b[B");
+		expect(received).toEqual([]);
+
+		const activateTab = Reflect.get(InteractiveMode.prototype, "activateTab") as (
+			agentTab: typeof tab,
+		) => Promise<void>;
+		await activateTab.call(host, tab);
+		terminal.sendInput("\u001b[B");
+		expect(received).toEqual(["\u001b[B"]);
 
 		host.ui.stop();
 	});
