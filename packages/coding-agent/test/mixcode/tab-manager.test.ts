@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { AgentSessionEventListener } from "../../src/core/agent-session.ts";
-import type { AgentSessionRuntime } from "../../src/core/agent-session-runtime.ts";
+import type { AgentSessionRuntime, CreateAgentSessionRuntimeFactory } from "../../src/core/agent-session-runtime.ts";
 import { TabManager } from "../../src/core/mixcode/multi-tab/tab-manager.ts";
 
-/** The manager only reads the session name and subscribes when it attaches a tab. */
+/** The manager only reads the session name and directory, and subscribes when it attaches a tab. */
 function stubRuntime(name?: string): AgentSessionRuntime {
 	return {
 		cwd: "/tmp",
 		session: {
-			sessionManager: { getSessionName: () => name },
+			sessionManager: { getSessionName: () => name, getSessionDir: () => "/tmp" },
 			subscribe: () => () => {},
 		},
 	} as unknown as AgentSessionRuntime;
@@ -38,7 +38,10 @@ function replaceableRuntime(): {
  * plus a lock. Clearing an unread badge is the exception, because that badge is
  * persisted state.
  */
-function createManager(initialRuntime: AgentSessionRuntime = stubRuntime()): {
+function createManager(
+	initialRuntime: AgentSessionRuntime = stubRuntime(),
+	createRuntime: CreateAgentSessionRuntimeFactory = () => Promise.reject(new Error("not used")),
+): {
 	manager: TabManager;
 	counters: { layoutChanges: number; tabsChanges: number };
 } {
@@ -46,7 +49,7 @@ function createManager(initialRuntime: AgentSessionRuntime = stubRuntime()): {
 	const manager = new TabManager({
 		initialRuntime,
 		initialTitle: "Agent-01",
-		createRuntime: () => Promise.reject(new Error("not used")),
+		createRuntime,
 		agentDir: "/tmp",
 		onTabsChanged: () => {
 			counters.tabsChanges += 1;
@@ -101,6 +104,27 @@ describe("tab layout persistence", () => {
 		manager.setColor(manager.getActive().id, "blue");
 		manager.setDraft(manager.getActive().id, "draft");
 		expect(counters.layoutChanges).toBe(2);
+	});
+
+	it("reports a layout change when a background tab finishes its turn", async () => {
+		const firstRuntime = stubRuntime();
+		let firstListener: AgentSessionEventListener | undefined;
+		firstRuntime.session.subscribe = (next) => {
+			firstListener = next;
+			return () => {};
+		};
+		const { manager, counters } = createManager(firstRuntime, (async () => stubRuntime()) as never);
+		const tabA = manager.getActive();
+		await manager.createTab({ title: "Agent-02" });
+		const before = counters.layoutChanges;
+
+		// Agent-01 finishes while Agent-02 holds the focus.
+		firstListener?.({ type: "agent_settled" } as never);
+
+		expect(tabA.unread).toBe(true);
+		// The peer layout sync re-adopts the badge from disk every couple of seconds, so a
+		// badge that only lives in memory is dropped again.
+		expect(counters.layoutChanges).toBe(before + 1);
 	});
 });
 

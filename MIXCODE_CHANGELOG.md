@@ -516,6 +516,11 @@ point `## [Unreleased]` at the new tag.
   are only touched while that tab is still in front, otherwise the restored message is parked as that
   tab's draft, and the compaction flush is addressed to it explicitly.
 
+- A completion badge on an unfocused tab reaches the persisted tab layout. Settling a background tab's
+  turn set `unread` and only repainted, unlike `/mark-done`'s set and a focus's clear, so the badge never
+  reached `unseen_done`: the 2 s peer layout sync adopted the stale disk value and dropped the badge about
+  a second after it appeared, and a restart restored the tab without it.
+
 - A tool card and a user message block rebuild their content on the next paint after `invalidate()`, so
   every renderer that refreshes its own card works again. The tab-switch and startup-loading perf
   change moved the rebuild out of `invalidate()` and left it to `render()`, which only re-rendered the

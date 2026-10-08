@@ -778,7 +778,11 @@ export class TabManager {
 				// A terminal error survives settling; only a clean finish becomes done/idle.
 				if (tab.status !== "error") setTabStatus(tab, isActive ? "idle" : "done");
 				if (!isActive) this.onBackgroundCompletion?.();
+				const wasUnread = tab.unread;
 				tab.unread = !isActive;
+				// The badge is persisted state, so report the set the way `markDone` does;
+				// otherwise the peer layout sync adopts the stale disk value and drops it.
+				if (tab.unread !== wasUnread) this.notifyLayoutChanged();
 				break;
 			}
 			case "compaction_end": {
