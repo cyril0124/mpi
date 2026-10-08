@@ -2842,7 +2842,14 @@ export class InteractiveMode {
 	private bindRuntimeCallbacks(runtime: AgentSessionRuntime): void {
 		bindRuntimeCallbacksImpl(
 			// The reset resolves its tab when it runs, by which time the tab is registered.
-			this.runtimeCallbackHost(() => this.resetExtensionUI(this.tabIdForRuntime(runtime))),
+			this.runtimeCallbackHost(() => {
+				const tabId = this.tabIdForRuntime(runtime);
+				// A runtime the manager no longer holds is the tab being closed: the close path
+				// drops that tab's own UI, and the reset must not fall back to the "every tab"
+				// branch, which disposes the dialogs the other tabs still wait on.
+				if (tabId === undefined && this.tabManager) return;
+				this.resetExtensionUI(tabId);
+			}),
 			runtime,
 		);
 	}
@@ -4110,6 +4117,9 @@ export class InteractiveMode {
 		this.widgetPanelTabStates.delete(tabId);
 		this.pendingResourcesBlocks.delete(tabId);
 		this.forgetTabInteractions(tabId);
+		// A close no longer runs this tab's own scoped reset, so its terminal-input listeners
+		// go with the rest of its UI here.
+		this.clearExtensionTerminalInputListeners(tabId);
 		const ui = this.tabUi.get(tabId);
 		if (!ui) return;
 		this.tabUi.delete(tabId);

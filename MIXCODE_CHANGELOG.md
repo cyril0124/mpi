@@ -508,6 +508,15 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Closing an agent tab leaves the other tabs' extension dialogs alone. `TabManager.closeTab` removed the
+  tab from its list before awaiting the runtime's disposal, so the disposal's `beforeSessionInvalidate`
+  handler resolved no tab and `resetExtensionUI` fell back to its "every tab" branch: it hid and disposed
+  every tab's interactions and dropped every tab's terminal-input listeners. A dialog parked on a
+  background tab was destroyed by an unrelated close, and the extension's `await ctx.ui.confirm(...)`
+  never settled, which left that tab's turn running for the rest of the process. The reset is now pinned
+  to the closing runtime's tab and skips the every-tab branch for a runtime the manager no longer holds,
+  and the close path drops that tab's own terminal-input listeners with the rest of its UI.
+
 - An edited TypeScript batch script re-runs its old code inside one TUI. `runTsScript` created its
   jiti instance with `moduleCache: true`, so the second `/batch <script.ts>` in the same process was
   answered from Node's module cache keyed by path and never re-read the file: a script iterated on in
