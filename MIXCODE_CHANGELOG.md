@@ -346,6 +346,7 @@ point `## [Unreleased]` at the new tag.
   in-app block), and both estimate tokens at ~4 characters per token with one token per CJK character.
 ### Changed
 
+- `InteractiveMode` now delegates tab-manager construction, shared-layout lifecycle, tab session actions, resume routing, and layout publication to the fork-owned `TabController`. Home rendering, transcript caching, extension binding, and runtime UI rebinds remain in the host so this step changes the merge boundary without changing tab behavior.
 - `Escape` interrupts a running turn in two steps: the first press arms a 1 s window and shows
   `<interrupt key> again: stop`, and the second press inside that window interrupts. A turn that has
   produced nothing readable yet (no assistant text, no thinking, no tool call, no displayed

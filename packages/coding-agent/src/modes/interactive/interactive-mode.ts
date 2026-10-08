@@ -171,8 +171,8 @@ import {
 	replaceOpenTabSessionIds,
 	resolveSessionPath,
 } from "../../core/mixcode/multi-tab/mixcode-state.ts";
-import { SharedTabLayout } from "../../core/mixcode/multi-tab/shared-tab-layout.ts";
-import { type AgentTab, TabManager, tabBusyReason } from "../../core/mixcode/multi-tab/tab-manager.ts";
+import type { SharedTabLayout } from "../../core/mixcode/multi-tab/shared-tab-layout.ts";
+import { type AgentTab, type TabManager, tabBusyReason } from "../../core/mixcode/multi-tab/tab-manager.ts";
 import { waitForTabBindOrPark } from "../../core/mixcode/multi-tab/tab-restore-park.ts";
 import {
 	defaultAgentTitle,
@@ -363,22 +363,15 @@ import {
 } from "./mixcode/batch/batch-command.ts";
 import { type CommandSource, collectSlashCommands, type TabArgumentOption } from "./mixcode/command-list.ts";
 import { responseModelNoticeText } from "./mixcode/model-mismatch/notice.ts";
+import { TabController } from "./mixcode/multi-tab/tab-controller.ts";
 import {
 	bindRuntimeCallbacks as bindRuntimeCallbacksImpl,
-	handleCloseTab as handleCloseTabImpl,
-	handleNewTab as handleNewTabImpl,
 	handleResumeIntoTab as handleResumeIntoTabImpl,
 	type ResumeTabHost,
 	type RuntimeCallbackHost,
 	type TabLifecycleHost,
 } from "./mixcode/multi-tab/tab-lifecycle.ts";
-import {
-	handleCloseAllSessions as handleCloseAllSessionsImpl,
-	handleCloseSession as handleCloseSessionImpl,
-	handleDeleteAllSessions as handleDeleteAllSessionsImpl,
-	handleDeleteSession as handleDeleteSessionImpl,
-	type SessionActionHost,
-} from "./mixcode/multi-tab/tab-session-actions.ts";
+import type { SessionActionHost } from "./mixcode/multi-tab/tab-session-actions.ts";
 import { createMouseSelectionOptions } from "./mixcode/selection/selection-surface.ts";
 import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
 import { shareSession } from "./session-share.ts";
@@ -796,6 +789,7 @@ class TransientOverlay {
 export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;
 	private tabManager: TabManager | undefined;
+	private readonly tabs: TabController;
 	private tabBarContainer: Container | undefined;
 	/** MixCode Home selection and filter; `active` means Home is the rendered surface. */
 	private readonly homeSelection = createHomeSelection();
@@ -1075,62 +1069,48 @@ export class InteractiveMode {
 		// Key the persisted tab layout on the startup workdir, so the same value
 		// is used for both writing and restoring regardless of the active tab.
 		this.tabsWorkdir = runtimeHost.cwd;
-		if (options.createRuntime) {
-			this.tabManager = new TabManager({
-				initialRuntime: runtimeHost,
-				initialTitle: this.session.sessionManager.getSessionName() ?? "Agent-01",
-				createRuntime: options.createRuntime,
-				agentDir: runtimeHost.services.agentDir,
-				onTabsChanged: () => {
-					clampHomeSelectedTabIndex(this.homeSelection, this.homeRoster());
-					this.ui.requestRender();
-				},
-				onLayoutChanged: () => this.persistOpenTabs(),
-				onTabClosed: (tabId, removedIndex) => {
-					adjustHomeSelectionAfterClose(this.homeSelection, this.homeRoster(), removedIndex);
-					this.homeMessageCache.delete(tabId);
-					clearHomeTabCache(tabId);
-					this.followUpStates.delete(tabId);
-					this.compactionQueues.delete(tabId);
-					this.stashedPrompts.delete(tabId);
-				},
-				// Ring the bell when a tab the user is not looking at finishes, so a
-				// background result is noticeable with the terminal unfocused.
-				onBackgroundCompletion: () => this.ui.terminal.write("\x07"),
-				// A parked compaction message has to reach its own tab even when that tab's
-				// compaction ends behind another one.
-				onCompactionEnd: (tabId, willRetry) => this.flushParkedCompactionQueue(tabId, willRetry),
-				configureRuntime: (runtime) => this.bindRuntimeCallbacks(runtime),
-			});
-		} else {
-			this.bindRuntimeCallbacks(this.runtimeHost);
-		}
-		// Built here, once the TabManager exists; start() runs after the startup restore
-		// so the first published baseline is the settled layout.
-		if (this.tabManager) {
-			this.sharedTabLayout = new SharedTabLayout({
-				manager: this.tabManager,
-				workdir: this.tabsWorkdir,
-				sessionDir: this.runtimeHost.session.sessionManager.getSessionDir(),
-				enqueue: (op) => this.enqueueTabSwitch(op),
-				// Runs inside the shared layout's queued reconcile, so switch directly.
-				refreshActiveTab: async () => {
-					const manager = this.tabManager;
-					if (manager) await this.switchActiveTab(manager.getActive());
-				},
-				disposeTabUi: (id) => this.disposeTabUi(id),
-				// A peer-opened tab is never visited, so binding it is what clears its loading
-				// chip; the restored tabs' worker serializes these binds the same way.
-				onTabOpened: (tab) => this.queueTabBind(tab),
-				onError: (error) => {
-					const msg = error instanceof Error ? error.message : String(error);
-					if (!this.sharedLayoutErrorShown.has(msg)) {
-						this.sharedLayoutErrorShown.add(msg);
-						this.showWarning(`Tab sync: ${msg}`);
-					}
-				},
-			});
-		}
+		this.tabs = new TabController({
+			runtimeHost,
+			createRuntime: options.createRuntime,
+			initialTitle: this.session.sessionManager.getSessionName() ?? "Agent-01",
+			agentDir: runtimeHost.services.agentDir,
+			workdir: this.tabsWorkdir,
+			sessionDir: this.runtimeHost.session.sessionManager.getSessionDir(),
+			onTabsChanged: () => {
+				clampHomeSelectedTabIndex(this.homeSelection, this.homeRoster());
+				this.ui.requestRender();
+			},
+			onLayoutChanged: () => this.persistOpenTabs(),
+			onTabClosed: (tabId, removedIndex) => {
+				adjustHomeSelectionAfterClose(this.homeSelection, this.homeRoster(), removedIndex);
+				this.homeMessageCache.delete(tabId);
+				clearHomeTabCache(tabId);
+				this.followUpStates.delete(tabId);
+				this.compactionQueues.delete(tabId);
+				this.stashedPrompts.delete(tabId);
+			},
+			// Ring the bell when a tab the user is not looking at finishes.
+			onBackgroundCompletion: () => this.ui.terminal.write("\x07"),
+			onCompactionEnd: (tabId, willRetry) => this.flushParkedCompactionQueue(tabId, willRetry),
+			configureRuntime: (runtime) => this.bindRuntimeCallbacks(runtime),
+			enqueueTabSwitch: (op) => this.enqueueTabSwitch(op),
+			refreshActiveTab: async () => {
+				const manager = this.tabManager;
+				if (manager) await this.switchActiveTab(manager.getActive());
+			},
+			disposeTabUi: (id) => this.disposeTabUi(id),
+			onTabOpened: (tab) => this.queueTabBind(tab),
+			onError: (error) => {
+				const msg = error instanceof Error ? error.message : String(error);
+				if (!this.sharedLayoutErrorShown.has(msg)) {
+					this.sharedLayoutErrorShown.add(msg);
+					this.showWarning(`Tab sync: ${msg}`);
+				}
+			},
+		});
+		this.tabManager = this.tabs.manager;
+		this.sharedTabLayout = this.tabs.sharedLayout;
+		if (!options.createRuntime) this.bindRuntimeCallbacks(this.runtimeHost);
 		this.activeTabIdForUi = this.tabManager?.getActive().id;
 		this.version = VERSION;
 		try {
@@ -1674,7 +1654,7 @@ export class InteractiveMode {
 		// is the restored layout, not the transient startup tab, and the first poll cannot
 		// race the loader into opening a tab it is about to open itself. publish() is a
 		// no-op before start(), so persistOpenTabs() calls during the restore are ignored.
-		this.sharedTabLayout?.start();
+		this.tabs.start();
 
 		// Startup keeps the fork's restored tab focus; Home is reached with `left`, the tab
 		// cycle, or the home chip.
@@ -4240,19 +4220,19 @@ export class InteractiveMode {
 	}
 
 	private async handleNewTab(title?: string, focus = true): Promise<void> {
-		await handleNewTabImpl(this.tabLifecycleHost(), title, focus);
+		await this.tabs.createTab(this.tabLifecycleHost(), title, focus);
 	}
 
 	private async handleCloseTab(): Promise<void> {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
-		await handleCloseTabImpl(this.tabLifecycleHost());
+		await this.tabs.closeTab(this.tabLifecycleHost());
 	}
 
 	/** Publish the current tab layout through SharedTabLayout (no-op before start()). */
 	private persistOpenTabs(): void {
 		if (!this.tabsRestoreAttempted) return;
-		this.sharedTabLayout?.publish();
+		this.tabs?.publish();
 	}
 
 	private async restoreOpenTabsOnStartup(): Promise<void> {
@@ -4489,19 +4469,19 @@ export class InteractiveMode {
 
 	/** `/close-session [yes]` closes the active tab (session file is kept). */
 	private async handleCloseSession(args: string): Promise<void> {
-		await handleCloseSessionImpl(this.sessionActionHost(), args);
+		await this.tabs.closeSession(this.sessionActionHost(), args);
 	}
 
 	private async handleDeleteSession(args: string): Promise<void> {
-		await handleDeleteSessionImpl(this.sessionActionHost(), args);
+		await this.tabs.deleteSession(this.sessionActionHost(), args);
 	}
 
 	private async handleCloseAllSessions(): Promise<void> {
-		await handleCloseAllSessionsImpl(this.sessionActionHost());
+		await this.tabs.closeAllSessions(this.sessionActionHost());
 	}
 
 	private async handleDeleteAllSessions(): Promise<void> {
-		await handleDeleteAllSessionsImpl(this.sessionActionHost());
+		await this.tabs.deleteAllSessions(this.sessionActionHost());
 	}
 
 	private renameActiveTab(title: string): void {
@@ -7917,14 +7897,8 @@ export class InteractiveMode {
 			// which the stdout/stderr error handler turns into emergencyTerminalExit;
 			// the render loop is already idle, so this cannot hot-spin (see #4144).
 			this.persistOpenTabs();
-			this.sharedTabLayout?.dispose();
-			this.sharedTabLayout = undefined;
 			this.sharedLayoutErrorShown.clear();
-			if (this.tabManager) {
-				await this.tabManager.dispose();
-			} else {
-				await this.runtimeHost.dispose();
-			}
+			await this.tabs.dispose(this.runtimeHost);
 			this.themeController.disableAutoSync();
 			await this.ui.terminal.drainInput(1000);
 			this.stop();
@@ -7943,14 +7917,8 @@ export class InteractiveMode {
 		// the exit path is what keeps the restored focus current.
 		this.persistOpenTabs();
 		this.stop();
-		this.sharedTabLayout?.dispose();
-		this.sharedTabLayout = undefined;
 		this.sharedLayoutErrorShown.clear();
-		if (this.tabManager) {
-			await this.tabManager.dispose();
-		} else {
-			await this.runtimeHost.dispose();
-		}
+		await this.tabs.dispose(this.runtimeHost);
 
 		process.exit(0);
 	}
@@ -10371,6 +10339,10 @@ export class InteractiveMode {
 	private async handleResumeIntoTab(sessionPath: string): Promise<void> {
 		if (!this.tabManager) {
 			await this.handleResumeSession(sessionPath);
+			return;
+		}
+		if (this.tabs) {
+			await this.tabs.resumeTab(this.resumeTabHost(), sessionPath);
 			return;
 		}
 		await handleResumeIntoTabImpl(this.resumeTabHost(), sessionPath);
