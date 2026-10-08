@@ -6516,10 +6516,29 @@ export class InteractiveMode {
 		this.showStatus("Startup is still in progress");
 	}
 
+	/**
+	 * Attach MixCode Home's selected agent, so a submit that starts on Home acts on it; false when
+	 * the selected roster row has no runtime yet, the case `handleHomeSend` leaves alone.
+	 */
+	private async attachHomeSelectionForSubmit(): Promise<boolean> {
+		if (!this.homeSelection.active) return true;
+		const selected = homeSelectedTab(this.homeSelection, this.homeRoster());
+		if (!selected?.tab) return false;
+		if (this.tabManager && this.tabManager.getActive().id !== selected.id) {
+			await this.activateTab(selected.tab);
+		}
+		return true;
+	}
+
 	private setupEditorSubmitHandler(): void {
 		this.defaultEditor.onSubmit = async (text: string) => {
 			text = text.trim();
 			if (!text) return;
+
+			// A submit that starts on MixCode Home belongs to the agent its roster has selected. The
+			// completion popup and the command palette reach this handler without the attach that
+			// `handleHomeSend` and `runHomeAction` do, so the command would run on the tab behind Home.
+			if (!(await this.attachHomeSelectionForSubmit())) return;
 
 			// The text may be an extension command, and a turn runs with the hooks
 			// `session_start` installs, so the tab is bound before anything is dispatched.

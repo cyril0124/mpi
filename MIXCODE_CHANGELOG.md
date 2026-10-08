@@ -508,6 +508,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A slash command submitted on MixCode Home runs on the agent its roster has selected. The
+  composer's completion-submit path and the command palette reached `defaultEditor.onSubmit`
+  without the attach that `handleHomeSend` and `runHomeAction` do, so the command resolved its tab
+  from the session mounted behind Home: `/delete-session` moved that tab's session file to the
+  trash while the roster highlighted another agent. The submit handler attaches Home's selection
+  first (`attachHomeSelectionForSubmit`).
+
 - A message parked during `/compact` reaches the tab that queued it, even when that tab is not on
   screen. The parked queue was keyed by tab, but the flush read the focused tab's queue and sent
   through the focused session, and only the focused session's `compaction_end` reached the mode, so
