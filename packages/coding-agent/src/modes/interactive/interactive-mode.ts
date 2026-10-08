@@ -10061,6 +10061,14 @@ export class InteractiveMode {
 		const tree = this.sessionManager.getTree();
 		const realLeafId = this.sessionManager.getLeafId();
 		const initialFilterMode = this.settingsManager.getTreeFilterMode();
+		// A branch summary runs while the tab it belongs to can leave the screen, so the tab that owns
+		// this tree is resolved once here: the completion below must land on it, not on whatever tab is
+		// in front by then. Home replaces that tab's composer with an ephemeral one, so a message the
+		// navigation restores belongs to the same tab but not to the composer on screen.
+		const sourceTabId = this.activeTabIdForUi;
+		const sourceTabIsMounted = () => sourceTabId === undefined || sourceTabId === this.activeTabIdForUi;
+		const sourceTabOwnsComposer = () =>
+			sourceTabId === undefined || (sourceTabIsMounted() && !this.homeSelection.active);
 
 		if (tree.length === 0) {
 			this.showStatus("No entries in session");
@@ -10151,7 +10159,7 @@ export class InteractiveMode {
 						if (result.aborted) {
 							// Summarization aborted - re-show tree selector with same selection
 							this.showStatus("Branch summarization cancelled");
-							this.showTreeSelector(entryId);
+							if (sourceTabIsMounted()) this.showTreeSelector(entryId);
 							return;
 						}
 						if (result.cancelled) {
@@ -10159,14 +10167,26 @@ export class InteractiveMode {
 							return;
 						}
 
-						// Update UI
-						this.chatContainer.clear();
-						this.renderInitialMessages();
-						if (result.editorText && !this.editor.getText().trim()) {
-							this.editor.setText(result.editorText);
+						// The transcript belongs to the source tab even while Home covers it, but the composer on
+						// screen belongs to it only when neither another tab nor Home took the slot.
+						if (sourceTabIsMounted()) {
+							this.chatContainer.clear();
+							this.renderInitialMessages();
+							this.showStatus("Navigated to selected point");
 						}
-						this.showStatus("Navigated to selected point");
-						void this.flushCompactionQueue({ willRetry: false });
+						if (result.editorText) {
+							if (sourceTabOwnsComposer()) {
+								if (!this.editor.getText().trim()) this.editor.setText(result.editorText);
+							} else {
+								const sourceTab = sourceTabId === undefined ? undefined : this.tabManager?.get(sourceTabId);
+								if (sourceTab !== undefined && !sourceTab.draftInput.trim()) {
+									// The tab that owns the message is not the one in front, so park it as that
+									// tab's draft instead of typing it into another surface's composer.
+									this.tabManager?.setDraft(sourceTab.id, result.editorText);
+								}
+							}
+						}
+						void this.flushCompactionQueue({ willRetry: false, tabId: sourceTabId });
 					} catch (error) {
 						this.showError(error instanceof Error ? error.message : String(error));
 					} finally {

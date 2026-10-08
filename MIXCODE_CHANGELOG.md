@@ -508,6 +508,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A `/tree` branch summary keeps its result on the tab that started it. The navigation's completion
+  resolved the tab from the mounted UI after the summary finished, so a `tab` press while the summary
+  streamed re-rendered that other tab's transcript, showed it `Navigated to selected point`, and typed
+  the target user message into its composer, where it looked like the user's own next prompt. The
+  completion now compares the tab it was opened on with the mounted one: the transcript and composer
+  are only touched while that tab is still in front, otherwise the restored message is parked as that
+  tab's draft, and the compaction flush is addressed to it explicitly.
+
 - A tool card and a user message block rebuild their content on the next paint after `invalidate()`, so
   every renderer that refreshes its own card works again. The tab-switch and startup-loading perf
   change moved the rebuild out of `invalidate()` and left it to `render()`, which only re-rendered the
