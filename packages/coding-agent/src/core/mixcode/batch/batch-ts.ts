@@ -65,7 +65,10 @@ export async function runTsScript(
 	scriptPath: string,
 	context: BatchContext = { workdir: "", tabs: [] },
 ): Promise<BatchPlan> {
-	const jiti = createJiti(import.meta.url, { moduleCache: true });
+	// A batch script is re-read on every invocation, so the module cache stays off; the extension
+	// loader does the same. With it on, a second `/batch` of an edited file replays the first
+	// evaluation instead of reading the file again.
+	const jiti = createJiti(import.meta.url, { moduleCache: false });
 	const module = await withScriptPath(scriptPath, () => jiti.import(scriptPath, { default: true }));
 	const script = module as unknown;
 	if (typeof script !== "function") {

@@ -508,6 +508,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- An edited TypeScript batch script re-runs its old code inside one TUI. `runTsScript` created its
+  jiti instance with `moduleCache: true`, so the second `/batch <script.ts>` in the same process was
+  answered from Node's module cache keyed by path and never re-read the file: a script iterated on in
+  a running agent kept executing the first revision until the process restarted, while
+  `/batch-dry-run` in a fresh process showed the edited plan. The loader now uses
+  `moduleCache: false`, the setting the extension loader already uses so an edited extension reloads.
+
 - A refused `/workdir` move leaves the session file alone. `reopenActiveSession` ignored the
   `{cancelled}` result of `AgentSessionRuntime.switchSession`, which an extension sets through
   `session_before_switch` (the shipped `confirm-destructive` example cancels it when the user
