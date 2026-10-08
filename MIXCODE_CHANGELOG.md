@@ -508,6 +508,15 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A queued host command no longer consumes the composer draft of the tab that queued it.
+  `runQueuedCommand` mounts the owning tab, which loads that tab's parked draft into the shared
+  composer, and then submits the command; the command's branch clears the composer, so a draft typed
+  while a turn was streaming, with a `/follow-up /<command>` round queued behind it, was gone once
+  that round drained, and the tab's parked copy was overwritten with the emptied composer on the next
+  tab switch. The round now takes the draft out before the dispatch and puts it back after it, unless
+  the command left text of its own in the composer, the rule the command palette applies to the draft
+  it replaces.
+
 - Deleting two sessions that share an id keeps both, instead of the second delete overwriting the
   first. `/delete-session` and the session selector move a session file into
   `<agent dir>/mixcode-pi/trash/`, and the trash name was built from the session id alone. Session

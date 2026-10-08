@@ -79,6 +79,11 @@ function stubEditor(mountedTab: () => string | undefined): EditorStub {
 	const editor: EditorStub = {
 		history: [],
 		historyWrites: [],
+		text: "",
+		getText: () => editor.text,
+		setText: (text) => {
+			editor.text = text;
+		},
 		addToHistory(text) {
 			editor.historyWrites.push({ text, mountedTab: mountedTab() });
 			if (editor.history[0] !== text) editor.history.unshift(text);
@@ -100,6 +105,10 @@ interface HistoryWrite {
 interface EditorStub {
 	history: string[];
 	historyWrites: HistoryWrite[];
+	text: string;
+	onSubmit?: (text: string) => void | Promise<void>;
+	getText(): string;
+	setText(text: string): void;
 	addToHistory(text: string): void;
 	setHistory(texts: readonly string[]): void;
 }
@@ -182,6 +191,8 @@ async function createTwoTabHost(): Promise<{
 		context.tabManager.activate(tab.id);
 		context.runtimeHost = tab.runtime;
 		context.activeTabIdForUi = tab.id;
+		// `switchActiveTab` hands the incoming tab's parked draft to the composer.
+		editor.setText(context.tabManager.get(tab.id)?.draftInput ?? "");
 		syncEditorHistory.call(context as ScopedHost);
 	};
 	// The host mounts the queued round's own tab before submitting, exactly as the
@@ -195,6 +206,13 @@ async function createTwoTabHost(): Promise<{
 	// submit pipeline, which is what runs it when the round arrives.
 	(context as Record<string, unknown>).isQueuedFollowUpCommand = (text: string) => text.startsWith("/demo-command");
 	setupEditorSubmitHandler.call(context as ScopedHost);
+	// The real `Editor.submitValue()` empties the composer before it calls `onSubmit`; the stub has to
+	// clear too, or a round that runs through the composer would not be exercised.
+	const submit = editor.onSubmit;
+	editor.onSubmit = (text) => {
+		editor.setText("");
+		return submit?.(text);
+	};
 	return { context, editor, sessionA, sessionB, tabA, tabB, mount };
 }
 
@@ -207,9 +225,10 @@ describe("a queued follow-up round stays with its tab", () => {
 		await submitFollowUps(state as never, host as never, ["/demo-command tighten this"], "batch");
 		expect(state.followUpDrain).toBeDefined();
 
-		// Focus moves to Agent-02 while Agent-01 is still running.
+		// Focus moves to Agent-02 while Agent-01 is still running, which parks A's draft.
 		mount(tabB);
 		expect(editor.history).toEqual(["first prompt on B"]);
+		context.tabManager.setDraft(tabA.id, "draft typed on A");
 
 		// Agent-01 settles, so its queued round executes now.
 		sessionA.settle();
@@ -222,6 +241,8 @@ describe("a queued follow-up round stays with its tab", () => {
 		expect(sessionB.prompt).not.toHaveBeenCalled();
 		// Nothing was recorded while Agent-02 was the tab on screen.
 		expect(editor.historyWrites).toEqual([{ text: "/demo-command tighten this", mountedTab: tabA.id }]);
+		// The round put the mounted tab's draft back after the command cleared the composer.
+		expect(editor.getText()).toBe("draft typed on A");
 	});
 
 	it("keeps dispatching a plain queued message to its own tab", async () => {

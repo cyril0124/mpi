@@ -8728,6 +8728,19 @@ export class InteractiveMode {
 		};
 	}
 
+	/**
+	 * Run one queued host command on the tab that queued it without consuming that tab's composer
+	 * draft: the command's branch clears the composer, so the draft is taken out first and put back
+	 * after the round, unless the command left text of its own in it.
+	 */
+	private async runQueuedCommandRound(text: string): Promise<void> {
+		const draft = this.editorText();
+		await this.defaultEditor.onSubmit?.(text);
+		if (!draft.trim()) return;
+		const remaining = this.editorText();
+		if (!remaining.trim() || remaining === text) this.setEditorText(draft);
+	}
+
 	/** Session-side integration for the follow-up queue (core/mixcode/follow-up/). */
 	private get followUpHost(): FollowUpHost {
 		// Bind to the tab that owns this queue: a drain of a background tab must
@@ -8748,7 +8761,7 @@ export class InteractiveMode {
 				// mount the tab they act on the same way.
 				const tab = owningTab();
 				if (tab && this.activeTabIdForUi !== tab.id) await this.activateTab(tab);
-				await this.defaultEditor.onSubmit?.(text);
+				await this.runQueuedCommandRound(text);
 			},
 			isQueuedCommandText: (text) => this.isQueuedFollowUpCommand(text),
 			isCompactionClaimed: () => this.compactionClaimed,
