@@ -199,8 +199,10 @@ function layoutComponent(
 				node.state.isFollowSuspended,
 			);
 			const scrollView = node.state as ScrollView;
-			if (renderedWindow.scrollTop !== requestedScrollTop) scrollView.scrollTo(renderedWindow.scrollTop);
+			// The measured total is authoritative before applying a resize anchor. Applying
+			// the old clamp first can discard a valid reflow-adjusted offset.
 			node.state.updateLayout(renderedWindow.total, viewportHeight, context.requestRender);
+			if (renderedWindow.scrollTop !== scrollView.scrollTop) scrollView.scrollTo(renderedWindow.scrollTop);
 
 			const rect = { x, y, width: safeWidth, height: viewportHeight };
 			const childClip = intersect(clip, rect);

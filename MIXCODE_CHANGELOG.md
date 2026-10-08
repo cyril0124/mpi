@@ -515,6 +515,8 @@ point `## [Unreleased]` at the new tag.
   trash while the roster highlighted another agent. The submit handler attaches Home's selection
   first (`attachHomeSelectionForSubmit`).
 
+- Fullscreen transcript scrolling keeps the visible message block anchored when terminal width changes. The windowed transcript records the top block and its progress before reflow, then remeasures that block at the new width and reapplies the offset, so a reader who scrolled up stays on the same conversation instead of the old numeric row.
+
 - A message parked during `/compact` reaches the tab that queued it, even when that tab is not on
   screen. The parked queue was keyed by tab, but the flush read the focused tab's queue and sent
   through the focused session, and only the focused session's `compaction_end` reached the mode, so

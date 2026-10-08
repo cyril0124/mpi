@@ -39,6 +39,14 @@ interface BlockAtRow {
 	height: number;
 }
 
+interface ScrollAnchor {
+	block: Component;
+	rowInBlock: number;
+	blockProgress: number;
+	blockHeight: number;
+	width: number;
+}
+
 export interface WindowedTranscriptOptions {
 	/** Every block in paint order; read live so messages can be added and removed. */
 	blocks: () => readonly Component[];
@@ -63,8 +71,12 @@ export class WindowedTranscript extends Container {
 	private syncedLast: Component | undefined;
 	/** Rendered lines for the current pass, so one pass renders a block once. */
 	private readonly passLines = new Map<Component, string[]>();
-	/** Set when this pass measured a block, which moves the total and the window. */
+	/** Set when measuring the current pass changes the virtual total. */
 	private measuredThisPass = false;
+	/** The first visible row's stable block, retained across width reflow. */
+	private scrollAnchor?: ScrollAnchor;
+	/** Anchor captured before a width change, waiting for the new layout. */
+	private pendingResizeAnchor?: ScrollAnchor;
 
 	constructor(options: WindowedTranscriptOptions) {
 		super();
@@ -257,24 +269,84 @@ export class WindowedTranscript extends Container {
 		const viewportHeight = Math.max(0, Math.floor(height));
 		const margin = Math.max(0, Math.floor(overscan));
 		this.ensureWidth(safeWidth);
-		const top = Math.max(0, Math.floor(scrollTop));
-		if (viewportHeight === 0) return { lines: [], start: top, scrollTop: top, total: this.totalHeight() };
+		let top = Math.max(0, Math.floor(scrollTop));
+		if (viewportHeight === 0) {
+			this.pendingResizeAnchor = undefined;
+			return { lines: [], start: top, scrollTop: top, total: this.totalHeight() };
+		}
 
-		// A caller already at the end of the estimated content stays at the end once the
-		// walk has measured it, so the newest rows are painted on this frame too. A caller that
-		// asks to honor its offset keeps the window around that offset instead, even while the
-		// estimate still looks like the content end.
-		const atContentEnd = !honorOffset && top + viewportHeight >= this.totalHeight();
 		this.measuredThisPass = false;
+		const resizeAnchor = this.pendingResizeAnchor;
+		if (resizeAnchor) {
+			top = this.resolveScrollAnchor(safeWidth, viewportHeight, resizeAnchor) ?? top;
+		}
+		const atContentEnd = !honorOffset && top + viewportHeight >= this.totalHeight();
 		let window = this.collectWindow(safeWidth, top, viewportHeight, margin, atContentEnd);
 		// Each walk measures the blocks it paints, which moves the total and the row the
-		// window ends at. Collect again while that keeps happening; the blocks are cached
-		// for this pass, so a repeated collection renders nothing twice.
+		// window ends at. The anchor is recomputed after those measurements so a changed
+		// prefix estimate cannot move the anchored block.
 		for (let attempt = 0; attempt < WINDOW_RECOLLECT_ATTEMPTS && this.measuredThisPass; attempt += 1) {
 			this.measuredThisPass = false;
+			if (resizeAnchor) {
+				top = this.resolveScrollAnchor(safeWidth, viewportHeight, resizeAnchor) ?? top;
+			}
 			window = this.collectWindow(safeWidth, top, viewportHeight, margin, atContentEnd);
 		}
-		return window;
+		this.pendingResizeAnchor = undefined;
+
+		const total = this.totalHeight();
+		const maxScrollTop = Math.max(0, total - viewportHeight);
+		const effectiveScrollTop = atContentEnd ? maxScrollTop : Math.min(top, maxScrollTop);
+		this.rememberScrollAnchor(safeWidth, effectiveScrollTop, viewportHeight, total);
+		return {
+			...window,
+			scrollTop: Math.max(0, effectiveScrollTop),
+			total,
+		};
+	}
+
+	/** Recalculate the global row containing the remembered block after reflow. */
+	private resolveScrollAnchor(width: number, viewportHeight: number, anchor: ScrollAnchor): number | undefined {
+		const blocks = this.blockList();
+		let rowsAfter = 0;
+		for (let index = blocks.length - 1; index >= 0; index -= 1) {
+			const block = blocks[index]!;
+			const height = this.linesOf(block, width).length;
+			if (block !== anchor.block) {
+				rowsAfter += height;
+				continue;
+			}
+
+			const preserveRow = anchor.width === width && height >= anchor.blockHeight;
+			const lastRowInBlock = Math.max(0, height - 1);
+			const candidateRow = preserveRow ? anchor.rowInBlock : Math.round(anchor.blockProgress * height);
+			const rowInBlock = Math.min(lastRowInBlock, candidateRow);
+			const total = this.totalHeight();
+			const blockStart = total - rowsAfter - height;
+			const maxScrollTop = Math.max(0, total - viewportHeight);
+			return Math.max(0, Math.min(maxScrollTop, blockStart + rowInBlock));
+		}
+		return undefined;
+	}
+
+	/** Remember the top visible block while the user is away from the content end. */
+	private rememberScrollAnchor(width: number, scrollTop: number, viewportHeight: number, total: number): void {
+		if (viewportHeight <= 0 || scrollTop + viewportHeight >= total) {
+			this.scrollAnchor = undefined;
+			return;
+		}
+		const hit = this.blockAtRow(width, scrollTop);
+		if (!hit || hit.height <= 0) {
+			this.scrollAnchor = undefined;
+			return;
+		}
+		this.scrollAnchor = {
+			block: hit.block,
+			rowInBlock: hit.offsetInBlock,
+			blockProgress: hit.offsetInBlock / hit.height,
+			blockHeight: hit.height,
+			width,
+		};
 	}
 
 	/** One window collection at the requested offset, using the current table. */
@@ -465,6 +537,9 @@ export class WindowedTranscript extends Container {
 	/** Measurements are only valid for one width, so a width change drops the table. */
 	private ensureWidth(width: number): void {
 		if (width === this.measuredWidth) return;
+		if (this.measuredWidth >= 0 && this.scrollAnchor) {
+			this.pendingResizeAnchor = this.scrollAnchor;
+		}
 		this.measuredWidth = width;
 		this.passLines.clear();
 		this.measuredHeights = new WeakMap<Component, number>();
