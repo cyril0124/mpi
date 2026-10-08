@@ -86,6 +86,8 @@ export class ToolExecutionComponent extends Container {
 	private renderedLines: string[] | undefined;
 	private renderedWidth = -1;
 	private renderedTheme: string | undefined;
+	/** Set while `invalidate` has dropped the memo but the next paint has not rebuilt it yet. */
+	private rebuildPending = false;
 
 	constructor(
 		toolName: string,
@@ -265,6 +267,11 @@ export class ToolExecutionComponent extends Container {
 	 * tree eagerly is what made showing a tab re-render its whole window. Nothing
 	 * is lost by waiting: `render` rebuilds from the same fields the setters keep.
 	 *
+	 * The same entry point is how a renderer refreshes its own card: the bash result's 1 s tick and
+	 * the edit call's asynchronous diff preview both call `context.invalidate()` and expect the
+	 * renderer tree to be rebuilt. `render` cannot tell those callers from a tree invalidation, and
+	 * only the rows the viewport paints should pay, so the rebuild happens on the paint.
+	 *
 	 * The subtree is flushed only when the theme changed: the card's children cache
 	 * their rendered lines against content and width alone, so a theme switch would
 	 * otherwise serve rows in the old colors.
@@ -273,12 +280,14 @@ export class ToolExecutionComponent extends Container {
 		if (this.renderedTheme !== undefined && this.renderedTheme !== getActiveThemeName()) {
 			super.invalidate();
 		}
+		this.rebuildPending = true;
 		this.renderedLines = undefined;
 	}
 
 	override render(width: number): string[] {
 		const themeName = getActiveThemeName();
 		if (!this.renderedLines || this.renderedWidth !== width || this.renderedTheme !== themeName) {
+			if (this.rebuildPending) this.updateDisplay();
 			this.renderedLines = this.renderCard(width);
 			this.renderedWidth = width;
 			this.renderedTheme = themeName;
@@ -350,6 +359,7 @@ export class ToolExecutionComponent extends Container {
 
 	private updateDisplay(): void {
 		this.renderedLines = undefined;
+		this.rebuildPending = false;
 		const bgFn = this.isPartial
 			? (text: string) => theme.bg("toolPendingBg", text)
 			: this.result?.isError

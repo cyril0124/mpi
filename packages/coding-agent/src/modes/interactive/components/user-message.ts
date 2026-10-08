@@ -76,6 +76,8 @@ export class UserMessageComponent extends Container {
 	private renderedLines: string[] | undefined;
 	private renderedWidth = -1;
 	private renderedTheme: string | undefined;
+	/** Set while `invalidate` has dropped the memo but the next paint has not rebuilt it yet. */
+	private rebuildPending = false;
 
 	constructor(
 		text: string,
@@ -108,6 +110,10 @@ export class UserMessageComponent extends Container {
 	/**
 	 * Drop the memo; the next paint rebuilds lazily. See AssistantMessageComponent.invalidate.
 	 *
+	 * Content is rebuilt from the fields this component keeps. A replaced Markdown transformer only
+	 * takes effect through that rebuild: the body's own cache holds the lines the previous
+	 * transformer chain produced.
+	 *
 	 * The subtree is flushed only when the theme changed: the children cache their
 	 * rendered lines against content and width alone, so a theme switch would otherwise
 	 * serve rows in the old colors. A plain relayout or a background tab bind leaves the
@@ -117,10 +123,12 @@ export class UserMessageComponent extends Container {
 		if (this.renderedTheme !== undefined && this.renderedTheme !== getActiveThemeName()) {
 			super.invalidate();
 		}
+		this.rebuildPending = true;
 		this.renderedLines = undefined;
 	}
 
 	private rebuild(): void {
+		this.rebuildPending = false;
 		this.renderedLines = undefined;
 		this.clear();
 		const contentBox = new Box(this.outputPad, 1, (content: string) => theme.bg("userMessageBg", content));
@@ -143,6 +151,7 @@ export class UserMessageComponent extends Container {
 	}
 
 	override render(width: number): string[] {
+		if (this.rebuildPending) this.rebuild();
 		const themeName = getActiveThemeName();
 		if (this.renderedLines && this.renderedWidth === width && this.renderedTheme === themeName) {
 			return this.renderedLines;

@@ -508,6 +508,15 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A tool card and a user message block rebuild their content on the next paint after `invalidate()`, so
+  every renderer that refreshes its own card works again. The tab-switch and startup-loading perf
+  change moved the rebuild out of `invalidate()` and left it to `render()`, which only re-rendered the
+  existing child tree; the children cache their rows against text and width, so the old rows came back.
+  A running tool's `Elapsed` line stuck at `0.0s` until output or the result arrived, the `edit` tool's
+  asynchronous diff preview never appeared, and a replaced Markdown transformer had no effect on a user
+  message. Both blocks now rebuild on that paint, so rows the windowed transcript never paints still pay
+  nothing.
+
 - Subagent lists remain keyboard navigable after attaching a tab from MixCode Home. Home parks
   each tab's input listeners; attaching restores them even when the tab UI is already mounted.
   Home keeps its own arrow-key navigation.
