@@ -72,7 +72,8 @@
 与 cwd 绑定的服务在新目录下重建，会话头也记录新目录，因此之后恢复该会话会从同一位置开始。相对
 路径按标签页当前工作目录解析，开头的 `~` 展开为家目录。切到标签页当前所在的目录会提示
 `workdir unchanged` 并什么都不做；路径不是已存在的目录时报
-`Error: workdir not found or not a directory: <path>`。
+`Error: workdir not found or not a directory: <path>`。扩展通过 `session_before_switch` 拒绝这次
+切换时提示 `Workdir change cancelled`，并且不做任何改动：会话和会话头都保持原来的目录。
 
 不带路径的 `/workdir` 打开选择器，也就是 meta 行上的工作目录徽标所打开的那个界面。它只浏览
 目录，不列文件：

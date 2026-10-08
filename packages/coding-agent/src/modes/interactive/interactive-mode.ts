@@ -4193,7 +4193,7 @@ export class InteractiveMode {
 	/**
 	 * Reopen the active tab's session at `resolved`: its cwd-bound services are rebuilt there and
 	 * the session header records the new directory, so a later resume starts in the same place. The
-	 * transcript is kept. A failure is reported and leaves the tab where it was.
+	 * transcript is kept. A failure or a refused switch is reported and leaves the tab where it was.
 	 */
 	private async reopenActiveSession(resolved: string): Promise<void> {
 		const sessionFile = this.sessionManager.getSessionFile();
@@ -4202,7 +4202,16 @@ export class InteractiveMode {
 			// decision a resume into another cwd does.
 			const trustContext = { projectTrustContextFactory: (cwd: string) => this.createProjectTrustContext(cwd) };
 			if (sessionFile) {
-				await this.runtimeHost.switchSession(sessionFile, { cwdOverride: resolved, ...trustContext });
+				const result = await this.runtimeHost.switchSession(sessionFile, {
+					cwdOverride: resolved,
+					...trustContext,
+				});
+				// An extension can refuse the switch through `session_before_switch`. The tab then keeps its
+				// session in the old directory, so the header has to keep that directory too.
+				if (result.cancelled) {
+					this.showStatus("Workdir change cancelled");
+					return;
+				}
 				await persistSessionCwd(sessionFile, resolved);
 				return;
 			}

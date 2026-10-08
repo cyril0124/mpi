@@ -508,6 +508,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A refused `/workdir` move leaves the session file alone. `reopenActiveSession` ignored the
+  `{cancelled}` result of `AgentSessionRuntime.switchSession`, which an extension sets through
+  `session_before_switch` (the shipped `confirm-destructive` example cancels it when the user
+  declines), and rewrote the session header's `cwd` anyway: the tab kept running in the old
+  directory while the file recorded the refused one, so a later resume started the session there.
+  The command now reports `Workdir change cancelled` and returns before the header is touched.
+
 - A `/tree` branch summary keeps its result on the tab that started it. The navigation's completion
   resolved the tab from the mounted UI after the summary finished, so a `tab` press while the summary
   streamed re-rendered that other tab's transcript, showed it `Navigated to selected point`, and typed

@@ -94,7 +94,9 @@ directory, and the session header records it, so resuming that session later sta
 place. A relative path resolves against the tab's current working directory and a leading `~`
 expands to the home directory. Moving onto the directory the tab is already in reports
 `workdir unchanged` and does nothing, and a path that is not an existing directory reports
-`Error: workdir not found or not a directory: <path>`.
+`Error: workdir not found or not a directory: <path>`. A switch an extension refuses through
+`session_before_switch` reports `Workdir change cancelled` and changes nothing, so the session and
+its header keep the directory they had.
 
 `/workdir` without a path opens the picker, which is the same surface the workdir badge in the meta
 row opens. It browses directories, never files:
