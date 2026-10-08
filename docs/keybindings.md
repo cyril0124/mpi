@@ -71,7 +71,7 @@ Context-scoped, so a key may appear once per surface.
 | `app.queueEdit.steer` | `s`, `shift+s` | armed queue choice: steer the queued message |
 | `app.queueEdit.followUp` | `f`, `shift+f` | armed queue choice: keep it as a follow-up |
 | `app.queueEdit.cancel` | `escape` | armed queue choice: cancel |
-| `app.vim.enter` | `ctrl+u` | vim mode: arm entry while no message is queued, whatever the composer holds — see [Vim Mode](vim-mode.md) |
+| `app.vim.enter` | `ctrl+u` | vim mode: arm entry while no message is queued, whatever the composer holds, on an agent tab in fullscreen mode — see [Vim Mode](vim-mode.md) |
 | `app.vim.enterConfirm` | `u` | vim mode: confirm entry while armed |
 | `app.vim.exit` | `q` | vim mode: leave the modal transcript |
 | `app.vim.lineUp` | `k`, `up` | vim mode: scroll 3 rows towards older output |
@@ -101,7 +101,8 @@ key from the terminal
   ├─ vim mode active? ────────► vim mode owns it, except six passthrough
   │                             actions (tabs, Tab Jump, tools, thinking
   │                             toggle, quit); the rest is swallowed
-  ├─ empty queue, ctrl+u? ────► arms vim entry (a queued message declines it)
+  ├─ empty queue, ctrl+u? ────► arms vim entry (fullscreen on an agent tab
+  │                             only; a queued message declines it)
   ├─ empty composer, right? ──► widget side panel
   ├─ queue choice armed? ─────► s / f / escape
   ├─ extension shortcut? ─────► the extension's handler

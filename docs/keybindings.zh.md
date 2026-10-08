@@ -69,7 +69,7 @@ id。本页说明 fork 重新绑定了什么、新增了哪些 id、composer 按
 | `app.queueEdit.steer` | `s`、`shift+s` | 已武装的队列选择：把排队的消息改为 steer |
 | `app.queueEdit.followUp` | `f`、`shift+f` | 已武装的队列选择：仍作为 follow-up |
 | `app.queueEdit.cancel` | `escape` | 已武装的队列选择：取消 |
-| `app.vim.enter` | `ctrl+u` | vim 模式：无排队消息时武装进入（输入框有草稿也可以）—— 见 [Vim 模式](vim-mode.zh.md) |
+| `app.vim.enter` | `ctrl+u` | vim 模式：无排队消息时武装进入（输入框有草稿也可以），限 fullscreen 模式下的 agent 标签页 —— 见 [Vim 模式](vim-mode.zh.md) |
 | `app.vim.enterConfirm` | `u` | vim 模式：武装后确认进入 |
 | `app.vim.exit` | `q` | vim 模式：离开模态对话区 |
 | `app.vim.lineUp` | `k`、`up` | vim 模式：向更早的输出滚动 3 行 |
@@ -98,7 +98,8 @@ id。本页说明 fork 重新绑定了什么、新增了哪些 id、composer 按
   ├─ vim 模式处于活动？ ─────► vim 模式独占，但放行六个动作（标签页、
   │                            Tab Jump、工具展开、thinking 开关、退出）；
   │                            其余被吞掉
-  ├─ 队列为空 + ctrl+u？ ────► 武装 vim 入口（有排队消息时拒绝）
+  ├─ 队列为空 + ctrl+u？ ────► 武装 vim 入口（仅限 fullscreen 下的 agent
+  │                            标签页；有排队消息时拒绝）
   ├─ 空输入框 + right？ ─────► 挂件侧栏
   ├─ 队列选择已武装？ ───────► s / f / escape
   ├─ 扩展快捷键？ ───────────► 扩展的处理器

@@ -216,13 +216,15 @@ export interface VimEnterArmResult {
 
 /**
  * Empty-queue `ctrl+u` arms vim entry; `u` or another `ctrl+u` inside the window
- * enters it. A draft in the composer does not affect the arm.
+ * enters it. A draft in the composer does not affect the arm. `canEnter` describes
+ * the surface, so a window armed on one page is not confirmed on a page that
+ * cannot hold vim.
  */
 export function handleVimEnterArmKey(
 	state: VimTabState,
 	data: string,
 	host: VimKeyHost,
-	canArm: boolean,
+	canEnter: boolean,
 	now: number,
 ): VimEnterArmResult {
 	if (state.active) return { armed: false, entered: false, consumed: false };
@@ -231,11 +233,11 @@ export function handleVimEnterArmKey(
 		state.enterArmedAt = undefined;
 		const confirmKey =
 			host.keybindings.matches(data, "app.vim.enterConfirm") || host.keybindings.matches(data, "app.vim.enter");
-		if (confirmKey && now - armedAt <= VIM_ENTER_ARM_WINDOW_MS) {
+		if (confirmKey && canEnter && now - armedAt <= VIM_ENTER_ARM_WINDOW_MS) {
 			return { armed: false, entered: enterVimMode(state, host), consumed: true };
 		}
 	}
-	if (!canArm || !host.keybindings.matches(data, "app.vim.enter")) {
+	if (!canEnter || !host.keybindings.matches(data, "app.vim.enter")) {
 		return { armed: false, entered: false, consumed: false };
 	}
 	state.enterArmedAt = now;

@@ -266,6 +266,17 @@ describe("vim entry arm", () => {
 		expect(handleVimEnterArmKey(state, "\x15", host, false, 0).consumed).toBe(false);
 		expect(state.enterArmedAt).toBeUndefined();
 	});
+
+	/** A window armed on one surface is not confirmed once the caller's surface says vim cannot start. */
+	it("does not confirm a window armed elsewhere once the surface says no", () => {
+		const state = createVimTabState();
+		const host = makeHost();
+		handleVimEnterArmKey(state, "\x15", host, true, 0);
+		const moved = handleVimEnterArmKey(state, "u", host, false, 100);
+		expect(moved).toEqual({ armed: false, entered: false, consumed: false });
+		expect(state.active).toBe(false);
+		expect(state.enterArmedAt).toBeUndefined();
+	});
 });
 
 describe("vim tab transfer", () => {

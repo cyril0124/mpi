@@ -30,6 +30,8 @@ type VimWiringContext = {
 	windowedTranscript: WindowedTranscript;
 	tabManager: { getActive: () => { vim: VimTabState } };
 	fallbackVimState: VimTabState;
+	/** The surface flag the vim entry points consult; Home covers the tab transcript. */
+	homeSelection: { active: boolean };
 	keybindings: KeybindingsManager;
 	ui: { requestRender: () => void };
 	editor: { borderColor: unknown };
@@ -91,6 +93,7 @@ function makeWiringContext(options: {
 	notices: string[];
 	previews: Array<{ labels: readonly string[]; selected: number }>;
 	requestRender: () => void;
+	homeActive?: boolean;
 }): VimWiringContext {
 	const context: VimWiringContext = {
 		renderer: options.renderer,
@@ -98,6 +101,7 @@ function makeWiringContext(options: {
 		windowedTranscript: options.windowedTranscript,
 		tabManager: { getActive: () => options.tab },
 		fallbackVimState: createVimTabState(),
+		homeSelection: { active: options.homeActive ?? false },
 		keybindings: new KeybindingsManager(),
 		ui: { requestRender: options.requestRender },
 		editor: { borderColor: undefined },
@@ -292,6 +296,34 @@ describe("vim mode against the real transcript viewport", () => {
 
 		expect(tab.vim.active).toBe(false);
 		expect(notices.join(" ")).toContain("warning Vim mode needs the fullscreen transcript");
+		tui.stop();
+	});
+
+	it("refuses to enter while MixCode Home covers the tab transcript", async () => {
+		const terminal = new VirtualTerminal(40, 12);
+		const tui = createInteractiveTui({
+			tuiMode: "fullscreen",
+			showHardwareCursor: false,
+			logDirectory: "/tmp",
+			terminal,
+		});
+		const tab = { vim: createVimTabState() };
+		const notices: string[] = [];
+		const context = makeWiringContext({
+			renderer: tui,
+			transcript: new ScrollView(new Text("x", 0, 0), {}),
+			windowedTranscript: new WindowedTranscript({ blocks: () => [] }),
+			tab,
+			notices,
+			previews: [],
+			requestRender: vi.fn(),
+			homeActive: true,
+		});
+
+		context.enterActiveTabVimMode();
+
+		expect(tab.vim.active).toBe(false);
+		expect(notices.join(" ")).toContain("warning Vim mode is not available on MixCode Home");
 		tui.stop();
 	});
 

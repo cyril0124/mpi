@@ -508,14 +508,22 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Vim entry checks the surface it enters on. In regular (non-fullscreen) mode the modal surface does
+  not exist, but the empty-queue `ctrl+u` arm still fired: it promised vim in a flash line instead of
+  letting the key reach the queue's own binding, and then ate the confirmation key with a refusal.
+  MixCode Home was the other way round: it covers the tab transcript, yet both `ctrl+u` then `u` and
+  `/vim` entered vim on the tab behind the page, which left Home's composer ignoring every keystroke
+  behind a `[VIM]` frame. The arm now declines without the fullscreen viewport and on Home, a window
+  armed elsewhere can no longer be confirmed on either, and `/vim` refuses on Home with a reason.
+
+- Fullscreen transcript scrolling keeps the visible message block anchored when terminal width changes. The windowed transcript records the top block and its progress before reflow, then remeasures that block at the new width and reapplies the offset, so a reader who scrolled up stays on the same conversation instead of the old numeric row.
+
 - A slash command submitted on MixCode Home runs on the agent its roster has selected. The
   composer's completion-submit path and the command palette reached `defaultEditor.onSubmit`
   without the attach that `handleHomeSend` and `runHomeAction` do, so the command resolved its tab
   from the session mounted behind Home: `/delete-session` moved that tab's session file to the
   trash while the roster highlighted another agent. The submit handler attaches Home's selection
   first (`attachHomeSelectionForSubmit`).
-
-- Fullscreen transcript scrolling keeps the visible message block anchored when terminal width changes. The windowed transcript records the top block and its progress before reflow, then remeasures that block at the new width and reapplies the offset, so a reader who scrolled up stays on the same conversation instead of the old numeric row.
 
 - A message parked during `/compact` reaches the tab that queued it, even when that tab is not on
   screen. The parked queue was keyed by tab, but the flush read the focused tab's queue and sent

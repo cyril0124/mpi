@@ -16,13 +16,15 @@ regular in `/settings` → `tuiMode`, or set `"tuiMode": "regular"` in the setti
 
 | Entry | How |
 | --- | --- |
-| Command | `/vim` |
+| Command | `/vim`, on an agent tab in fullscreen mode |
 | Keyboard | With no queued message, whatever the composer holds (the session may be working): `ctrl+u`, then `u` or `ctrl+u` within one second |
 | Exit | `q` |
 
 The keyboard entry arms a one-second window; any other key cancels it. Arming needs no queued message, so a
 draft in the composer does not block it; the session may be working, which is when reading the arriving output
-matters most. Otherwise `ctrl+u` is left to its other bindings (with a queued message it edits that queue).
+matters most. It also needs the surface itself: the modal surface drives an agent tab's fullscreen transcript, so
+in regular mode and on MixCode Home, which covers that transcript, the key stays with the queue's own binding
+(a queued message edits that queue, an empty one reports that there is nothing to restore).
 
 While vim mode is on the editor is locked: it renders with the accent frame, draws no caret, ignores typing, and
 refuses to submit. Extension widgets above and below the editor are not rendered, so their rows go

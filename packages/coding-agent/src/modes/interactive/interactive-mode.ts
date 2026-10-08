@@ -6279,6 +6279,12 @@ export class InteractiveMode {
 	}
 
 	private enterActiveTabVimMode(): void {
+		// The modal surface drives the tab's transcript, which Home covers; entering it here would
+		// lock a composer that the page in front does not show.
+		if (this.homeSelection.active) {
+			this.notifyToast("warning", "Vim mode is not available on MixCode Home");
+			return;
+		}
 		const state = this.vimTabState();
 		if (enterVimMode(state, this.createVimHost())) this.refreshVimChrome();
 	}
@@ -6331,15 +6337,19 @@ export class InteractiveMode {
 		// Empty-queue `ctrl+u` arms vim entry; `u` or another `ctrl+u` confirms it.
 		// A draft in the composer and a working session leave the arm open; a queued
 		// message blocks it, because `ctrl+u` edits that queue (the dequeue
-		// keybinding), so the arm declines and the key falls through.
+		// keybinding), so the arm declines and the key falls through. The arm needs
+		// the modal surface as well: without the fullscreen viewport there is nothing
+		// to enter, and Home covers the tab transcript it drives.
 		this.defaultEditor.onVimEnterArmKey = (data) => {
 			const state = this.vimTabState();
 			if (state.active) return false;
-			const canArm =
+			const canEnter =
+				this.viewportTui() !== undefined &&
+				!this.homeSelection.active &&
 				this.compactionQueuedMessages.length === 0 &&
 				!this.hasQueuedMessages() &&
 				!isShowingAutocomplete(this.editor);
-			const result = handleVimEnterArmKey(state, data, this.createVimHost(), canArm, Date.now());
+			const result = handleVimEnterArmKey(state, data, this.createVimHost(), canEnter, Date.now());
 			if (result.entered) this.refreshVimChrome();
 			return result.consumed;
 		};
