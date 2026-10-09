@@ -7,7 +7,7 @@ Entries say what changed and why; the why is the part git does not keep. When me
 upstream tag, insert a boundary heading `## base pi vX.Y.Z — <date>` above the previous one and
 point `## [Unreleased]` at the new tag.
 
-## [Unreleased] — base pi v1.0.3
+## [Unreleased] — base pi v1.0.4
 
 ### Added
 
@@ -16,6 +16,8 @@ point `## [Unreleased]` at the new tag.
 ### Fixed
 
 ### Removed
+
+## base pi v1.0.4 — 2026-10-09
 
 ## base pi v1.0.3 — 2026-10-09
 
