@@ -31,8 +31,6 @@ id。本页说明 fork 重新绑定了什么、新增了哪些 id、composer 按
 | `app.thinking.cycle` | `shift+tab` | `alt+t` | `shift+tab` 用于切换 agent 标签页 |
 | `app.model.cycleForward` | `ctrl+p` | 无 | `ctrl+p` 打开命令面板 |
 | `app.message.dequeue` | `alt+up`（Windows 与 WSL 为 `alt+q`） | `ctrl+u` | 该动作改为编辑单个队列而不是还原每一条，`ctrl+u` 与这个工作流相配；有排队消息时，该键先于 vim 入口被占用 |
-| `tui.altScreen.top` | `home` | 无 | 平凡的 `home`/`end` 留给聚焦的编辑器；vim 模式的 `app.vim.top`/`app.vim.bottom` 仍能到达对话区两端 |
-| `tui.altScreen.bottom` | `end` | 无 | 同上 |
 
 `app.model.cycleForward` 失去默认键后，回退到上一个模型仍由 `app.model.cycleBackward` 承担
 （`shift+ctrl+p`，Windows 与 WSL 为 `alt+p`）。

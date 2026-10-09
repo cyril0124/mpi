@@ -33,8 +33,6 @@ Overrides live in `<agentDir>/keybindings.json`, that is `~/.pi/agent/keybinding
 | `app.thinking.cycle` | `shift+tab` | `alt+t` | `shift+tab` switches agent tabs |
 | `app.model.cycleForward` | `ctrl+p` | none | `ctrl+p` opens the command palette |
 | `app.message.dequeue` | `alt+up` (`alt+q` on Windows and WSL) | `ctrl+u` | the action edits one queue instead of restoring every entry, and `ctrl+u` matches that workflow; a queued message takes the key before the vim-entry arm |
-| `tui.altScreen.top` | `home` | none | plain `home`/`end` stay with the focused editor; vim mode's `app.vim.top`/`app.vim.bottom` still reach the transcript ends |
-| `tui.altScreen.bottom` | `end` | none | same |
 
 `app.model.cycleForward` keeps `app.model.cycleBackward` (`shift+ctrl+p`, `alt+p` on Windows and
 WSL) as the way to step back to the previous model.

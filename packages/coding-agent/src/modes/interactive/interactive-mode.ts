@@ -267,8 +267,6 @@ import { CustomMessageComponent } from "./components/custom-message.ts";
 import { DynamicBorder } from "./components/dynamic-border.ts";
 import { EarendilAnnouncementComponent } from "./components/earendil-announcement.ts";
 import { playArmin3d, playPiLogo3d } from "./components/easter-egg-3d.lazy.ts";
-import { ExtensionEditorComponent } from "./components/extension-editor.ts";
-import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
 import { type FooterComponent, formatTokens } from "./components/footer.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
@@ -1251,9 +1249,6 @@ export class InteractiveMode {
 	/** The `/bug` hint is shown at most once per session so error output stays readable. */
 	private bugReportHintShown = false;
 	private installChangeWarningShown = false;
-	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
-	private extensionInput: ExtensionInputComponent | undefined = undefined;
-	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
 	private get tabInteractions(): Map<string, TabInteraction[]> {
 		return InteractiveMode.extensionUiFor(this).tabInteractions;
 	}
@@ -3002,11 +2997,12 @@ export class InteractiveMode {
 				showExtensionNotify: (...args) => this.showExtensionNotify(...args),
 				buildExtensionWidget: (...args) => this.buildExtensionWidget(...args),
 				withLoadingPhase: (owner, run) => this.withLoadingPhase(owner, run),
-				showExtensionSelector: (title, options, opts) => this.showExtensionSelector(title, options, opts),
+				// A tab-scoped dialog carries its tab: the controller parks it with that tab.
+				showExtensionSelector: (...args) => this.showExtensionSelector(...args),
 				showExtensionConfirm: (...args) => this.showExtensionConfirm(...args),
 				showExtensionInput: (...args) => this.showExtensionInput(...args),
 				showExtensionCustom: (factory, options, owner) => this.showExtensionCustom(factory, options, owner),
-				showExtensionEditor: (title, prefill) => this.showExtensionEditor(title, prefill),
+				showExtensionEditor: (...args) => this.showExtensionEditor(...args),
 			},
 			tabId,
 		);
@@ -3164,7 +3160,7 @@ export class InteractiveMode {
 	 * split: the transcript renders a windowed block whole, so one enormous block would
 	 * cost its full render on every visit.
 	 */
-	private addUserMessage(text: string): void {
+	private addUserMessage(text: string, timestamp?: number): void {
 		for (const part of splitOversizedUserMessage(text)) {
 			this.chatContainer.addChild(
 				new UserMessageComponent(
@@ -3173,6 +3169,7 @@ export class InteractiveMode {
 					this.outputPad,
 					this.getMarkdownTransformers(),
 					part.marks,
+					timestamp,
 				),
 			);
 		}
@@ -4765,6 +4762,19 @@ export class InteractiveMode {
 	}
 	private resetExtensionUI(tabId?: string): void {
 		InteractiveMode.extensionUiFor(this).resetExtensionUI(tabId);
+		this.clearExtensionDialogBlock();
+	}
+
+	/**
+	 * Drop the reported extension-dialog block once no dialog waits anywhere. A dialog dropped with
+	 * its tab, or with the extensions that opened it, never answers, so the block it reported would
+	 * otherwise stay on the terminal for the rest of the session.
+	 */
+	private clearExtensionDialogBlock(): void {
+		for (const pending of this.tabInteractions.values()) {
+			if (pending.length > 0) return;
+		}
+		this.programStatus.setBlocked("extension-dialog", undefined);
 	}
 
 	/**
@@ -5119,78 +5129,45 @@ export class InteractiveMode {
 	}
 	private forgetTabInteractions(tabId: string): void {
 		InteractiveMode.extensionUiFor(this).forgetTabInteractions(tabId);
+		this.clearExtensionDialogBlock();
 	}
 	private showExtensionSelector(
 		title: string,
 		options: string[],
 		opts?: ExtensionUIDialogOptions,
-		blocked: BlockedStatus = { kind: "question", message: title },
+		tabId?: string,
 	): Promise<string | undefined> {
-		return new Promise((resolve) => {
-			if (opts?.signal?.aborted) {
-				resolve(undefined);
-				return;
-			}
-
-			const onAbort = () => {
-				this.hideExtensionSelector();
-				resolve(undefined);
-			};
-			opts?.signal?.addEventListener("abort", onAbort, { once: true });
-
-			this.extensionSelector = new ExtensionSelectorComponent(
-				title,
-				options,
-				(option) => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideExtensionSelector();
-					resolve(option);
-				},
-				() => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideExtensionSelector();
-					resolve(undefined);
-				},
-				{ tui: this.ui, timeout: opts?.timeout, onToggleToolsExpanded: () => this.toggleToolOutputExpansion() },
-			);
-
-			this.disposeActiveSelector();
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.extensionSelector);
-			this.ui.setFocus(this.extensionSelector);
-			// Extension dialogs share the editor slot: opening one replaces the status of a displaced one.
-			this.programStatus.setBlocked("extension-dialog", blocked);
-			this.ui.requestRender();
-		});
+		return this.setExtensionDialogBlock(
+			{ kind: "question", message: title },
+			InteractiveMode.extensionUiFor(this).showExtensionSelector(title, options, opts, tabId),
+		);
 	}
 
 	/**
-	 * Hide the extension selector.
+	 * Report the block a dialog puts on the process, for as long as its answer is pending.
+	 *
+	 * `ExtensionUiController` mounts the dialog: a background tab's dialog parks until its tab
+	 * comes forward. The block is reported either way, because the extension waits for its
+	 * answer whether or not the dialog is on screen.
 	 */
-	private hideExtensionSelector(): void {
-		this.extensionSelector?.dispose();
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.extensionSelector = undefined;
-		this.programStatus.setBlocked("extension-dialog", undefined);
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
+	private setExtensionDialogBlock<T>(blocked: BlockedStatus, untilSettled: Promise<T>): Promise<T> {
+		this.programStatus.setBlocked("extension-dialog", blocked);
+		return untilSettled.finally(() => this.programStatus.setBlocked("extension-dialog", undefined));
 	}
 
 	/**
 	 * Show a confirmation dialog for extensions.
 	 */
-	private async showExtensionConfirm(
+	private showExtensionConfirm(
 		title: string,
 		message: string,
 		opts?: ExtensionUIDialogOptions,
-		_tabId?: string,
+		tabId?: string,
 	): Promise<boolean> {
-		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts, {
-			kind: "permission",
-			message: title,
-		});
-		return result === "Yes";
+		return this.setExtensionDialogBlock(
+			{ kind: "permission", message: title },
+			InteractiveMode.extensionUiFor(this).showExtensionConfirm(title, message, opts, tabId),
+		);
 	}
 
 	private async promptForMissingSessionCwd(error: MissingSessionCwdError): Promise<string | undefined> {
@@ -5204,99 +5181,22 @@ export class InteractiveMode {
 		title: string,
 		placeholder?: string,
 		opts?: ExtensionUIDialogOptions,
-		_tabId?: string,
+		tabId?: string,
 	): Promise<string | undefined> {
-		return new Promise((resolve) => {
-			if (opts?.signal?.aborted) {
-				resolve(undefined);
-				return;
-			}
-
-			const onAbort = () => {
-				this.hideExtensionInput();
-				resolve(undefined);
-			};
-			opts?.signal?.addEventListener("abort", onAbort, { once: true });
-
-			this.extensionInput = new ExtensionInputComponent(
-				title,
-				placeholder,
-				(value) => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideExtensionInput();
-					resolve(value);
-				},
-				() => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideExtensionInput();
-					resolve(undefined);
-				},
-				{ tui: this.ui, timeout: opts?.timeout },
-			);
-
-			this.disposeActiveSelector();
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.extensionInput);
-			this.ui.setFocus(this.extensionInput);
-			this.programStatus.setBlocked("extension-dialog", { kind: "question", message: title });
-			this.ui.requestRender();
-		});
-	}
-
-	/**
-	 * Hide the extension input.
-	 */
-	private hideExtensionInput(): void {
-		this.extensionInput?.dispose();
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.extensionInput = undefined;
-		this.programStatus.setBlocked("extension-dialog", undefined);
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
+		return this.setExtensionDialogBlock(
+			{ kind: "question", message: title },
+			InteractiveMode.extensionUiFor(this).showExtensionInput(title, placeholder, opts, tabId),
+		);
 	}
 
 	/**
 	 * Show a multi-line editor for extensions (with Ctrl+G support).
 	 */
-	private showExtensionEditor(title: string, prefill?: string): Promise<string | undefined> {
-		return new Promise((resolve) => {
-			this.extensionEditor = new ExtensionEditorComponent(
-				this.ui,
-				this.keybindings,
-				title,
-				prefill,
-				(value) => {
-					this.hideExtensionEditor();
-					resolve(value);
-				},
-				() => {
-					this.hideExtensionEditor();
-					resolve(undefined);
-				},
-				undefined,
-				this.settingsManager.getExternalEditorCommand(),
-			);
-
-			this.disposeActiveSelector();
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.extensionEditor);
-			this.ui.setFocus(this.extensionEditor);
-			this.programStatus.setBlocked("extension-dialog", { kind: "question", message: title });
-			this.ui.requestRender();
-		});
-	}
-
-	/**
-	 * Hide the extension editor.
-	 */
-	private hideExtensionEditor(): void {
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.extensionEditor = undefined;
-		this.programStatus.setBlocked("extension-dialog", undefined);
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
+	private showExtensionEditor(title: string, prefill?: string, tabId?: string): Promise<string | undefined> {
+		return this.setExtensionDialogBlock(
+			{ kind: "question", message: title },
+			InteractiveMode.extensionUiFor(this).showExtensionEditor(title, prefill, tabId),
+		);
 	}
 
 	/**
@@ -6713,10 +6613,10 @@ export class InteractiveMode {
 						// Render user message separately if present
 						if (skillBlock.userMessage) {
 							this.chatContainer.addChild(new Spacer(1));
-							this.addUserMessage(skillBlock.userMessage);
+							this.addUserMessage(skillBlock.userMessage, message.timestamp);
 						}
 					} else {
-						this.addUserMessage(textContent);
+						this.addUserMessage(textContent, message.timestamp);
 					}
 				}
 				break;

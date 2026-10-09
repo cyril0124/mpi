@@ -3,6 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vi
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import type { ExtensionUIContext } from "../../src/core/extensions/types.ts";
 import { KeybindingsManager } from "../../src/core/keybindings.ts";
+import { ExtensionEditorComponent } from "../../src/modes/interactive/components/extension-editor.ts";
 import { ExtensionInputComponent } from "../../src/modes/interactive/components/extension-input.ts";
 import { ExtensionSelectorComponent } from "../../src/modes/interactive/components/extension-selector.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
@@ -38,6 +39,7 @@ interface TestHost {
 	tabInteractions: Map<string, unknown>;
 	activeTabIdForUi: string | undefined;
 	homeSelection: { active: boolean };
+	programStatus: { setBlocked(source: string, status: unknown): void };
 	extensionContextFor(tabId: string): ExtensionUIContext;
 }
 
@@ -60,6 +62,13 @@ function createHost(activeTabIdForUi: string): TestHost {
 		activeSelectorToken: undefined,
 		activeSelectorDispose: undefined,
 		keybindings: new KeybindingsManager(),
+		// A dialog reports the block it puts on the process, which `blockedCalls` reads back.
+		programStatus: { setBlocked: vi.fn() },
+	});
+	// The extension editor reads the external-editor command from the settings manager, which
+	// belongs to the running session. Its class getter has no setter, so the field is defined here.
+	Object.defineProperty(host, "settingsManager", {
+		value: { getExternalEditorCommand: () => undefined },
 	});
 	host.extensionContextFor = (tabId) =>
 		(
@@ -76,6 +85,11 @@ function slotted(host: TestHost): unknown {
 /** Whether the tab reports a pending extension dialog. */
 function waiting(host: TestHost, tabId: string): boolean {
 	return (host as unknown as { tabWaitingForInput(tabId: string): boolean }).tabWaitingForInput(tabId);
+}
+
+/** What the dialogs told the terminal about blocking the process, oldest first. */
+function blockedCalls(host: TestHost): Array<[string, unknown]> {
+	return (host.programStatus.setBlocked as unknown as { mock: { calls: Array<[string, unknown]> } }).mock.calls;
 }
 
 /** What `switchActiveTab` does for the incoming tab. */
@@ -315,5 +329,59 @@ describe("tab-scoped extension dialogs", () => {
 		expect(waiting(host, "tab-a")).toBe(true);
 		void pending;
 		void second;
+	});
+
+	test("an input opened by a background tab parks, and the terminal hears about the block", async () => {
+		const host = createHost("tab-b");
+		const pending = host.extensionContextFor("tab-a").input("Type a name");
+
+		// Parked with its tab, but the extension still waits, so the block is reported.
+		expect(slotted(host)).toBe(host.editor);
+		expect(waiting(host, "tab-a")).toBe(true);
+		expect(blockedCalls(host)).toEqual([["extension-dialog", { kind: "question", message: "Type a name" }]]);
+
+		focusTab(host, "tab-a");
+		const input = slotted(host);
+		expect(input).toBeInstanceOf(ExtensionInputComponent);
+		(input as ExtensionInputComponent).handleInput("hi");
+		(input as ExtensionInputComponent).handleInput("\n");
+		expect(await pending).toBe("hi");
+
+		// The answer gives the slot back and drops the block it reported.
+		expect(slotted(host)).toBe(host.editor);
+		expect(waiting(host, "tab-a")).toBe(false);
+		expect(blockedCalls(host).at(-1)).toEqual(["extension-dialog", undefined]);
+	});
+
+	test("a confirm opened by a background tab parks and reports a permission block", async () => {
+		const host = createHost("tab-b");
+		const pending = host.extensionContextFor("tab-a").confirm("Delete it?", "This cannot be undone");
+
+		expect(slotted(host)).toBe(host.editor);
+		expect(blockedCalls(host)).toEqual([["extension-dialog", { kind: "permission", message: "Delete it?" }]]);
+
+		focusTab(host, "tab-a");
+		const selector = slotted(host);
+		expect(selector).toBeInstanceOf(ExtensionSelectorComponent);
+		(selector as ExtensionSelectorComponent).handleInput("\r");
+		expect(await pending).toBe(true);
+		expect(slotted(host)).toBe(host.editor);
+	});
+
+	test("an editor opened by a background tab parks until its tab comes forward", async () => {
+		const host = createHost("tab-b");
+		const pending = host.extensionContextFor("tab-a").editor("Edit it", "draft");
+
+		expect(slotted(host)).toBe(host.editor);
+		expect(waiting(host, "tab-a")).toBe(true);
+
+		focusTab(host, "tab-a");
+		const editor = slotted(host);
+		expect(editor).toBeInstanceOf(ExtensionEditorComponent);
+		(editor as ExtensionEditorComponent).handleInput("\r");
+		expect(await pending).toBe("draft");
+
+		expect(slotted(host)).toBe(host.editor);
+		expect(waiting(host, "tab-a")).toBe(false);
 	});
 });

@@ -6,11 +6,12 @@ import {
 } from "../../src/core/mixcode/follow-up/runtime-follow-up-queue.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 
-/** The InteractiveMode fields the agent_settled branch of `handleEvent` reads. */
+/** The InteractiveMode fields the `agent_settled` path of `handleEvent` reads. */
 function makeAgentSettledContext(state: ReturnType<typeof createFollowUpQueueState>) {
 	return {
 		isInitialized: true,
 		footer: { invalidate: vi.fn() },
+		programStatus: { setBlocked() {}, handleEvent() {} },
 		followUpStates: new Map([["session", state]]),
 		tabManager: undefined,
 		followUpState: state,

@@ -15,6 +15,28 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Restored the send time at the right end of a user message's first text row. The v1.0.0 merge took
+  upstream's `UserMessageComponent` wholesale and left `mixcode/message-clock.ts` unreferenced, so
+  the block lost its clock. The timestamp is the component's last constructor argument again, and
+  the clock body finds the first row that carries text and paints the cells it takes over with the
+  block's own background, because the component no longer wraps its Markdown in a filled `Box`.
+- Restored the tab routing of extension dialogs. The v1.1.0 merge resolved the conflict by keeping
+  upstream's direct implementations of `showExtensionSelector`, `showExtensionConfirm`,
+  `showExtensionInput` and `showExtensionEditor`: they mount a dialog on whichever surface is in
+  front and ignore the tab the scoped context passes. The four delegate to `ExtensionUiController`
+  again, so a background tab's dialog parks with that tab, and each one still reports its block to
+  the terminal while the extension waits, clearing it when the dialog is answered or when its tab's
+  interactions are dropped.
+- Gave the fake hosts in `test/mixcode/turn-events.test.ts` and
+  `test/mixcode/follow-up-mode-wiring.test.ts` the `programStatus` field `handleEvent` reads, and
+  covered the parked input, confirm and editor dialogs in `test/mixcode/tab-dialog-scope.test.ts`.
+- Restored upstream's `packages/coding-agent/test/format-resume-command.test.ts`. The fork deleted it
+  with the exit resume hint, but upstream's install-change warning reuses `formatResumeCommand`, so
+  the helper is live again and its 8 cases cover it. `docs/upstream-drift.md` and `docs/keybindings.md`
+  also lost their `tui.altScreen.top`/`bottom` and `formatResumeCommand` rows: upstream v1.0.3 moved
+  transcript scrolling to `ctrl+home`/`ctrl+end` and left plain `home`/`end` to the editor, which is
+  what the fork had asked for, so the fork no longer patches those defaults.
+
 ### Removed
 
 ## base pi v1.1.0 — 2026-10-09

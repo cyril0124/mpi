@@ -32,7 +32,7 @@
 | 退出 | `ctrl+d` 直接退出，不询问 | `ctrl+q`（Windows 与 WSL 为 `ctrl+shift+q`）先询问；`ctrl+d` 不变 | [命令面板与退出确认](command-palette.zh.md) |
 | 对话区 resize 锚点 | 改变宽度时保留数字滚动行，因此消息换行后读者可能跳到另一个对话块 | 全屏窗口化对话区在重新排版后重新锚定第一条可见消息及其块内进度 | 已经向上滚动的读者在调整终端大小时应继续阅读同一段对话 |
 | 全屏对话区渲染 | 每帧渲染全部消息组件再裁剪到视口 | 只渲染可见窗口（上下各 20 行余量），未测块按 4 行估算；`HStack` 不再为已有高度的拉伸子项测量其固有高度，因此侧边面板列不会把对话区整体渲染一遍 | 否则帧开销随整段对话增长，改变终端宽度时还会把每条消息重新排版 |
-| 对话区滚动键 | 仅 `tui.altScreen.*` | 全屏模式下另有模态界面（`/vim`、`j`/`k`/`gg`/`G`、提问跳转）；`tui.altScreen.top`/`bottom` 无默认键，`home`/`end` 留给输入框，Vim 模式用它们跳到对话区两端 | 长对话免鼠标阅读 |
+| 对话区滚动键 | 仅 `tui.altScreen.*` | 全屏模式下另有模态界面（`/vim`、`j`/`k`/`gg`/`G`、提问跳转），其 Vim 模式用 `app.vim.top`/`app.vim.bottom` 跳到对话区两端；平凡的 `home`/`end` 留给输入框，上游的 `ctrl+home`/`ctrl+end` 用于滚动对话区 | 长对话免鼠标阅读 |
 | 提交后是否跟随末尾 | 新输出仅在视口已经在末尾时跟随末尾，滚上去后提交不会移动视口 | 用户消息会把全屏对话区滚到末尾并恢复跟随 | 刚发出的消息与下面的回答必须无需滚动即可看到；提交是用户自己的动作，而流式输出仍不能把视口从正在阅读的人手里抢走 |
 | 默认 TUI 模式 | `regular` | `fullscreen`；`settings.json` 里显式写 `tuiMode: "regular"` 仍会回到普通对话区 | 本 fork 的阅读功能（窗口化对话区、Vim、鼠标选中）只存在于备选屏幕；上游 `packages/coding-agent/docs/settings.md` 的默认值仍写作 `"regular"` |
 | 模态下的输入框边框 | thinking/bash 边框色 | 强调色边框，不画光标，输入与提交被锁定 | Vim 模式独占输入 |
@@ -69,7 +69,7 @@
 | 指针 hover 反馈 | 无提示：列表忽略指针移动，消息区域只响应点击，跳到底部标签只有一种样式 | 指针下的单元格获得选中背景与下划线（标签页 chip、命令面板行、坞区 meta 行的模型与 thinking 字段）；响应点击的消息块整块填充为一个矩形；全屏渲染器在指针离开后告知对应组件，捕获型浮层打开时保持其下方界面无高亮，非捕获型浮层区域外仍保持 hover，终端尺寸变化时清除所有 hover | 本 fork 的可点击界面需要一个不改变键盘选择与活动标签页的提示 |
 | 扩展模块解析 | bun 跑构建产物时保留 jiti 的 `tryNative`（原生 TS 导入），扩展的 `@earendil-works/*` 裸导入因此从环境 `node_modules` 解析 | bun 跑构建产物时改走 `virtualModules`，清单内的 specifier 一律取运行中宿主自己的那份；bun 跑 TypeScript 源码不受影响 | 第二份 `@earendil-works/pi-tui` 会让 `ToolExecutionComponent.prototype` 的补丁打在宿主从未渲染的类上，渲染扩展于是静默退回内置工具行 |
 | 新版本提示 | 启动时请求 `pi.dev/api/latest-version`，打印带 changelog 链接的 `Update Available` 块，由 `PI_SKIP_VERSION_CHECK` 关闭 | 不再提示 pi 自身的新版本：启动检查、`checkForNewPiVersion` 与 `PI_SKIP_VERSION_CHECK` 均已删除 | 本 fork 改为只在 [MixCode Home](home.zh.md) 报告过期的扩展包 |
-| 退出恢复提示 | 已持久化的会话在交互式退出时打印 `To resume this session: pi --session <id>` | 不再打印该输出，负责拼装它的 `formatResumeCommand` 辅助函数也已删除 | MixCode 在一个进程里保留多个会话并通过自己的标签页进入，pi 的 `--session` 命令不是恢复会话的方式 |
+| 退出恢复提示 | 已持久化的会话在交互式退出时打印 `To resume this session: pi --session <id>` | 不再打印该输出；负责拼装它的 `formatResumeCommand` 辅助函数保留下来，供上游的安装变更提醒使用 | MixCode 在一个进程里保留多个会话并通过自己的标签页进入，pi 的 `--session` 命令不是恢复会话的方式 |
 | 设置覆盖 | `applyOverrides` 把值叠加到生效设置上，下一次从各作用域重新组合（`save`、`reload`、信任状态变化）时就会丢失 | 覆盖层会被保留，并在每次重新组合时重新合并；`clearOverrides` 用于释放指定字段 | 标签页的 `/context-limit` 会收窄压缩预算，否则中途一次设置写入就会在无提示的情况下恢复完整预算 |
 | Batch 自动化 | 没有 `/batch` 命令，也没有 `--batch` / `--batch-dry-run`；`--` 始终收集消息与 `@file` 参数 | `/batch <script> [-- <args...>]`、`--batch`、`--batch-dry-run` 运行 Lua 或 TypeScript 脚本以打开 agent 标签页；带 `--batch` 时 `--` 传递脚本参数而不是消息，并新增 `fengari` 作为 coding-agent 依赖 | 用脚本铺开一批 agent 标签页需要一个统一入口，且参数必须原样到达脚本；见 [Batch 脚本](batch-scripts.zh.md) |
 | 模型失败诊断 | 失败的请求只保留 provider 格式化后的 `errorMessage`，原始异常在进程结束后就没了，类型、错误码与 HTTP 状态都无迹可循 | 每个内置文本适配器接受 `StreamOptions.onProviderError`，在自己的终止 catch 里把原始异常交给它；交互模式再把观察者装到共享 `ModelRuntime` 上，向控制台历史写入一行有界的 `[provider-error]`（`provider`、`model`、`api`，以及最多五个 `{name, code, status}` 节点） | 用户能行动的是 provider 自己的那句话，而真正失败的原因以前只有挂着调试器才看得到；见[模型请求错误诊断](provider-errors.zh.md) |
@@ -102,8 +102,6 @@
 | `packages/coding-agent/src/utils/version-check.ts`（源码文案） | 导出 `checkForNewPiVersion`，即读取 `PI_SKIP_VERSION_CHECK` 的启动检查 | 已删除；`getLatestPiRelease` 与 `isNewerPackageVersion` 保留供 `pi update --self` 使用 |
 | `packages/coding-agent/docs/usage.md:23` | "Press `Ctrl+T` to show or hide thinking blocks" | `ctrl+t` 打开 Tab Jump；`app.thinking.toggle` 默认键不变，但 composer 在跳转处理器之后不再响应它 |
 | `packages/coding-agent/docs/keybindings.md:157` | `app.thinking.toggle` 默认 `ctrl+t` | 同一个键属于 `app.tab.jump`，composer 先注册跳转处理器；thinking 开关需重新绑定后才可用 |
-| `packages/coding-agent/docs/keybindings.md:100` | "these actions control the transcript and take precedence over editor actions using the same key" | 只有 `pageUp`/`pageDown` 遮蔽编辑器键；`top`/`bottom` 无默认键，`home`/`end` 归聚焦的编辑器 |
-| `packages/coding-agent/docs/keybindings.md:116-117` | `tui.altScreen.top` 默认 `home`，`tui.altScreen.bottom` 默认 `end` | 两者都没有默认键（`packages/tui/src/keybindings.ts` 里 `defaultKeys: []`），`home`/`end` 留给聚焦的编辑器；vim 模式的 `app.vim.top`/`bottom` 仍作用于 transcript |
 | `packages/coding-agent/docs/settings.md:79` | `fullscreenExitOutput` 取 `resume-hint` 时选择 "only a session resume hint" 作为退出输出 | 该取值仍然跳过退出时的对话记录输出，且不再打印任何内容 |
 
 上面这些页面也都没有列出标签页键位和标签页斜杠命令 —— 包括 `/jump` 及其 `ctrl+t`；这些以 [Agent 标签页](tabs.zh.md) 为准。fork 重新绑定或新增的全部键位（按界面分类）集中在 [键位](keybindings.zh.md)。
@@ -152,7 +150,6 @@
   `AssistantMessage.responseModel`
 - `packages/ai/src/api/anthropic-messages.ts`、`packages/ai/src/api/openai-completions.ts`：与 Responses 适配器共用同一个助手记录服务端报告的模型，让覆盖规则只有一处定义
 - `packages/agent/src/agent.ts`：steering 与 follow-up 队列 API
-- `packages/tui/src/keybindings.ts`：`tui.altScreen.top`/`bottom` 没有默认键，`home`/`end` 归聚焦的编辑器
 - `packages/tui/src/components/editor.ts`、`packages/tui/src/editor-component.ts`：`setHistory` 可整体替换历史，且回召回的历史条目把光标放在末尾；`cursorVisible` 让被锁定的编辑器不画光标
 - `packages/tui/src/layout-node.ts`：`LayoutNode` 联合里的 `WindowedLayoutNode` 分支
 - `packages/tui/src/mixcode/windowed-node.ts`：窗口化布局状态与滚动行提供者
@@ -185,7 +182,6 @@
 - `packages/coding-agent/test/interactive-mode-startup-input.test.ts`：手工搭建的提交宿主补上输入分发前所需的 Home 挂载与 session 绑定
 - `packages/coding-agent/test/suite/regressions/4167-thinking-toggle-pending-tool-render.test.ts`：测试宿主补上对话区渲染会调用的 response-model notice 回调
 - `packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts`：随提示一并删掉恢复提示用例，保留它原本要覆盖的退出顺序
-- `packages/coding-agent/test/format-resume-command.test.ts`：随其覆盖的 `formatResumeCommand` 一并删除
 - `AGENTS.md`、`.gitignore`
 - `packages/ai/src/types.ts`、`packages/ai/src/api/simple-options.ts`、`packages/ai/src/api/*` 下的十个文本适配器与 `packages/ai/src/providers/faux.ts`：`onProviderError` 流选项、它在 `streamSimple` 中的转发，以及每个终止 catch 里的一行 `notifyProviderError` 调用
 
