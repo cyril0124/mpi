@@ -519,6 +519,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/reload` leaves the other tabs' extension dialogs alone. Only the mounted tab's session reloads
+  (`this.session.reload(...)`), but the command first called `resetExtensionUI()` with no tab id, which
+  takes the "every tab" branch: it hid and disposed every tab's interactions and dropped every tab's
+  terminal-input listeners. A dialog parked on a background tab was destroyed by a reload started on
+  another tab, and the extension's `await ctx.ui.confirm(...)` never settled, which left that tab's turn
+  running for the rest of the process. The reset is now pinned to the mounted tab, the scoping the tab
+  close and session replacement paths already use.
+
 - A command dispatched from Home no longer consumes the parked draft of the tab it targets. Home
   attaches the selected tab before it dispatches, which loads that tab's own parked draft into the
   shared composer; the command then takes the composer and its branch clears it, so the draft was gone

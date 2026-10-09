@@ -10129,7 +10129,10 @@ export class InteractiveMode {
 			return;
 		}
 
-		this.resetExtensionUI();
+		// Only the mounted tab's session reloads, so only that tab's extensions go away: a reset
+		// without a tab would dispose the dialogs the other tabs still wait on, and their awaits
+		// never settle.
+		this.resetExtensionUI(this.activeTabIdForUi);
 
 		const reloadBox = new Container();
 		const borderColor = (s: string) => theme.fg("border", s);
