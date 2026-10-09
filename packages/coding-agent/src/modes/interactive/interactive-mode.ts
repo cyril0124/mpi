@@ -57,6 +57,7 @@ import {
 	APP_NAME,
 	APP_TITLE,
 	CONFIG_DIR_NAME,
+	detectInstallChange,
 	getAgentDir,
 	getAuthPath,
 	getDebugLogPath,
@@ -461,6 +462,21 @@ function quoteIfNeeded(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+export function formatResumeCommand(sessionManager: SessionManager): string | undefined {
+	if (!process.stdout.isTTY) return undefined;
+	if (!sessionManager.isPersisted()) return undefined;
+
+	const sessionFile = sessionManager.getSessionFile();
+	if (!sessionFile || !fs.existsSync(sessionFile)) return undefined;
+
+	const args = [APP_NAME];
+	if (!sessionManager.usesDefaultSessionDir()) {
+		args.push("--session-dir", quoteIfNeeded(sessionManager.getSessionDir()));
+	}
+	args.push("--session", sessionManager.getSessionId());
+	return args.join(" ");
+}
+
 class ExpandableText extends ThemedText implements Expandable {
 	private readonly state: { expanded: boolean };
 
@@ -518,7 +534,9 @@ function isUsageSessionEntry(item: RenderSessionItem): item is Extract<SessionEn
 	return "type" in item && item.type === "usage";
 }
 
-const DEAD_TERMINAL_ERROR_CODES = new Set(["EIO", "EPIPE", "ENOTCONN"]);
+// EIO: tty reads/ioctls from an orphaned background process group, or writes after hangup.
+// ENOTTY: the tty was revoked (macOS) and stdin is no longer a terminal.
+const DEAD_TERMINAL_ERROR_CODES = new Set(["EIO", "EPIPE", "ENOTCONN", "ENOTTY"]);
 
 function isDeadTerminalError(error: unknown): boolean {
 	if (!error || typeof error !== "object" || !("code" in error)) {
@@ -1222,6 +1240,7 @@ export class InteractiveMode {
 
 	/** The `/bug` hint is shown at most once per session so error output stays readable. */
 	private bugReportHintShown = false;
+	private installChangeWarningShown = false;
 	private get tabInteractions(): Map<string, TabInteraction[]> {
 		return InteractiveMode.extensionUiFor(this).tabInteractions;
 	}
@@ -4452,7 +4471,30 @@ export class InteractiveMode {
 	private maybeSuggestBugReport(message: AssistantMessage): void {
 		if (message.stopReason !== "error" || isRetryableAssistantError(message)) return;
 		if (/\b(?:abort(?:ed)?|cancel(?:l?ed)?)\b/i.test(message.errorMessage ?? "")) return;
+		if (this.maybeShowInstallChangeWarning()) return;
 		this.suggestBugReport();
+	}
+
+	/**
+	 * After an error, check whether an update replaced or removed this install while the session ran.
+	 * Code loaded on demand then fails with missing modules until restart (#10439). Returns true when
+	 * the install changed.
+	 */
+	private maybeShowInstallChangeWarning(): boolean {
+		if (this.installChangeWarningShown) return true;
+		const change = detectInstallChange();
+		if (!change) return false;
+		this.installChangeWarningShown = true;
+		const cause =
+			change.kind === "updated"
+				? `${APP_NAME} was updated to ${change.version} while this session was running (${VERSION})`
+				: `The ${APP_NAME} installation this session runs from was removed or replaced`;
+		const resumeCommand = formatResumeCommand(this.sessionManager);
+		const restart = resumeCommand
+			? `Restart with \`${resumeCommand}\` to continue this session.`
+			: `Restart ${APP_NAME}.`;
+		this.showWarning(`${cause}. Features that load code on demand can fail until restart. ${restart}`);
+		return true;
 	}
 
 	private renderCurrentSessionState(options: { showCompactionHistory?: boolean } = {}): void {
@@ -6120,6 +6162,7 @@ export class InteractiveMode {
 			}
 
 			case "tool_execution_end": {
+				if (event.isError) this.maybeShowInstallChangeWarning();
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
 					component.updateResult({ ...event.result, isError: event.isError });
@@ -6849,6 +6892,10 @@ export class InteractiveMode {
 	 * paste / Kitty / modifyOtherKeys sequences.
 	 */
 	private uncaughtCrash(error: Error): never {
+		// A dead terminal is not a pi crash. Do not try to restore it or record it.
+		if (isDeadTerminalError(error)) {
+			this.emergencyTerminalExit();
+		}
 		if (this.isShuttingDown) {
 			process.exit(1);
 		}
@@ -6909,10 +6956,13 @@ export class InteractiveMode {
 			}
 			throw error;
 		};
-		process.stdout.on("error", terminalErrorHandler);
-		process.stderr.on("error", terminalErrorHandler);
-		this.signalCleanupHandlers.push(() => process.stdout.off("error", terminalErrorHandler));
-		this.signalCleanupHandlers.push(() => process.stderr.off("error", terminalErrorHandler));
+		// stdin needs the handler too: once the terminal is gone, reads and setRawMode
+		// fail with EIO (orphaned background process group) or ENOTTY (revoked tty).
+		// Node emits these as stream errors, which are uncaught without a listener.
+		for (const stream of [process.stdin, process.stdout, process.stderr]) {
+			stream.on("error", terminalErrorHandler);
+			this.signalCleanupHandlers.push(() => stream.off("error", terminalErrorHandler));
+		}
 
 		// Restore the terminal before the process dies on any uncaught throw.
 		// Without this, an unhandled exception from extension code (or anywhere
