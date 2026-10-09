@@ -123,7 +123,9 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/src/core/slash-commands.ts`
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
-- `packages/coding-agent/src/main.ts`: the `MIXCODE` host marker and the per-tab `EventBus` registration
+- `packages/coding-agent/src/main.ts`: the `MIXCODE` host marker, the host pid in `MIXCODE_PID`, and the per-tab `EventBus` registration
+- `packages/coding-agent/src/core/session-manager.ts`: `getDefaultSessionDirPath` is exported
+- `packages/coding-agent/src/index.ts`: re-exports `getDefaultSessionDirPath` for embedders
 - `packages/coding-agent/src/core/agent-session.ts`: request-scoped manual compaction model, the claim that marks compaction active before it aborts the running turn, the steering and follow-up queue splice, `resetLeafToRoot()` for `/reset`, and `syncCacheWarmingMode()` (the warming reconcile without the settings write)
 - `packages/coding-agent/src/core/settings-manager.ts`: the fork's fullscreen `tuiMode` default and a
   retained override layer (`applyOverrides` keeps its overrides across scope recompositions, and

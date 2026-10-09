@@ -344,6 +344,12 @@ point `## [Unreleased]` at the new tag.
   what a tool definition actually sends (name, description, parameter schema). Both open in the
   read-only external editor (`/system-tools` also takes `--editor=<cmd>` and `--editor=false` for the
   in-app block), and both estimate tokens at ~4 characters per token with one token per CJK character.
+- The SDK exports `getDefaultSessionDirPath(cwd, agentDir?)`, the encoder behind a cwd's
+  `~/.pi/agent/sessions/<encoded cwd>` directory, so an embedder that reads a workdir's session
+  directory no longer has to re-derive that encoding.
+- The host process publishes its own pid as `MIXCODE_PID` beside `MIXCODE`, written once at startup.
+  Tooling that finds a running instance gets a handle that survives `nohup`/`setsid`, where `$PPID`
+  does not; this fork does not read the value itself.
 ### Changed
 
 - `InteractiveMode` now delegates tab-manager construction, shared-layout lifecycle, tab session actions, resume routing, and layout publication to the fork-owned `TabController`. Home rendering, transcript caching, extension binding, and runtime UI rebinds remain in the host so this step changes the merge boundary without changing tab behavior.

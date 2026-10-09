@@ -119,7 +119,9 @@
 - `packages/coding-agent/src/core/slash-commands.ts`
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
-- `packages/coding-agent/src/main.ts`：`MIXCODE` 宿主标记与每标签 `EventBus` 的登记
+- `packages/coding-agent/src/main.ts`：`MIXCODE` 宿主标记、`MIXCODE_PID` 里的宿主进程 pid，以及每标签 `EventBus` 的登记
+- `packages/coding-agent/src/core/session-manager.ts`：导出 `getDefaultSessionDirPath`
+- `packages/coding-agent/src/index.ts`：为嵌入方再导出 `getDefaultSessionDirPath`
 - `packages/coding-agent/src/core/agent-session.ts`：手动压缩请求独立指定模型，在 abort 当前轮次前就标记压缩已激活的 claim，steering 与 follow-up 队列的摘除，`/reset` 用的 `resetLeafToRoot()`，以及 `syncCacheWarmingMode()`（不写设置文件的 warming 重调）
 - `packages/coding-agent/src/core/settings-manager.ts`：fork 的 fullscreen `tuiMode` 默认值，以及保留的覆盖层（`applyOverrides` 的覆盖在每次重新组合时都会保留，`clearOverrides` 释放指定字段）
 - `packages/coding-agent/src/core/extensions/loader.ts`：让 bun 发行版的扩展导入走 `virtualModules`

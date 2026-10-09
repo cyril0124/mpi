@@ -586,6 +586,7 @@ export async function main(args: string[], options?: MainOptions) {
 	// MixCode-gated extensions activate only in this host, never in an upstream
 	// pi process that loads the same packages. `??=` keeps an explicit value.
 	process.env.MIXCODE ??= "1";
+	process.env.MIXCODE_PID = String(process.pid);
 	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
 	if (offlineMode) {
