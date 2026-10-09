@@ -7,7 +7,7 @@ Entries say what changed and why; the why is the part git does not keep. When me
 upstream tag, insert a boundary heading `## base pi vX.Y.Z — <date>` above the previous one and
 point `## [Unreleased]` at the new tag.
 
-## [Unreleased] — base pi v1.0.1
+## [Unreleased] — base pi v1.0.2
 
 ### Added
 
@@ -15,10 +15,18 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+### Removed
+
+## base pi v1.0.2 — 2026-10-09
+
+## base pi v1.0.1 — 2026-10-09
+
+### Fixed
+
 - Fixed `/settings` theme submenu showing "automatic" instead of "Automatic" as the option label
 - Fixed hover cue test asserting a hardcoded ANSI color instead of the theme token, which broke when `blueBg` changed
 
-### Removed — 2026-10-09
+### Removed
 
 ## base pi v1.0.0 — 2025-07-14
 
