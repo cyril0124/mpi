@@ -261,12 +261,15 @@ import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.ts";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.ts";
+import type { AppActionHandler } from "./components/custom-editor.ts";
 import { CustomEntryComponent } from "./components/custom-entry.ts";
 import { CustomMessageComponent } from "./components/custom-message.ts";
 import { DynamicBorder } from "./components/dynamic-border.ts";
 import { EarendilAnnouncementComponent } from "./components/earendil-announcement.ts";
 import { playArmin3d, playPiLogo3d } from "./components/easter-egg-3d.lazy.ts";
-import { ExtensionSelectorComponent, type ExtensionSelectorOptions } from "./components/extension-selector.ts";
+import { ExtensionEditorComponent } from "./components/extension-editor.ts";
+import { ExtensionInputComponent } from "./components/extension-input.ts";
+import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
 import { type FooterComponent, formatTokens } from "./components/footer.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
@@ -393,6 +396,7 @@ import type { SessionActionHost } from "./mixcode/multi-tab/tab-session-actions.
 import { TabUiHandover, type TabUiHandoverPorts } from "./mixcode/multi-tab/tab-ui-handover.ts";
 import { createMouseSelectionOptions } from "./mixcode/selection/selection-surface.ts";
 import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
+import { type BlockedStatus, ProgramStatusReporter } from "./program-status-reporter.ts";
 import { shareSession } from "./session-share.ts";
 import {
 	getAvailableThemes,
@@ -1238,9 +1242,18 @@ export class InteractiveMode {
 	// Shutdown state
 	private shutdownRequested = false;
 
+	/** Reports working, blocked, done, and error states to terminals that support OSC 7501. */
+	private readonly programStatus = new ProgramStatusReporter(
+		() => this.ui.terminal,
+		() => this.sessionManager.getSessionName(),
+	);
+
 	/** The `/bug` hint is shown at most once per session so error output stays readable. */
 	private bugReportHintShown = false;
 	private installChangeWarningShown = false;
+	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
+	private extensionInput: ExtensionInputComponent | undefined = undefined;
+	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
 	private get tabInteractions(): Map<string, TabInteraction[]> {
 		return InteractiveMode.extensionUiFor(this).tabInteractions;
 	}
@@ -1860,6 +1873,7 @@ export class InteractiveMode {
 		// the raw tty.
 		wireConsoleSink((line) => this.showConsoleNotice(line));
 		this.isInitialized = true;
+		this.programStatus.report();
 		// The tab bar only exists alongside a tab manager; without one there is no
 		// chip to shimmer, so no repaint loop is started. Home carries no wave, and
 		// nothing wears the wave while it is the rendered surface.
@@ -2988,11 +3002,11 @@ export class InteractiveMode {
 				showExtensionNotify: (...args) => this.showExtensionNotify(...args),
 				buildExtensionWidget: (...args) => this.buildExtensionWidget(...args),
 				withLoadingPhase: (owner, run) => this.withLoadingPhase(owner, run),
-				showExtensionSelector: (...args) => this.showExtensionSelector(...args),
+				showExtensionSelector: (title, options, opts) => this.showExtensionSelector(title, options, opts),
 				showExtensionConfirm: (...args) => this.showExtensionConfirm(...args),
 				showExtensionInput: (...args) => this.showExtensionInput(...args),
 				showExtensionCustom: (factory, options, owner) => this.showExtensionCustom(factory, options, owner),
-				showExtensionEditor: (...args) => this.showExtensionEditor(...args),
+				showExtensionEditor: (title, prefill) => this.showExtensionEditor(title, prefill),
 			},
 			tabId,
 		);
@@ -3047,6 +3061,7 @@ export class InteractiveMode {
 
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
+		this.programStatus.reset();
 		this.applyRuntimeSettings();
 
 		if (options.renderBeforeBind) {
@@ -5108,18 +5123,74 @@ export class InteractiveMode {
 	private showExtensionSelector(
 		title: string,
 		options: string[],
-		opts?: ExtensionUIDialogOptions & ExtensionSelectorOptions,
-		tabId?: string,
+		opts?: ExtensionUIDialogOptions,
+		blocked: BlockedStatus = { kind: "question", message: title },
 	): Promise<string | undefined> {
-		return InteractiveMode.extensionUiFor(this).showExtensionSelector(title, options, opts, tabId);
+		return new Promise((resolve) => {
+			if (opts?.signal?.aborted) {
+				resolve(undefined);
+				return;
+			}
+
+			const onAbort = () => {
+				this.hideExtensionSelector();
+				resolve(undefined);
+			};
+			opts?.signal?.addEventListener("abort", onAbort, { once: true });
+
+			this.extensionSelector = new ExtensionSelectorComponent(
+				title,
+				options,
+				(option) => {
+					opts?.signal?.removeEventListener("abort", onAbort);
+					this.hideExtensionSelector();
+					resolve(option);
+				},
+				() => {
+					opts?.signal?.removeEventListener("abort", onAbort);
+					this.hideExtensionSelector();
+					resolve(undefined);
+				},
+				{ tui: this.ui, timeout: opts?.timeout, onToggleToolsExpanded: () => this.toggleToolOutputExpansion() },
+			);
+
+			this.disposeActiveSelector();
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.extensionSelector);
+			this.ui.setFocus(this.extensionSelector);
+			// Extension dialogs share the editor slot: opening one replaces the status of a displaced one.
+			this.programStatus.setBlocked("extension-dialog", blocked);
+			this.ui.requestRender();
+		});
 	}
+
+	/**
+	 * Hide the extension selector.
+	 */
+	private hideExtensionSelector(): void {
+		this.extensionSelector?.dispose();
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.extensionSelector = undefined;
+		this.programStatus.setBlocked("extension-dialog", undefined);
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Show a confirmation dialog for extensions.
+	 */
 	private async showExtensionConfirm(
 		title: string,
 		message: string,
 		opts?: ExtensionUIDialogOptions,
-		tabId?: string,
+		_tabId?: string,
 	): Promise<boolean> {
-		return InteractiveMode.extensionUiFor(this).showExtensionConfirm(title, message, opts, tabId);
+		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts, {
+			kind: "permission",
+			message: title,
+		});
+		return result === "Yes";
 	}
 
 	private async promptForMissingSessionCwd(error: MissingSessionCwdError): Promise<string | undefined> {
@@ -5133,13 +5204,185 @@ export class InteractiveMode {
 		title: string,
 		placeholder?: string,
 		opts?: ExtensionUIDialogOptions,
-		tabId?: string,
+		_tabId?: string,
 	): Promise<string | undefined> {
-		return InteractiveMode.extensionUiFor(this).showExtensionInput(title, placeholder, opts, tabId);
+		return new Promise((resolve) => {
+			if (opts?.signal?.aborted) {
+				resolve(undefined);
+				return;
+			}
+
+			const onAbort = () => {
+				this.hideExtensionInput();
+				resolve(undefined);
+			};
+			opts?.signal?.addEventListener("abort", onAbort, { once: true });
+
+			this.extensionInput = new ExtensionInputComponent(
+				title,
+				placeholder,
+				(value) => {
+					opts?.signal?.removeEventListener("abort", onAbort);
+					this.hideExtensionInput();
+					resolve(value);
+				},
+				() => {
+					opts?.signal?.removeEventListener("abort", onAbort);
+					this.hideExtensionInput();
+					resolve(undefined);
+				},
+				{ tui: this.ui, timeout: opts?.timeout },
+			);
+
+			this.disposeActiveSelector();
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.extensionInput);
+			this.ui.setFocus(this.extensionInput);
+			this.programStatus.setBlocked("extension-dialog", { kind: "question", message: title });
+			this.ui.requestRender();
+		});
 	}
-	private showExtensionEditor(title: string, prefill?: string, tabId?: string): Promise<string | undefined> {
-		return InteractiveMode.extensionUiFor(this).showExtensionEditor(title, prefill, tabId);
+
+	/**
+	 * Hide the extension input.
+	 */
+	private hideExtensionInput(): void {
+		this.extensionInput?.dispose();
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.extensionInput = undefined;
+		this.programStatus.setBlocked("extension-dialog", undefined);
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
 	}
+
+	/**
+	 * Show a multi-line editor for extensions (with Ctrl+G support).
+	 */
+	private showExtensionEditor(title: string, prefill?: string): Promise<string | undefined> {
+		return new Promise((resolve) => {
+			this.extensionEditor = new ExtensionEditorComponent(
+				this.ui,
+				this.keybindings,
+				title,
+				prefill,
+				(value) => {
+					this.hideExtensionEditor();
+					resolve(value);
+				},
+				() => {
+					this.hideExtensionEditor();
+					resolve(undefined);
+				},
+				undefined,
+				this.settingsManager.getExternalEditorCommand(),
+			);
+
+			this.disposeActiveSelector();
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.extensionEditor);
+			this.ui.setFocus(this.extensionEditor);
+			this.programStatus.setBlocked("extension-dialog", { kind: "question", message: title });
+			this.ui.requestRender();
+		});
+	}
+
+	/**
+	 * Hide the extension editor.
+	 */
+	private hideExtensionEditor(): void {
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.extensionEditor = undefined;
+		this.programStatus.setBlocked("extension-dialog", undefined);
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Set a custom editor component from an extension.
+	 * Pass undefined to restore the default editor.
+	 */
+	setCustomEditorComponent(factory: EditorFactory | undefined): void {
+		this.editorComponentFactory = factory;
+
+		// Save text from current editor before switching
+		const currentText = this.editor.getText();
+
+		this.disposeActiveSelector();
+		this.editorContainer.clear();
+
+		if (factory) {
+			// Create the custom editor with tui, theme, and keybindings
+			const newEditor = factory(this.ui, getEditorTheme(), this.keybindings);
+
+			// Wire up callbacks from the default editor
+			newEditor.onSubmit = this.defaultEditor.onSubmit;
+			newEditor.onChange = this.defaultEditor.onChange;
+
+			// Copy text from previous editor
+			newEditor.setText(currentText);
+
+			// Copy appearance settings if supported
+			if (newEditor.borderColor !== undefined) {
+				newEditor.borderColor = this.defaultEditor.borderColor;
+			}
+			if (newEditor.setPaddingX !== undefined) {
+				newEditor.setPaddingX(this.defaultEditor.getPaddingX());
+			}
+			if (newEditor.setAutocompleteMaxVisible !== undefined) {
+				newEditor.setAutocompleteMaxVisible(this.defaultEditor.getAutocompleteMaxVisible());
+			}
+
+			// Set autocomplete if supported
+			if (newEditor.setAutocompleteProvider && this.autocompleteProvider) {
+				newEditor.setAutocompleteProvider(this.autocompleteProvider);
+			}
+
+			// If extending CustomEditor, copy app-level handlers
+			// Use duck typing since instanceof fails across jiti module boundaries
+			const customEditor = newEditor as unknown as Record<string, unknown>;
+			if ("actionHandlers" in customEditor && customEditor.actionHandlers instanceof Map) {
+				if (!customEditor.onEscape) {
+					customEditor.onEscape = () => this.defaultEditor.onEscape?.();
+				}
+				if (!customEditor.onCtrlD) {
+					customEditor.onCtrlD = () => this.defaultEditor.onCtrlD?.();
+				}
+				if (!customEditor.onPasteImage) {
+					customEditor.onPasteImage = () => this.defaultEditor.onPasteImage?.();
+				}
+				if (!customEditor.onExtensionShortcut) {
+					customEditor.onExtensionShortcut = (data: string) => this.defaultEditor.onExtensionShortcut?.(data);
+				}
+				// Copy action handlers (clear, suspend, model switching, etc.)
+				for (const [action, handler] of this.defaultEditor.actionHandlers) {
+					(customEditor.actionHandlers as Map<string, AppActionHandler>).set(action, handler);
+				}
+			}
+
+			this.editor = newEditor;
+		} else {
+			// Restore default editor with text from custom editor
+			this.defaultEditor.setText(currentText);
+			this.editor = this.defaultEditor;
+		}
+
+		this.editorContainer.addChild(this.editor as Component);
+		if (this.activeStatusIndicator) {
+			this.statusContainer.clear();
+			this.activeWorkingIndicatorEmbedded = this.setEditorWorkingStatusIndicator(this.activeStatusIndicator);
+			if (!this.activeWorkingIndicatorEmbedded) {
+				this.statusContainer.addChild(this.activeStatusIndicator);
+			}
+		}
+		this.ui.setFocus(this.editor as Component);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Show a notification for extensions.
+	 */
 	private showExtensionNotify(message: string, type?: "info" | "warning" | "error"): void {
 		InteractiveMode.extensionUiFor(this).showExtensionNotify(message, type);
 	}
@@ -5939,6 +6182,7 @@ export class InteractiveMode {
 		}
 
 		this.footer.invalidate();
+		this.programStatus.handleEvent(event);
 
 		switch (event.type) {
 			case "agent_start":
@@ -6058,6 +6302,7 @@ export class InteractiveMode {
 									{
 										showImages: this.settingsManager.getShowImages(),
 										imageWidthCells: this.settingsManager.getImageWidthCells(),
+										outputPad: this.outputPad,
 									},
 									this.getRegisteredToolDefinition(content.name),
 									this.ui,
@@ -6138,6 +6383,7 @@ export class InteractiveMode {
 						{
 							showImages: this.settingsManager.getShowImages(),
 							imageWidthCells: this.settingsManager.getImageWidthCells(),
+							outputPad: this.outputPad,
 						},
 						this.getRegisteredToolDefinition(event.toolName),
 						this.ui,
@@ -6165,7 +6411,7 @@ export class InteractiveMode {
 				if (event.isError) this.maybeShowInstallChangeWarning();
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
-					component.updateResult({ ...event.result, isError: event.isError });
+					component.updateResult({ ...event.result, isError: event.isError, durationMs: event.durationMs });
 					this.pendingTools.delete(event.toolCallId);
 					this.ui.requestRender();
 				}
@@ -6371,7 +6617,7 @@ export class InteractiveMode {
 		if (!renderer) {
 			return false;
 		}
-		const component = new CustomEntryComponent(entry, renderer);
+		const component = new CustomEntryComponent(entry, renderer, this.outputPad);
 		component.setExpanded(this.toolOutputExpanded);
 		if (!component.hasContent()) {
 			return false;
@@ -6392,7 +6638,12 @@ export class InteractiveMode {
 	private addMessageToChat(message: AgentMessage): void {
 		switch (message.role) {
 			case "bashExecution": {
-				const component = new BashExecutionComponent(message.command, this.ui, message.excludeFromContext);
+				const component = new BashExecutionComponent(
+					message.command,
+					this.ui,
+					message.excludeFromContext,
+					this.outputPad,
+				);
 				if (message.output) {
 					component.appendOutput(message.output);
 				}
@@ -6421,14 +6672,22 @@ export class InteractiveMode {
 			}
 			case "compactionSummary": {
 				this.chatContainer.addChild(new Spacer(1));
-				const component = new CompactionSummaryMessageComponent(message, this.getMarkdownThemeWithSettings());
+				const component = new CompactionSummaryMessageComponent(
+					message,
+					this.getMarkdownThemeWithSettings(),
+					this.outputPad,
+				);
 				component.setExpanded(this.toolOutputExpanded);
 				this.chatContainer.addChild(component);
 				break;
 			}
 			case "branchSummary": {
 				this.chatContainer.addChild(new Spacer(1));
-				const component = new BranchSummaryMessageComponent(message, this.getMarkdownThemeWithSettings());
+				const component = new BranchSummaryMessageComponent(
+					message,
+					this.getMarkdownThemeWithSettings(),
+					this.outputPad,
+				);
 				component.setExpanded(this.toolOutputExpanded);
 				this.chatContainer.addChild(component);
 				break;
@@ -6447,6 +6706,7 @@ export class InteractiveMode {
 						const component = new SkillInvocationMessageComponent(
 							skillBlock,
 							this.getMarkdownThemeWithSettings(),
+							this.outputPad,
 						);
 						component.setExpanded(this.toolOutputExpanded);
 						this.chatContainer.addChild(component);
@@ -6526,6 +6786,7 @@ export class InteractiveMode {
 							{
 								showImages: this.settingsManager.getShowImages(),
 								imageWidthCells: this.settingsManager.getImageWidthCells(),
+								outputPad: this.outputPad,
 							},
 							this.getRegisteredToolDefinition(content.name),
 							this.ui,
@@ -6580,7 +6841,12 @@ export class InteractiveMode {
 	 * @param entries Compaction-aware session entries to render
 	 * @param options.updateFooter Update footer state
 	 */
-	private renderSessionEntries(entries: SessionEntry[], options: { updateFooter?: boolean } = {}): void {
+	private renderSessionEntries(
+		entries: SessionEntry[],
+		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
+	): void {
+		// Selection coordinates point into the transcript being replaced (#9311).
+		if (this.renderer instanceof TuiAltScreen) this.renderer.resetTextSelection();
 		const items = entries.flatMap((entry): RenderSessionItem[] => {
 			if (entry.type === "custom" || (entry.type === "usage" && entry.kind === "cache_warm")) {
 				return [entry];
@@ -8380,23 +8646,14 @@ export class InteractiveMode {
 					onOutputPadChange: (padding) => {
 						this.settingsManager.setOutputPad(padding);
 						this.outputPad = padding;
-						if (this.streamingComponent || this.session.isStreaming) {
-							for (const child of this.chatContainer.children) {
-								if (
-									child instanceof AssistantMessageComponent ||
-									child instanceof CustomMessageComponent ||
-									child instanceof UserMessageComponent
-								) {
+						for (const container of [this.chatContainer, this.pendingMessagesContainer]) {
+							for (const child of container.children) {
+								if ("setOutputPad" in child && typeof child.setOutputPad === "function") {
 									child.setOutputPad(padding);
 								}
 							}
-							if (this.streamingComponent) {
-								this.streamingComponent.setOutputPad(padding);
-							}
-							this.ui.requestRender();
-							return;
 						}
-						this.rebuildChatFromMessages();
+						this.ui.requestRender();
 					},
 					onAutocompleteMaxVisibleChange: (maxVisible) => {
 						this.settingsManager.setAutocompleteMaxVisible(maxVisible);
@@ -9802,7 +10059,7 @@ export class InteractiveMode {
 		};
 
 		try {
-			await this.loginProvider(dialog, providerId, "api_key");
+			await this.loginProvider(dialog, providerId, providerName, "api_key");
 			restoreEditor();
 			const modelBeforeLogin = this.session.model;
 			await this.completeProviderAuthentication(providerId, providerName, "api_key", previousModel);
@@ -9899,18 +10156,24 @@ export class InteractiveMode {
 	private async loginProvider(
 		dialog: LoginDialogComponent,
 		providerId: string,
+		providerName: string,
 		method: "api_key" | "oauth",
 	): Promise<void> {
-		await this.session.modelRuntime.login(
-			providerId,
-			method,
-			{
-				signal: dialog.signal,
-				prompt: (prompt) => this.showAuthPrompt(dialog, prompt, providerId),
-				notify: (event) => this.notifyAuthDialog(dialog, event),
-			},
-			{ getDeviceId: () => this.settingsManager.getOrCreateDeviceId() },
-		);
+		this.programStatus.setBlocked("login", { kind: "auth", message: `Log in to ${providerName}` });
+		try {
+			await this.session.modelRuntime.login(
+				providerId,
+				method,
+				{
+					signal: dialog.signal,
+					prompt: (prompt) => this.showAuthPrompt(dialog, prompt, providerId),
+					notify: (event) => this.notifyAuthDialog(dialog, event),
+				},
+				{ getDeviceId: () => this.settingsManager.getOrCreateDeviceId() },
+			);
+		} finally {
+			this.programStatus.setBlocked("login", undefined);
+		}
 	}
 
 	private async showLoginDialog(providerId: string, providerName: string, onBack?: () => void): Promise<void> {
@@ -9929,7 +10192,7 @@ export class InteractiveMode {
 		};
 
 		try {
-			await this.loginProvider(dialog, providerId, "oauth");
+			await this.loginProvider(dialog, providerId, providerName, "oauth");
 			restoreEditor();
 			const modelBeforeLogin = this.session.model;
 			await this.completeProviderAuthentication(providerId, providerName, "oauth", previousModel);
@@ -10642,7 +10905,7 @@ export class InteractiveMode {
 			const result = eventResult.result;
 
 			// Create UI component for display
-			this.bashComponent = new BashExecutionComponent(command, this.ui, excludeFromContext);
+			this.bashComponent = new BashExecutionComponent(command, this.ui, excludeFromContext, this.outputPad);
 			if (this.session.isStreaming) {
 				this.pendingMessagesContainer.addChild(this.bashComponent);
 				this.pendingBashComponents.push(this.bashComponent);
@@ -10670,7 +10933,7 @@ export class InteractiveMode {
 
 		// Normal execution path (possibly with custom operations)
 		const isDeferred = this.session.isStreaming;
-		this.bashComponent = new BashExecutionComponent(command, this.ui, excludeFromContext);
+		this.bashComponent = new BashExecutionComponent(command, this.ui, excludeFromContext, this.outputPad);
 
 		if (isDeferred) {
 			// Show in pending area when agent is streaming

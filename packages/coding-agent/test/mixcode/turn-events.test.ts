@@ -175,7 +175,7 @@ describe("interactive host turn event ordering", () => {
 			state.queuedSteerCount = 1;
 			steering.push("steer after failure");
 			trace.length = 0;
-			await event({ type: "agent_settled" });
+			await event({ type: "agent_settled", aborted: false });
 			expect(trace.slice(0, 2)).toEqual(["wait-idle:true", "shutdown:true"]);
 			await vi.waitFor(() => expect(trace).toContain("prompt:steer after failure"));
 			expect(state.followUpQueue).toEqual([{ text: "deferred", kind: "next" }]);
@@ -213,7 +213,7 @@ describe("interactive host turn event ordering", () => {
 		replacement.state.pendingSteer.push("replacement steering");
 		replacement.state.queuedSteerCount = 1;
 		replacement.steering.push("replacement steering");
-		await current.event({ type: "agent_settled" });
+		await current.event({ type: "agent_settled", aborted: false });
 		expect(replacement.trace[0]).toBe("wait-idle:true");
 		await vi.waitFor(() => expect(replacement.trace).toContain("prompt:replacement steering"));
 		expect(replacement.state.followUpsPaused).toBe(true);
