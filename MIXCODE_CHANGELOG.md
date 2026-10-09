@@ -519,6 +519,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Prompt history stays on its tab across default and extension editor replacements: each mounted
+  editor is seeded after the handover. Raw inputs handled by extensions remain recallable when
+  revisiting their tab. Submits capture their tab and session before extension binding waits,
+  so switching during that wait cannot send the input or record its history on another tab;
+  failures restore only the owner's empty draft and preserve later edits.
+
 - Model protocol regressions use fixed fixtures for delisted models, while catalog checks and
   optional provider tests use current model IDs. Catalog refreshes no longer break type checking
   or remove coverage of historical reasoning and cache behavior.

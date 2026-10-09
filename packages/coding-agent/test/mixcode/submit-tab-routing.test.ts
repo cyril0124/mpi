@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 
+type SubmitTab = { id: string; title: string; runtime: { session: SubmitContext["session"] } };
+
 type SubmitContext = {
 	defaultEditor: { onSubmit?: (text: string) => Promise<void> };
 	editor: { addToHistory?: (text: string) => void; setText: (text: string) => void };
@@ -10,7 +12,11 @@ type SubmitContext = {
 		isBashRunning: boolean;
 		prompt: (text: string, options?: unknown) => Promise<void>;
 	};
-	tabManager?: { activeTab: () => { id: string; title: string; runtime: { session: SubmitContext["session"] } } };
+	tabManager?: { activeTab: () => SubmitTab; get: (id: string) => SubmitTab | undefined };
+	homeSelection: { active: boolean };
+	activeTabIdForUi: string | undefined;
+	promptHistory: Map<string, string[]>;
+	recordPromptHistory(text: string, tab: SubmitTab | undefined): void;
 	ui: { requestRender: () => void };
 	attachHomeSelectionForSubmit: () => Promise<boolean>;
 	ensureSessionBoundForSubmit: () => Promise<void>;
@@ -40,6 +46,13 @@ function createSubmitContext(options: { withTabManager: boolean }): {
 	};
 	const tab = { id: "s1", title: "Agent-01", runtime: { session } };
 	const context: SubmitContext = {
+		homeSelection: { active: false },
+		activeTabIdForUi: options.withTabManager ? tab.id : undefined,
+		promptHistory: new Map(),
+		recordPromptHistory: Reflect.get(
+			InteractiveMode.prototype,
+			"recordPromptHistory",
+		) as SubmitContext["recordPromptHistory"],
 		defaultEditor: {},
 		editor: { addToHistory: vi.fn(), setText: vi.fn() },
 		session,
@@ -51,7 +64,8 @@ function createSubmitContext(options: { withTabManager: boolean }): {
 		showError: vi.fn(),
 		pendingUserInputs: [],
 	};
-	if (options.withTabManager) context.tabManager = { activeTab: () => tab };
+	if (options.withTabManager)
+		context.tabManager = { activeTab: () => tab, get: (id) => (id === tab.id ? tab : undefined) };
 	return { context, session };
 }
 

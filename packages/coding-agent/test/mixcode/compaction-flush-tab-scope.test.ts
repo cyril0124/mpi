@@ -101,6 +101,8 @@ async function createTwoTabContext(options: {
 		activeTabIdForUi: tabA.id,
 		followUpStates: new Map(),
 		compactionQueues: new Map(),
+		promptHistory: new Map<string, string[]>(),
+		homeSelection: { active: false },
 		showError: vi.fn(),
 		showStatus: vi.fn(),
 		editor: { addToHistory: vi.fn(), setText: vi.fn() },

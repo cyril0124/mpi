@@ -367,6 +367,7 @@ import {
 	type TabInteraction,
 } from "./mixcode/extensions/extension-ui-controller.ts";
 import { responseModelNoticeText } from "./mixcode/model-mismatch/notice.ts";
+import { rememberTabPrompt } from "./mixcode/multi-tab/prompt-history.ts";
 import { TabController } from "./mixcode/multi-tab/tab-controller.ts";
 import {
 	bindRuntimeCallbacks as bindRuntimeCallbacksImpl,
@@ -825,6 +826,7 @@ export class InteractiveMode {
 			setToolsExpanded: (...args) => mode.setToolsExpanded(...args),
 			toggleToolOutputExpansion: (...args) => mode.toggleToolOutputExpansion(...args),
 			refreshEditorStatus: (...args) => mode.refreshEditorStatus(...args),
+			syncEditorHistory: () => mode.syncEditorHistory(),
 			updateTerminalTitle: (...args) => mode.updateTerminalTitle(...args),
 			requestWidgetRender: (...args) => mode.requestWidgetRender(...args),
 			showError: (...args) => mode.showError(...args),
@@ -1138,8 +1140,8 @@ export class InteractiveMode {
 	private readonly pendingResourcesBlocks = new Set<string>();
 	/** Cached transcript components per tab, reused when the tab is unchanged. */
 	private readonly tabTranscript = new Map<string, { signature: string; chat: Component[]; loaded: Component[] }>();
-	/** Composer text parked with ctrl+c, per tab id, newest first. */
-	private readonly stashedPrompts = new Map<string, string[]>();
+	/** Raw submitted inputs and ctrl+c drafts, per tab id, newest first. */
+	private readonly promptHistory = new Map<string, string[]>();
 	/** Session-only inline widget mode and collapse state, per tab id. */
 	private readonly inlineWidgetTabStates = new Map<string, InlineWidgetTabState>();
 	/** Per-tab side-panel state; a new tab starts closed and nothing is persisted. */
@@ -1218,7 +1220,7 @@ export class InteractiveMode {
 				clearHomeTabCache(tabId);
 				this.followUpStates.delete(tabId);
 				this.compactionQueues.delete(tabId);
-				this.stashedPrompts.delete(tabId);
+				this.promptHistory.delete(tabId);
 			},
 			// Ring the bell when a tab the user is not looking at finishes.
 			onBackgroundCompletion: () => this.ui.terminal.write("\x07"),
@@ -3690,7 +3692,7 @@ export class InteractiveMode {
 		const tab = selected.tab;
 		if (!tab) return true;
 		this.setEditorText("");
-		this.editor.addToHistory?.(text);
+		this.recordPromptHistory(text, tab);
 		if (InteractiveMode.isHomeCommandInput(text)) {
 			void (async () => {
 				// The attach restores the tab's own parked draft into the composer; `submitHomeCommand`
@@ -3706,12 +3708,7 @@ export class InteractiveMode {
 		const options = session.isStreaming ? { streamingBehavior: "steer" as const } : undefined;
 		runInTabConsole(tab, () => session.prompt(text, options)).then(
 			() => this.ui.requestRender(),
-			(error: unknown) => {
-				// Put the message back so the user can retry after fixing the cause.
-				this.setEditorText(text);
-				this.showError(`Send failed: ${error instanceof Error ? error.message : String(error)}`);
-				this.ui.requestRender();
-			},
+			(error: unknown) => this.restoreFailedPrompt(text, tab, session, error),
 		);
 		return true;
 	}
@@ -3763,9 +3760,6 @@ export class InteractiveMode {
 		if (!this.restoreTranscript(tab.id)) {
 			this.renderCurrentSessionState({ showCompactionHistory: options.showCompactionHistory ?? false });
 		}
-		// A warmed restored tab shows its parked transcript without re-rendering, so
-		// the render path that seeds the composer history is bypassed; seed it here.
-		this.syncEditorHistory();
 		// The windowed table stays: the reused transcript is the same component
 		// instances, and each block caches its own render against its content, so a
 		// quiet switch repaints without re-rendering the conversation. A rebuilt
@@ -3901,9 +3895,8 @@ export class InteractiveMode {
 		this.queueTabBind(tab);
 	}
 
-	/** A submit needs the focused tab bound: `session_start` installs what it dispatches. */
-	private async ensureSessionBoundForSubmit(): Promise<void> {
-		const tab = this.tabManager?.activeTab();
+	/** Bind the submitting tab before its commands or input hooks run. */
+	private async ensureSessionBoundForSubmit(tab: AgentTab | undefined = this.tabManager?.activeTab()): Promise<void> {
 		if (!tab) return;
 		if (this.boundSessions?.has(tab.runtime.session)) return;
 		await this.bindTabExtensions(tab);
@@ -4618,16 +4611,7 @@ export class InteractiveMode {
 		this.updatePendingMessagesDisplay();
 	}
 
-	/**
-	 * Seed the composer's `up`/`down` prompt history from the bound session's user
-	 * messages.
-	 *
-	 * The composer is shared by every tab, so an activation replaces the history
-	 * instead of appending to it: a revisited tab would otherwise repeat its own
-	 * messages, and two tabs would interleave. A warmed restored tab shows its
-	 * parked transcript without re-rendering, so this runs on its own as well as
-	 * from the render path.
-	 */
+	/** Replace editor history with the mounted session's messages and its tab's recent inputs. */
 	private syncEditorHistory(): void {
 		const texts: string[] = [];
 		for (const entry of this.sessionManager.buildContextEntries()) {
@@ -4637,22 +4621,46 @@ export class InteractiveMode {
 				if (text) texts.push(text);
 			}
 		}
-		// Parked (ctrl+c) drafts are newer than anything the session recorded; keep
-		// them at the newest end so a revisit still recalls them. Keep only the newest
-		// copy of each prompt, so an entry equal to a newer one is dropped rather than
-		// repeated further down the list.
+		// Inputs consumed by an extension may have no session message. Keep them and
+		// parked drafts recallable, with only the newest occurrence of each prompt.
 		const tabId = this.activeTabIdForUi;
-		const stashed = tabId ? (this.stashedPrompts.get(tabId) ?? []) : [];
-		const oldestFirst = [...texts, ...[...stashed].reverse()];
+		const recentPrompts = tabId ? (this.promptHistory.get(tabId) ?? []) : [];
+		const oldestFirst = [...texts, ...[...recentPrompts].reverse()];
 		const seen = new Set<string>();
 		const newestFirst: string[] = [];
 		for (let index = oldestFirst.length - 1; index >= 0; index--) {
-			const item = oldestFirst[index];
-			if (seen.has(item)) continue;
-			seen.add(item);
-			newestFirst.push(item);
+			const prompt = oldestFirst[index];
+			if (seen.has(prompt)) continue;
+			seen.add(prompt);
+			newestFirst.push(prompt);
 		}
 		this.editor.setHistory?.(newestFirst.reverse());
+	}
+
+	/** Record input on its owner and update only that owner's mounted editor. */
+	private recordPromptHistory(text: string, tab: AgentTab | undefined): void {
+		if (!tab) {
+			this.editor.addToHistory?.(text);
+			return;
+		}
+		rememberTabPrompt(this.promptHistory, tab.id, text);
+		const ownsComposer = !this.homeSelection.active && this.activeTabIdForUi === tab.id;
+		if (ownsComposer) this.editor.addToHistory?.(text);
+	}
+
+	/** Recover a failed input on its original session without replacing a later draft. */
+	private restoreFailedPrompt(text: string, tab: AgentTab | undefined, session: AgentSession, error: unknown): void {
+		if (tab && (this.tabManager?.get(tab.id) !== tab || tab.runtime.session !== session)) return;
+		const ownsComposer =
+			!tab || (!this.homeSelection.active && this.activeTabIdForUi === tab.id && this.session === session);
+		if (ownsComposer) {
+			if (!this.editor.getText().trim()) this.setEditorText(text);
+		} else if (tab && !tab.draftInput.trim()) {
+			this.tabManager?.setDraft(tab.id, text);
+		}
+		const ownerLabel = tab && !ownsComposer ? `${tab.title}: ` : "";
+		this.showError(`${ownerLabel}Send failed: ${error instanceof Error ? error.message : String(error)}`);
+		this.ui.requestRender();
 	}
 
 	/**
@@ -5739,12 +5747,12 @@ export class InteractiveMode {
 	 * Attach MixCode Home's selected agent, so a submit that starts on Home acts on it; false when
 	 * the selected roster row has no runtime yet, the case `handleHomeSend` leaves alone.
 	 */
-	private async attachHomeSelectionForSubmit(): Promise<boolean> {
+	private async attachHomeSelectionForSubmit(tab?: AgentTab): Promise<boolean> {
 		if (!this.homeSelection.active) return true;
-		const selected = homeSelectedTab(this.homeSelection, this.homeRoster());
-		if (!selected?.tab) return false;
+		const selected = tab ?? homeSelectedTab(this.homeSelection, this.homeRoster())?.tab;
+		if (!selected) return false;
 		if (this.tabManager && this.tabManager.getActive().id !== selected.id) {
-			await this.activateTab(selected.tab);
+			await this.activateTab(selected);
 		}
 		return true;
 	}
@@ -5754,14 +5762,36 @@ export class InteractiveMode {
 			text = text.trim();
 			if (!text) return;
 
-			// A submit that starts on MixCode Home belongs to the agent its roster has selected. The
-			// completion popup and the command palette reach this handler without the attach that
-			// `handleHomeSend` and `runHomeAction` do, so the command would run on the tab behind Home.
-			if (!(await this.attachHomeSelectionForSubmit())) return;
+			// Manager focus can advance before the composer switches. Capture the mounted owner,
+			// or Home's selected recipient, before binding yields to another key or tab switch.
+			const fromHome = this.homeSelection.active;
+			let submitTab: AgentTab | undefined;
+			if (fromHome) {
+				submitTab = homeSelectedTab(this.homeSelection, this.homeRoster())?.tab;
+			} else {
+				submitTab = this.tabManager?.get(this.activeTabIdForUi ?? "") ?? this.tabManager?.activeTab();
+			}
+			if (fromHome && !submitTab) return;
+			const submitSession = submitTab?.runtime.session ?? this.session;
 
-			// The text may be an extension command, and a turn runs with the hooks
-			// `session_start` installs, so the tab is bound before anything is dispatched.
-			await this.ensureSessionBoundForSubmit();
+			if (fromHome && !(await this.attachHomeSelectionForSubmit(submitTab))) return;
+			await this.ensureSessionBoundForSubmit(submitTab);
+			// Closing the owner or replacing its session while binding must not redirect the input.
+			if (
+				submitTab &&
+				(this.tabManager?.get(submitTab.id) !== submitTab || submitTab.runtime.session !== submitSession)
+			) {
+				return;
+			}
+
+			// Local commands need their tab mounted; ordinary prompts can run in the background.
+			if (submitTab && InteractiveMode.isHomeCommandInput(text)) {
+				if (this.homeSelection.active || this.activeTabIdForUi !== submitTab.id) {
+					await this.activateTab(submitTab);
+				} else if (this.tabManager?.activeTab()?.id !== submitTab.id) {
+					this.tabManager?.activate(submitTab.id);
+				}
+			}
 
 			// Handle commands
 			if (text === "/settings") {
@@ -6095,57 +6125,52 @@ export class InteractiveMode {
 						this.editor.setText(text);
 						return;
 					}
-					this.editor.addToHistory?.(text);
-					await runInTabConsole(this.tabManager?.getActive(), () => this.handleBashCommand(command, isExcluded));
+					this.recordPromptHistory(text, submitTab);
+					await runInTabConsole(submitTab, () => this.handleBashCommand(command, isExcluded));
 					this.isBashMode = false;
 					this.updateEditorBorderColor();
 					return;
 				}
 			}
 
-			// A message belongs to the tab whose composer submitted it. The main loop runs
-			// one prompt at a time, so routing a submit through its shared queue would
-			// deliver the message to whichever tab is focused when another turn ends.
-			const submitTab = this.tabManager?.activeTab();
-			const submitSession = submitTab?.runtime.session ?? this.session;
+			const ownsComposer = !submitTab || (!this.homeSelection.active && this.activeTabIdForUi === submitTab.id);
 
 			// Queue input during compaction (extension commands execute immediately)
 			if (submitSession.isCompacting) {
-				if (this.isExtensionCommand(text)) {
-					this.editor.addToHistory?.(text);
-					this.editor.setText("");
+				if (this.isExtensionCommandFor(submitSession, text)) {
+					this.recordPromptHistory(text, submitTab);
+					if (ownsComposer && this.editor.getText().trim() === text) this.setEditorText("");
 					await runInTabConsole(submitTab, () => submitSession.prompt(text));
 				} else {
-					this.queueCompactionMessage(text, "steer");
+					this.queueCompactionMessage(text, "steer", submitTab);
 				}
 				return;
 			}
 
-			// If streaming, use prompt() with steer behavior
-			// This handles extension commands (execute immediately), prompt template expansion, and queueing
+			// A steer stays on the submitting session even if its editor is no longer mounted.
 			if (submitSession.isStreaming) {
-				this.editor.addToHistory?.(text);
-				this.editor.setText("");
-				await runInTabConsole(submitTab, () => submitSession.prompt(text, { streamingBehavior: "steer" }));
-				this.updatePendingMessagesDisplay();
+				this.recordPromptHistory(text, submitTab);
+				if (ownsComposer && this.editor.getText().trim() === text) this.setEditorText("");
+				try {
+					await runInTabConsole(submitTab, () => submitSession.prompt(text, { streamingBehavior: "steer" }));
+				} catch (error) {
+					this.restoreFailedPrompt(text, submitTab, submitSession, error);
+				}
+				if (!submitTab || (!this.homeSelection.active && this.activeTabIdForUi === submitTab.id)) {
+					this.updatePendingMessagesDisplay();
+				}
 				this.ui.requestRender();
 				return;
 			}
 
-			// Normal message submission
-			// First, move any pending bash components to chat
-			this.flushPendingBashComponents();
-			this.editor.addToHistory?.(text);
+			if (ownsComposer) this.flushPendingBashComponents();
+			this.recordPromptHistory(text, submitTab);
 
 			// Send now; the shared queue below serves only a session without tabs.
 			if (submitTab) {
 				runInTabConsole(submitTab, () => submitSession.prompt(text)).then(
 					() => this.ui.requestRender(),
-					(error: unknown) => {
-						this.setEditorText(text);
-						this.showError(`Send failed: ${error instanceof Error ? error.message : String(error)}`);
-						this.ui.requestRender();
-					},
+					(error: unknown) => this.restoreFailedPrompt(text, submitTab, submitSession, error),
 				);
 				return;
 			}
@@ -7074,8 +7099,7 @@ export class InteractiveMode {
 		}
 		// Park the draft in the stash, then rebuild: the stash already drops an equal
 		// older copy, so the editor must not also append one.
-		const stashed = [text, ...(this.stashedPrompts.get(tabId) ?? []).filter((item) => item !== text)];
-		this.stashedPrompts.set(tabId, stashed.slice(0, 100));
+		rememberTabPrompt(this.promptHistory, tabId, text);
 		this.syncEditorHistory();
 	}
 
@@ -8077,18 +8101,22 @@ export class InteractiveMode {
 		this.syncQueuedMessageMirrors(this.session.getSteeringMessages(), this.session.getFollowUpMessages());
 	}
 
-	private queueCompactionMessage(text: string, mode: "steer" | "followUp"): void {
-		this.compactionQueuedMessages.push({ text, mode });
+	/** Park input on its tab until compaction finishes, updating that tab's queue preview. */
+	private queueCompactionMessage(text: string, mode: "steer" | "followUp", tab?: AgentTab): void {
+		const queue = tab ? this.compactionQueueFor(tab.id) : this.compactionQueuedMessages;
+		queue.push({ text, mode });
 		if (mode === "steer") {
-			// Parked texts lead the SDK-mirrored tail; the mirror tells the two apart by
-			// position, so insert before the tail instead of appending after it.
-			const state = this.followUpState;
+			// Parked texts lead the SDK-mirrored tail.
+			const state = tab ? this.followUpStateFor(tab.id) : this.followUpState;
 			state.pendingSteer.splice(state.pendingSteer.length - state.queuedSteerCount, 0, text);
 		}
-		this.editor.addToHistory?.(text);
-		this.editor.setText("");
-		this.updatePendingMessagesDisplay();
-		this.showStatus("Queued message for after compaction");
+		this.recordPromptHistory(text, tab ?? this.tabManager?.activeTab());
+		const ownsComposer = !tab || (!this.homeSelection.active && this.activeTabIdForUi === tab.id);
+		if (ownsComposer) {
+			if (!tab || this.editor.getText().trim() === text.trim()) this.editor.setText("");
+			this.updatePendingMessagesDisplay();
+			this.showStatus("Queued message for after compaction");
+		}
 	}
 
 	private isExtensionCommand(text: string): boolean {

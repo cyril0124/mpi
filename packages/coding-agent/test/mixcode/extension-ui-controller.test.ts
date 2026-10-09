@@ -63,6 +63,7 @@ describe("extension UI controller tab handover", () => {
 			requestWidgetRender: () => ui.requestRender(),
 			applyTabWorkingState: () => {},
 			refreshEditorStatus: () => {},
+			syncEditorHistory: () => {},
 			createBaseAutocompleteProvider: (): AutocompleteProvider => new CombinedAutocompleteProvider([], "/tmp"),
 		} as unknown as ChromeHost;
 		for (const name of ["createExtensionUIContext", "detachTabUi", "attachTabUi", "setupAutocompleteProvider"]) {

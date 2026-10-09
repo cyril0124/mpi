@@ -59,7 +59,7 @@ function makeDequeueContext() {
 		) => void,
 		homeSelection: { active: false },
 		activeTabIdForUi: "tab-1",
-		stashedPrompts: new Map<string, string[]>(),
+		promptHistory: new Map<string, string[]>(),
 		syncEditorHistory: vi.fn(),
 	};
 	return { state, composer, context };
@@ -82,7 +82,7 @@ describe("follow-up wiring in interactive mode", () => {
 		popQueuedIntoEditor.call(context, "followUp");
 
 		expect(composer.text).toBe("/follow-up queued round");
-		expect(context.stashedPrompts.get("tab-1")).toEqual(["DRAFT-KEEP-ME"]);
+		expect(context.promptHistory.get("tab-1")).toEqual(["DRAFT-KEEP-ME"]);
 		expect(context.syncEditorHistory).toHaveBeenCalledOnce();
 		// Draft text the user has not submitted stays out of every queue a flush reads.
 		expect(state.pendingSteer).toEqual([]);
@@ -98,7 +98,7 @@ describe("follow-up wiring in interactive mode", () => {
 		popQueuedIntoEditor.call(context, "steering");
 
 		expect(composer.text).toBe("steer text");
-		expect(context.stashedPrompts.get("tab-1")).toEqual(["DRAFT-KEEP-ME"]);
+		expect(context.promptHistory.get("tab-1")).toEqual(["DRAFT-KEEP-ME"]);
 		expect(state.pendingSteer).toEqual([]);
 	});
 

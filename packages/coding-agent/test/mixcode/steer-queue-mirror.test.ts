@@ -8,6 +8,7 @@ import {
 	createFollowUpQueueState,
 	type FollowUpQueueState,
 } from "../../src/core/mixcode/follow-up/runtime-follow-up-queue.ts";
+import type { AgentTab } from "../../src/core/mixcode/multi-tab/tab-manager.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../../src/utils/ansi.ts";
@@ -130,6 +131,12 @@ describe("steer queue mirror on tab activation", () => {
 		state.queuedSteerCount = 1;
 		const context = {
 			...makeModeContext(session, tabId, state),
+			homeSelection: { active: false },
+			promptHistory: new Map<string, string[]>(),
+			recordPromptHistory: Reflect.get(InteractiveMode.prototype, "recordPromptHistory") as (
+				text: string,
+				tab: AgentTab | undefined,
+			) => void,
 			editor: { addToHistory: () => {}, setText: () => {} },
 			showStatus: () => {},
 		};

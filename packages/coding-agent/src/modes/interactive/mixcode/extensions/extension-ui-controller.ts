@@ -126,6 +126,8 @@ export interface ExtensionUiHost {
 	setToolsExpanded(expanded: boolean): void;
 	toggleToolOutputExpansion(): void;
 	refreshEditorStatus(): void;
+	/** Seed the mounted editor from the session and raw inputs belonging to this tab. */
+	syncEditorHistory(): void;
 	updateTerminalTitle(): void;
 	requestWidgetRender(): void;
 	showError(message: string): void;
@@ -1143,6 +1145,7 @@ export class ExtensionUiController {
 		}
 
 		this.host.editorContainer.addChild(this.host.editor as Component);
+		this.host.syncEditorHistory();
 		this.host.refreshEditorStatus();
 		this.host.ui.setFocus(this.host.editor as Component);
 		this.host.ui.requestRender();

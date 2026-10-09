@@ -173,7 +173,7 @@ async function createTwoTabHost(): Promise<{
 		activeTabIdForUi: tabA.id,
 		editor,
 		defaultEditor: editor,
-		stashedPrompts: new Map(),
+		promptHistory: new Map(),
 		followUpStates: new Map(),
 		compactionQueues: new Map(),
 		compactionClaimed: false,
