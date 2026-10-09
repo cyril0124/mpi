@@ -35,7 +35,10 @@
 			"!**/models.generated.ts",
 			"!**/*.models.ts",
 			"!packages/mom/data/**/*",
-			"!!**/node_modules"
+			"!!**/node_modules",
+			"!!tmp",
+			"!!.worktrees",
+			"!!.sync-feature"
 		]
 	}
 }

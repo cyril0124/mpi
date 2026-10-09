@@ -37,7 +37,7 @@ export interface TabLifecycleHost {
 	 */
 	saveComposerDraft(): void;
 	enqueueTabSwitch(run: () => Promise<void>): Promise<void>;
-	switchActiveTab(tab: AgentTab): Promise<void>;
+	switchActiveTab(tab: AgentTab, options?: { showCompactionHistory?: boolean }): Promise<void>;
 	disposeTabUi(tabId: string): void;
 	subscribeToAgent(): void;
 	showError(message: string): void;
@@ -190,7 +190,7 @@ export async function handleResumeIntoTab(host: ResumeTabHost, sessionPath: stri
 
 	const opened = await openResumedSessionTab(host, tabManager, sessionPath);
 	if (!opened) return;
-	await host.enqueueTabSwitch(() => host.switchActiveTab(opened.tab));
+	await host.enqueueTabSwitch(() => host.switchActiveTab(opened.tab, { showCompactionHistory: true }));
 	host.showStatus(opened.usedCurrentCwd ? "Resumed session in current cwd" : "Resumed session");
 }
 

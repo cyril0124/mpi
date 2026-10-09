@@ -519,6 +519,18 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Model protocol regressions use fixed fixtures for delisted models, while catalog checks and
+  optional provider tests use current model IDs. Catalog refreshes no longer break type checking
+  or remove coverage of historical reasoning and cache behavior.
+
+- Repository checks skip `tmp/`, `.worktrees/`, and `.sync-feature/`, so scratch projects and
+  nested checkouts do not contribute configuration, dependency, or import errors.
+- The submit-routing test fixture supplies the Home-selection callback required by the editor
+  submission path.
+
+- Switching tabs no longer repeats `Session compacted N times`, which could be mistaken for a
+  new compaction. Session startup and compaction completion notifications are unchanged.
+
 - The theme JSON schema resolves `panelBg` through the shared `colorValue` definition, so JSON
   schema validators can check themes containing panel backgrounds.
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getModel, getSupportedThinkingLevels } from "../src/compat.ts";
+import { opencodeGoKimiK26 } from "./helpers/legacy-models.ts";
 
 describe("getSupportedThinkingLevels", () => {
 	it("includes max but not xhigh for Anthropic Opus 4.6 on anthropic-messages API", () => {
@@ -160,7 +161,7 @@ describe("getSupportedThinkingLevels", () => {
 	});
 
 	it("includes only high plus off for OpenCode Go Kimi K2.6", () => {
-		const model = getModel("opencode-go", "kimi-k2.6");
+		const model = opencodeGoKimiK26;
 		expect(model).toBeDefined();
 		expect(getSupportedThinkingLevels(model!)).toEqual(["off", "high"]);
 	});

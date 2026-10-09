@@ -1,6 +1,55 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { getModel } from "../src/compat.ts";
 import { findEnvKeys, getEnvApiKey } from "../src/env-api-keys.ts";
+import type { Model } from "../src/types.ts";
+
+// Generate the historical mapping from a fixed catalog so its effort regression survives delisting.
+function generateDeepSeekV4Model(): Model<"openai-completions"> {
+	const root = mkdtempSync(join(tmpdir(), "pi-together-generation-"));
+	try {
+		const preloadPath = join(root, "catalog.mjs");
+		const outputPath = join(root, "output");
+		const catalog = {
+			together: { models: { "deepseek-ai/DeepSeek-V4-Pro": { tool_call: true, reasoning: true } } },
+		};
+		writeFileSync(
+			preloadPath,
+			`const catalog = ${JSON.stringify(catalog)};\n` +
+				`globalThis.fetch = async (input) => {\n` +
+				`  const url = String(input);\n` +
+				`  if (url === "https://models.dev/api.json") return Response.json(catalog);\n` +
+				`  if (url === "https://openrouter.ai/api/v1/models" || url === "https://ai-gateway.vercel.sh/v1/models") return Response.json({ data: [] });\n` +
+				`  if (url === "https://radius.pi.dev/v1/config") return Response.json({ baseUrl: "https://radius.pi.dev", models: [{ id: "test", name: "Test", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 4096, maxTokens: 4096 }] });\n` +
+				`  throw new Error(\`Unexpected fetch: \${url}\`);\n` +
+				`};\n`,
+		);
+		const result = spawnSync(
+			process.execPath,
+			[
+				"--import",
+				pathToFileURL(preloadPath).href,
+				"scripts/generate-models.ts",
+				"--json-only",
+				"--json-output",
+				outputPath,
+			],
+			{ cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8", timeout: 10000 },
+		);
+		expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+		expect(result.stderr).toBe("");
+		const models: Record<string, Model<"openai-completions">> = JSON.parse(
+			readFileSync(join(outputPath, "providers/together.json"), "utf8"),
+		);
+		return models["deepseek-ai/DeepSeek-V4-Pro"];
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+}
 
 const originalTogetherApiKey = process.env.TOGETHER_API_KEY;
 
@@ -13,8 +62,8 @@ afterEach(() => {
 });
 
 describe("Together models", () => {
-	it("registers the default Kimi K2.6 model via OpenAI-compatible Chat Completions API", () => {
-		const model = getModel("together", "moonshotai/Kimi-K2.6");
+	it("registers Kimi K3 via OpenAI-compatible Chat Completions API", () => {
+		const model = getModel("together", "moonshotai/Kimi-K3");
 
 		expect(model).toBeDefined();
 		expect(model.api).toBe("openai-completions");
@@ -23,12 +72,12 @@ describe("Together models", () => {
 		expect(model.reasoning).toBe(true);
 		expect(model.thinkingLevelMap).toEqual({ minimal: null, low: null, medium: null });
 		expect(model.input).toEqual(["text", "image"]);
-		expect(model.contextWindow).toBe(262144);
-		expect(model.maxTokens).toBe(131000);
+		expect(model.contextWindow).toBe(1048576);
+		expect(model.maxTokens).toBe(131072);
 		expect(model.cost).toEqual({
-			input: 1.2,
-			output: 4.5,
-			cacheRead: 0.2,
+			input: 3,
+			output: 15,
+			cacheRead: 0.3,
 			cacheWrite: 0,
 		});
 		expect(model.compat).toEqual({
@@ -58,7 +107,7 @@ describe("Together models", () => {
 			thinkingFormat: "openai",
 		});
 
-		const deepSeekV4 = getModel("together", "deepseek-ai/DeepSeek-V4-Pro");
+		const deepSeekV4 = generateDeepSeekV4Model();
 		expect(deepSeekV4.thinkingLevelMap).toEqual({
 			minimal: null,
 			low: null,

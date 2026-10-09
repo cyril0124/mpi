@@ -1003,6 +1003,8 @@ export class InteractiveMode {
 	// Status line tracking (for mutating immediately-sequential status updates)
 	private lastStatusSpacer: Spacer | undefined = undefined;
 	private lastStatusText: Text | undefined = undefined;
+	private compactionHistorySpacer: Spacer | undefined = undefined;
+	private compactionHistoryText: Text | undefined = undefined;
 	private managedToolStatusStarted = false;
 
 	// Streaming message tracking
@@ -2883,7 +2885,7 @@ export class InteractiveMode {
 			sharedTabLayout: this.sharedTabLayout,
 			saveComposerDraft: () => this.saveComposerDraft(),
 			enqueueTabSwitch: (run) => this.enqueueTabSwitch(run),
-			switchActiveTab: (tab) => this.switchActiveTab(tab),
+			switchActiveTab: (tab, options) => this.switchActiveTab(tab, options),
 			disposeTabUi: (id) => this.disposeTabUi(id),
 			subscribeToAgent: () => this.subscribeToAgent(),
 			showError: (msg) => this.showError(msg),
@@ -3159,6 +3161,7 @@ export class InteractiveMode {
 		// after Home and have its own `leaveHome` undo this activation.
 		await this.enqueueTabSwitch(async () => {
 			this.homeActivationQueued = false;
+			this.clearCompactionHistoryNotice();
 			manager.setDraft(manager.getActive().id, this.editorText());
 			syncHomeSelectionToTab(this.homeSelection, this.homeRoster(), manager.getActive().id);
 			// Entering Home from an agent the filter hides must still select a visible row.
@@ -3737,7 +3740,7 @@ export class InteractiveMode {
 	 * frame is requested before extensions are bound. Binding emits
 	 * `session_start`, so it runs only for a session that has not been bound yet.
 	 */
-	private async switchActiveTab(tab: AgentTab): Promise<void> {
+	private async switchActiveTab(tab: AgentTab, options: { showCompactionHistory?: boolean } = {}): Promise<void> {
 		this.leaveHome();
 		if (this.activeTabIdForUi && this.activeTabIdForUi !== tab.id) {
 			this.captureTranscript(this.activeTabIdForUi);
@@ -3757,7 +3760,9 @@ export class InteractiveMode {
 		await this.settingsManager.reload();
 		applySessionCopiedSettings(this.session);
 		this.applyRuntimeSettings();
-		if (!this.restoreTranscript(tab.id)) this.renderCurrentSessionState();
+		if (!this.restoreTranscript(tab.id)) {
+			this.renderCurrentSessionState({ showCompactionHistory: options.showCompactionHistory ?? false });
+		}
 		// A warmed restored tab shows its parked transcript without re-rendering, so
 		// the render path that seeds the composer history is bypassed; seed it here.
 		this.syncEditorHistory();
@@ -3845,6 +3850,7 @@ export class InteractiveMode {
 
 	/** Move the outgoing tab's transcript components aside for reuse; do not dispose them. */
 	private captureTranscript(tabId: string): void {
+		this.clearCompactionHistoryNotice();
 		this.tabTranscript.set(tabId, {
 			signature: this.transcriptSignature(),
 			chat: [...this.chatContainer.children],
@@ -3852,6 +3858,16 @@ export class InteractiveMode {
 		});
 		this.chatContainer.clear();
 		this.loadedResourcesContainer.clear();
+	}
+
+	/** Drop the historical compaction notice before parking a tab's transcript. */
+	private clearCompactionHistoryNotice(): void {
+		if (this.compactionHistorySpacer) this.chatContainer.removeChild(this.compactionHistorySpacer);
+		if (this.compactionHistoryText) this.chatContainer.removeChild(this.compactionHistoryText);
+		if (this.lastStatusSpacer === this.compactionHistorySpacer) this.lastStatusSpacer = undefined;
+		if (this.lastStatusText === this.compactionHistoryText) this.lastStatusText = undefined;
+		this.compactionHistorySpacer = undefined;
+		this.compactionHistoryText = undefined;
 	}
 
 	/** Re-attach a cached transcript when it is still current. Returns false to rebuild. */
@@ -4585,14 +4601,14 @@ export class InteractiveMode {
 		this.suggestBugReport();
 	}
 
-	private renderCurrentSessionState(): void {
+	private renderCurrentSessionState(options: { showCompactionHistory?: boolean } = {}): void {
 		this.loadedResourcesContainer.clear();
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
-		this.renderInitialMessages();
+		this.renderInitialMessages(options);
 		const streamingMessage = this.session.agent.state.streamingMessage;
 		if (streamingMessage?.role === "assistant") {
 			this.startStreamingMessage(streamingMessage);
@@ -6584,6 +6600,10 @@ export class InteractiveMode {
 		const secondLast = children.length > 1 ? children[children.length - 2] : undefined;
 
 		if (last && secondLast && last === this.lastStatusText && secondLast === this.lastStatusSpacer) {
+			if (last === this.compactionHistoryText) {
+				this.compactionHistorySpacer = undefined;
+				this.compactionHistoryText = undefined;
+			}
 			this.lastStatusText.setText(theme.fg("dim", message));
 			this.ui.requestRender();
 			return;
@@ -6941,18 +6961,23 @@ export class InteractiveMode {
 		this.addTranscriptNotice(text);
 	}
 
-	renderInitialMessages(): void {
+	renderInitialMessages(options: { showCompactionHistory?: boolean } = {}): void {
+		this.compactionHistorySpacer = undefined;
+		this.compactionHistoryText = undefined;
 		const entries = this.sessionManager.buildContextEntries();
 		this.renderSessionEntries(entries, { updateFooter: true });
 		this.syncEditorHistory();
 		this.renderProjectTrustWarningIfNeeded();
 
-		// Show compaction info if session was compacted
+		if (options.showCompactionHistory === false) return;
+
 		const allEntries = this.sessionManager.getEntries();
 		const compactionCount = allEntries.filter((e) => e.type === "compaction").length;
 		if (compactionCount > 0) {
 			const times = compactionCount === 1 ? "1 time" : `${compactionCount} times`;
 			this.showStatus(`Session compacted ${times}`);
+			this.compactionHistorySpacer = this.lastStatusSpacer;
+			this.compactionHistoryText = this.lastStatusText;
 		}
 	}
 

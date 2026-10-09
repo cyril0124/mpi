@@ -12,6 +12,7 @@ type SubmitContext = {
 	};
 	tabManager?: { activeTab: () => { id: string; title: string; runtime: { session: SubmitContext["session"] } } };
 	ui: { requestRender: () => void };
+	attachHomeSelectionForSubmit: () => Promise<boolean>;
 	ensureSessionBoundForSubmit: () => Promise<void>;
 	flushPendingBashComponents: () => void;
 	setEditorText: (text: string) => void;
@@ -43,6 +44,7 @@ function createSubmitContext(options: { withTabManager: boolean }): {
 		editor: { addToHistory: vi.fn(), setText: vi.fn() },
 		session,
 		ui: { requestRender: vi.fn() },
+		attachHomeSelectionForSubmit: vi.fn(async () => true),
 		ensureSessionBoundForSubmit: vi.fn(async () => {}),
 		flushPendingBashComponents: vi.fn(),
 		setEditorText: vi.fn(),
