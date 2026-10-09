@@ -3575,14 +3575,27 @@ export class InteractiveMode {
 	 * Run a command Home's composer holds through the editor's submit handler, with the draft
 	 * handover suspended for the run: the command's branch clears the composer, and a command
 	 * that moves focus would otherwise park that emptiness over the draft the tab had parked.
+	 *
+	 * Home attaches the selected tab first, so the composer holds that tab's own parked draft
+	 * here. The command takes the composer, so the draft is taken out and put back after the run,
+	 * the way the command palette treats the draft it took over.
 	 */
 	private async submitHomeCommand(text: string): Promise<void> {
+		const ownerTabId = this.tabManager?.getActive().id;
+		const draft = this.editorText();
 		this.homeCommandDepth += 1;
 		try {
+			this.setEditorText(text);
 			await this.defaultEditor.onSubmit?.(text);
 		} finally {
 			this.homeCommandDepth -= 1;
 		}
+		if (!draft.trim()) return;
+		// A command that moved focus left the draft with the tab it came from, and one that wrote
+		// text of its own into the composer keeps it; otherwise the draft goes back.
+		if (ownerTabId !== undefined && this.tabManager?.getActive().id !== ownerTabId) return;
+		const remaining = this.editorText();
+		if (!remaining.trim() || remaining === text) this.setEditorText(draft);
 	}
 
 	/** Run a heading button's command on the tab the roster has selected. */
@@ -3677,8 +3690,9 @@ export class InteractiveMode {
 		this.editor.addToHistory?.(text);
 		if (InteractiveMode.isHomeCommandInput(text)) {
 			void (async () => {
+				// The attach restores the tab's own parked draft into the composer; `submitHomeCommand`
+				// takes it out before the command and puts it back after.
 				await this.activateTab(tab);
-				this.setEditorText(text);
 				await this.submitHomeCommand(text);
 			})();
 			return true;

@@ -519,6 +519,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A command dispatched from Home no longer consumes the parked draft of the tab it targets. Home
+  attaches the selected tab before it dispatches, which loads that tab's own parked draft into the
+  shared composer; the command then takes the composer and its branch clears it, so the draft was gone
+  once `/settings`, `/model`, `/name` or another composer-clearing command ran, and the tab's parked
+  copy was overwritten with the emptied composer on the next switch. `submitHomeCommand` now takes the
+  draft out before the dispatch and puts it back after it, unless the command left text of its own
+  there or moved focus to another tab, the rule the command palette applies to its own draft.
+  Home's action buttons dispatch through the same helper.
 - The inline-widget Home-return test restores its scrollbar-setting dependency and checks that
   leaving Home restores the configured scrollbar and the widget block at the transcript tail.
 - A queued host command no longer consumes the composer draft of the tab that queued it.
