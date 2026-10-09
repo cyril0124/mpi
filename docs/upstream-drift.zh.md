@@ -112,10 +112,15 @@
 
 以下每一个都是潜在冲突点，因此改动要压缩到"调用 `mixcode/` 代码的接线"这一层：
 
-- `packages/coding-agent/src/modes/interactive/interactive-mode.ts`：fork 自有 `TabController` 与
-  `ExtensionUiController` 的接线。宿主保留会话绑定、Home、对话区渲染、核心状态渲染与延迟发出的
-  `/mark-done` 广播。扩展 UI 控制器持有每标签页的对话框、chrome、widget、自定义编辑器、输入订阅
-  与进程级 waiting-for-input 计数。
+- `packages/coding-agent/src/modes/interactive/interactive-mode.ts`：fork 自有 `TabController`、
+  `ExtensionUiController`、`ForkCommands`、`TurnController` 与 `TabUiHandover` 的接线。
+  命令识别与被命令挤走的草稿归属 `ForkCommands`；撤回用的 run markers 与失败/settle
+  反应位于 `TurnController`，在明确的事件位置调用。`TabUiHandover` 持有对话区缓存与预热、
+  串行切换、绑定去重及延迟资源挂载。Home/对话区渲染、会话扩展绑定与核心状态渲染保留
+  宿主接线。`ExtensionUiController` 持有每标签页的对话框、chrome、widget、自定义编辑器、
+  输入订阅与进程级 waiting-for-input 计数。
+- `packages/coding-agent/src/core/agent-session-runtime.ts`：runtime 工厂接受恢复到其他工作目录的
+  标签页提供的 project trust context
 - `packages/coding-agent/src/config.ts`：`ENV_AGENT_DIR` / `ENV_SESSION_DIR` 固定为 `PI_*` 名称，不再跟随 `piConfig.name`
 - `packages/coding-agent/src/modes/interactive/components/status-indicator.ts`：摘要模型标签与按压缩原因区分的文案颜色
 - `packages/coding-agent/src/modes/interactive/components/session-selector.ts`
@@ -136,7 +141,9 @@
   `theme/theme-schema.json`：带框卡片填充用的 `panelBg` 背景色，由 `withThemeColorFallbacks` 默认为
   `toolPendingBg`，因此内置主题文件不需要修改；JSON schema 通过共用的 `#/$defs/colorValue` 定义校验 `panelBg`
 - `packages/coding-agent/test/extensions-runner.test.ts`
-- `packages/coding-agent/test/interactive-tui.test.ts`：复制确认改为断言 toast
+- `packages/coding-agent/test/interactive-tui.test.ts`：上游复制断言适配 fork 的 toast 行为；
+  fork 专属的选区复制交接场景位于 `test/mixcode/clipboard.test.ts`；状态间距宿主补上
+  `clearStatusIndicator` 会读取的 `homeSelection`
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：指针位于跳到底部标签上时加下划线
 - `packages/coding-agent/src/modes/interactive/components/tool-execution.ts`、`assistant-message.ts`、
   `compaction-summary-message.ts`、`branch-summary-message.ts`、`skill-invocation-message.ts`：可点击区域改用 fork 的 `HoverRegion`，框架自带的 `MouseRegion` 不会绘制高亮
@@ -171,8 +178,12 @@
 - `packages/coding-agent/test/keybindings.test.ts`、`packages/coding-agent/test/interactive-mode-compaction.test.ts`：队列绑定与压缩路径
 - `packages/coding-agent/test/interactive-mode-status.test.ts`：`showExtensionCustom` 用例给自建宿主补上按标签页作用域的协作者
 - `packages/coding-agent/src/utils/version-check.ts`：删除 `checkForNewPiVersion`，启动提示是它唯一的调用方
+- `scripts/build-coding-agent-bundle.mjs`：`fengari` 保持为 bundle 的外部依赖，并作为 Lua batch
+  脚本所需的运行时包加入允许清单
 - `scripts/profile-coding-agent-node.mjs`：`--offline` 不再设置已删除的 `PI_SKIP_VERSION_CHECK`
 - `packages/coding-agent/test/version-check.test.ts`、`packages/coding-agent/test/package-command-paths.test.ts`：用例中去掉已删除的检查与对应环境变量
+- `packages/coding-agent/test/interactive-mode-startup-input.test.ts`：手工搭建的提交宿主补上输入分发前所需的 Home 挂载与 session 绑定
+- `packages/coding-agent/test/suite/regressions/4167-thinking-toggle-pending-tool-render.test.ts`：测试宿主补上对话区渲染会调用的 response-model notice 回调
 - `packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts`：随提示一并删掉恢复提示用例，保留它原本要覆盖的退出顺序
 - `packages/coding-agent/test/format-resume-command.test.ts`：随其覆盖的 `formatResumeCommand` 一并删除
 - `AGENTS.md`、`.gitignore`

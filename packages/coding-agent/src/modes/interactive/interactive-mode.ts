@@ -112,12 +112,7 @@ import {
 	isContextLimitActive,
 	parseContextLimitValue,
 } from "../../core/mixcode/context-limit.ts";
-import {
-	hasAssistantOutput,
-	INTERRUPT_ARM_WINDOW_MS,
-	retractableUserMessage,
-} from "../../core/mixcode/escape-retract.ts";
-import { emitMarkDone } from "../../core/mixcode/extension-event-bus.ts";
+import { INTERRUPT_ARM_WINDOW_MS, retractableUserMessage } from "../../core/mixcode/escape-retract.ts";
 import {
 	type FollowUpHost,
 	flushSteerQueue,
@@ -135,7 +130,6 @@ import {
 	type QueueKind,
 	syncFollowUpPreview,
 } from "../../core/mixcode/follow-up/runtime-follow-up-queue.ts";
-import { scheduleSteerSettleFlush } from "../../core/mixcode/follow-up/steer-settle-flush.ts";
 import {
 	adjustHomeSelectionAfterClose,
 	clampHomeSelectedTabIndex,
@@ -145,7 +139,6 @@ import {
 	homeSelectedTab,
 	moveHomeSelection,
 	nextTabId,
-	selectHomeTabById,
 	syncHomeSelectionToTab,
 	toggleHomeNonIdleOnly,
 	visibleRosterIndices,
@@ -176,16 +169,14 @@ import { type AgentTab, type TabManager, tabBusyReason } from "../../core/mixcod
 import { waitForTabBindOrPark } from "../../core/mixcode/multi-tab/tab-restore-park.ts";
 import {
 	defaultAgentTitle,
-	isTabColorName,
 	isWorkingStatus,
 	nextAvailableAgentTitle,
-	TAB_COLOR_NAMES,
 	type TabColorName,
 	type TabLoadingPhase,
 } from "../../core/mixcode/multi-tab/types.ts";
 import { listTrash, restoreFromTrash, trashDir } from "../../core/mixcode/session-trash.ts";
 import { persistSessionCwd, writeSessionFile } from "../../core/mixcode/session-workdir.ts";
-import { applySessionCopiedSettings, reloadSettingsAcrossTabs } from "../../core/mixcode/settings-tab-sync.ts";
+import { reloadSettingsAcrossTabs } from "../../core/mixcode/settings-tab-sync.ts";
 import { type EditorFlagRequest, parseEditorFlag } from "../../core/mixcode/system-inspection/editor-flag.ts";
 import { getEffectiveSystemPrompt } from "../../core/mixcode/system-inspection/effective-system-prompt.ts";
 import { renderSystemPromptSectionStats } from "../../core/mixcode/system-inspection/system-prompt-stats.ts";
@@ -360,12 +351,14 @@ import {
 	runBatchFile as runBatchScript,
 } from "./mixcode/batch/batch-command.ts";
 import { type CommandSource, collectSlashCommands, type TabArgumentOption } from "./mixcode/command-list.ts";
+import { ForkCommands } from "./mixcode/commands/fork-commands.ts";
 import {
 	type ExtensionTerminalInputSubscription,
 	ExtensionUiController,
 	type TabExtensionUi,
 	type TabInteraction,
 } from "./mixcode/extensions/extension-ui-controller.ts";
+import { TurnController } from "./mixcode/follow-up/turn-controller.ts";
 import { responseModelNoticeText } from "./mixcode/model-mismatch/notice.ts";
 import { rememberTabPrompt } from "./mixcode/multi-tab/prompt-history.ts";
 import { TabController } from "./mixcode/multi-tab/tab-controller.ts";
@@ -377,6 +370,7 @@ import {
 	type TabLifecycleHost,
 } from "./mixcode/multi-tab/tab-lifecycle.ts";
 import type { SessionActionHost } from "./mixcode/multi-tab/tab-session-actions.ts";
+import { TabUiHandover, type TabUiHandoverPorts } from "./mixcode/multi-tab/tab-ui-handover.ts";
 import { createMouseSelectionOptions } from "./mixcode/selection/selection-surface.ts";
 import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
 import { shareSession } from "./session-share.ts";
@@ -527,23 +521,6 @@ function llamaCppPostLoginGuidance(actionLabel: string, loadedModelCount: number
 }
 
 /**
- * Parse `/new-session [--focus|--no-focus] [title]`.
- * Defaults to focusing the new tab.
- */
-function parseNewSessionArgs(args: string): { title?: string; focus: boolean; error?: string } {
-	let rest = args.trim();
-	let focus = true;
-	const match = rest.match(/^(--focus|--no-focus)\b\s*/);
-	if (match) {
-		focus = match[1] === "--focus";
-		rest = rest.slice(match[0].length).trim();
-	} else if (rest.startsWith("--")) {
-		return { focus: true, error: "Usage: /new-session [--focus|--no-focus] [title]" };
-	}
-	return { title: rest || undefined, focus };
-}
-
-/**
  * Options for InteractiveMode initialization.
  */
 export interface InteractiveModeOptions {
@@ -617,9 +594,6 @@ const SINGLE_SESSION_TAB_ID = "session";
 /** How long the s/f queue-edit choice stays armed after the dequeue key. */
 const QUEUE_EDIT_ARM_WINDOW_MS = 1000;
 
-/** Delay before `/mark-done` reaches host extensions, so the user can leave the pane first. */
-const MARK_DONE_SIGNAL_DELAY_MS = 5_000;
-
 /** Prompt for the armed interrupt confirm, naming the key the binding currently carries. */
 function interruptArmMessage(): string {
 	return `${keyDisplayText("app.interrupt")} again: stop`;
@@ -678,20 +652,6 @@ interface TranscriptBlocksCache {
 	documentLength: number;
 	chatLength: number;
 	blocks: Component[];
-}
-
-/** Draft the command palette replaced while it runs a command. */
-interface PaletteCommandDraft {
-	/**
-	 * That draft with the paste markers expanded, which is what `/editor` reads: the palette
-	 * overwrote the editor with the command text, so the editor no longer holds it.
-	 */
-	expandedText: string;
-	/**
-	 * Set by `/editor` once the external editor wrote, so the palette keeps that result, an
-	 * emptied draft included, instead of restoring the draft it replaced.
-	 */
-	ownsEditor: boolean;
 }
 
 /**
@@ -849,6 +809,7 @@ export class InteractiveMode {
 		if (Object.hasOwn(mode, "extensionWidgetsAbove")) controller.extensionWidgetsAbove = mode.extensionWidgetsAbove;
 		if (Object.hasOwn(mode, "extensionWidgetsBelow")) controller.extensionWidgetsBelow = mode.extensionWidgetsBelow;
 		if (Object.hasOwn(mode, "tabUi")) controller.tabUi = mode.tabUi;
+		if (Object.hasOwn(mode, "activeTabIdForUi")) controller.activeTabIdForUi = mode.activeTabIdForUi;
 		// Collection replacement during tab handover must reach the host's render callbacks too.
 		for (const property of [
 			"autocompleteProviderWrappers",
@@ -857,12 +818,112 @@ export class InteractiveMode {
 			"extensionWidgetsAbove",
 			"extensionWidgetsBelow",
 			"tabUi",
+			"activeTabIdForUi",
 		] as const) {
 			if (!Object.hasOwn(mode, property)) continue;
 			const accessor = Object.getOwnPropertyDescriptor(InteractiveMode.prototype, property);
 			if (accessor) Object.defineProperty(mode, property, accessor);
 		}
 		return controller;
+	}
+
+	private tabHandover: TabUiHandover | undefined;
+
+	/** Read live collaborators so prototype hosts and replaced sessions share the same handover. */
+	private static handoverFor(mode: InteractiveMode): TabUiHandover {
+		if (mode.tabHandover) return mode.tabHandover;
+		const ports: TabUiHandoverPorts = {
+			tabs: {
+				get manager() {
+					return mode.tabManager;
+				},
+			},
+			runtime: {
+				get current() {
+					return mode.runtimeHost;
+				},
+				set current(value) {
+					mode.runtimeHost = value;
+				},
+				get unsubscribe() {
+					return mode.unsubscribe;
+				},
+				set unsubscribe(value) {
+					mode.unsubscribe = value;
+				},
+				applySettings: () => mode.applyRuntimeSettings(),
+				subscribe: () => mode.subscribeToAgent(),
+			},
+			transcript: {
+				get chat() {
+					return mode.chatContainer;
+				},
+				get loaded() {
+					return mode.loadedResourcesContainer;
+				},
+				get pending() {
+					return mode.pendingMessagesContainer;
+				},
+				get pendingTools() {
+					return mode.pendingTools;
+				},
+				get streamingComponent() {
+					return mode.streamingComponent;
+				},
+				set streamingComponent(value) {
+					mode.streamingComponent = value;
+				},
+				get streamingMessage() {
+					return mode.streamingMessage;
+				},
+				set streamingMessage(value) {
+					mode.streamingMessage = value;
+				},
+				beforeCapture: () => mode.clearCompactionHistoryNotice(),
+				rebuild: (options) => mode.renderCurrentSessionState(options),
+				renderEntries: (entries, options) => mode.renderSessionEntries(entries, options),
+				resyncQueues: () => mode.resyncQueuedMessageMirrors(),
+				updatePending: () => mode.updatePendingMessagesDisplay(),
+			},
+			turn: {
+				endInterruptArm: () => mode.endInterruptArm(),
+				resetRunMarkers: () => InteractiveMode.turnFor(mode).resetRunMarkers(),
+			},
+			extensions: {
+				get controller() {
+					return InteractiveMode.extensionUiFor(mode);
+				},
+				bind: (runtime, backgroundTabId) => mode.bindCurrentSessionExtensions({ runtime, backgroundTabId }),
+				setupShortcuts: (runner) => mode.setupExtensionShortcuts(runner),
+				showResources: () => mode.showLoadedResources({ force: false, showDiagnosticsWhenQuiet: true }),
+			},
+			view: {
+				get ui() {
+					return mode.ui;
+				},
+				get homeActive() {
+					return mode.homeSelection.active;
+				},
+				get hiddenThinkingLabel() {
+					return mode.hiddenThinkingLabel;
+				},
+				set hiddenThinkingLabel(value) {
+					mode.hiddenThinkingLabel = value;
+				},
+				leaveHome: () => mode.leaveHome(),
+				showWorking: () => mode.showWorkingStatusIndicator(),
+				clearWorking: () => mode.clearStatusIndicator(),
+				setDraft: (text) => mode.setEditorText(text),
+				updateProviderCount: () => mode.updateAvailableProviderCount(),
+				updateBorder: () => mode.updateEditorBorderColor(),
+				updateTitle: () => mode.updateTerminalTitle(),
+				syncToast: () => mode.syncToast(),
+				hidePreview: () => mode.hideUserMessagePreview(),
+				showError: (message) => mode.showError(message),
+			},
+		};
+		mode.tabHandover = new TabUiHandover(ports);
+		return mode.tabHandover;
 	}
 
 	private setWorkingMessage(message?: string): void {
@@ -939,8 +1000,6 @@ export class InteractiveMode {
 	private sharedTabLayout: SharedTabLayout | undefined;
 	/** Messages the shared layout already reported, so a repeating sync failure warns once. */
 	private readonly sharedLayoutErrorShown = new Set<string>();
-	/** Serializes async tab transitions (activation, create, close). */
-	private tabSwitchQueue: Promise<void> = Promise.resolve();
 	private renderer: TuiMainScreen | TuiAltScreen;
 	private ui: TUI;
 	private mainScreenRenderState: TuiMainScreenRenderState | undefined;
@@ -1058,10 +1117,51 @@ export class InteractiveMode {
 	private interruptArmTimer: NodeJS.Timeout | undefined;
 	/** Prompt painted while the interrupt is armed, so the window clears the toast it showed. */
 	private interruptArmMessage: string | undefined;
+	private turnController: TurnController | undefined;
+
+	/** Read live collaborators and adopt marker data supplied by prototype-method hosts. */
+	private static turnFor(mode: InteractiveMode): TurnController {
+		if (mode.turnController) return mode.turnController;
+		const controller = new TurnController({
+			get session() {
+				return mode.session;
+			},
+			get followUpState() {
+				return mode.followUpState;
+			},
+			get followUpHost() {
+				return mode.followUpHost;
+			},
+			endInterruptArm: () => mode.endInterruptArm(),
+			checkShutdownRequested: () => mode.checkShutdownRequested(),
+			flushCompactionQueue: (options) => mode.flushCompactionQueue(options),
+		});
+		mode.turnController = controller;
+		for (const property of ["runStartLeafId", "runVisibleOutput"] as const) {
+			const data = Object.getOwnPropertyDescriptor(mode, property);
+			if (!data || !("value" in data)) continue;
+			if (property === "runStartLeafId") controller.runStartLeafId = mode.runStartLeafId;
+			else controller.runVisibleOutput = mode.runVisibleOutput;
+			const accessor = Object.getOwnPropertyDescriptor(InteractiveMode.prototype, property);
+			if (accessor) Object.defineProperty(mode, property, { ...accessor, enumerable: data.enumerable });
+		}
+		return controller;
+	}
+
 	/** Branch leaf the in-flight run started from; undefined when no run is recorded. */
-	private runStartLeafId: string | null | undefined = undefined;
+	private get runStartLeafId(): string | null | undefined {
+		return InteractiveMode.turnFor(this).runStartLeafId;
+	}
+	private set runStartLeafId(value: string | null | undefined) {
+		InteractiveMode.turnFor(this).runStartLeafId = value;
+	}
 	/** True once the in-flight run rendered output the user can see. */
-	private runVisibleOutput = false;
+	private get runVisibleOutput(): boolean {
+		return InteractiveMode.turnFor(this).runVisibleOutput;
+	}
+	private set runVisibleOutput(value: boolean) {
+		InteractiveMode.turnFor(this).runVisibleOutput = value;
+	}
 
 	/** Deadline of the armed queue-edit choice (s/f) after the dequeue key; 0 = unarmed. */
 	private queueEditArmDeadline = 0;
@@ -1114,32 +1214,11 @@ export class InteractiveMode {
 		InteractiveMode.extensionUiFor(this).activeTabIdForUi = value;
 	}
 	/**
-	 * Depth of Home's own command dispatches. While one runs the composer holds that command,
-	 * not the focused tab's draft, so the draft handover must not park the composer text; Home
-	 * parked that tab's draft when it took the composer.
-	 */
-	private homeCommandDepth = 0;
-	/**
-	 * Sessions whose extensions are already bound. Created on first use so a host
-	 * that only supplies a subset of this class (tests) still works.
-	 */
-	private boundSessions?: WeakSet<AgentSession>;
-	/** Binds in flight, so a tab is bound once however many paths ask for it. */
-	private readonly bindingSessions = new Map<AgentSession, Promise<void>>();
-	/** Tabs waiting for a background bind, oldest request first. */
-	private readonly pendingTabBinds: AgentTab[] = [];
-	/** Set while the bind worker drains `pendingTabBinds`. */
-	private bindWorkerRunning = false;
-	/**
 	 * Tabs a startup restore still has to build, in persisted order. The tab bar lists
 	 * them as loading chips before their runtimes exist, and Home lists the whole
 	 * layout from the first frame; `phase` is what the in-flight tab is doing.
 	 */
 	private restoringTabs: Array<{ id: string; title: string; color?: TabColorName; phase?: TabLoadingPhase }> = [];
-	/** Tabs whose startup resources block is still to be painted on their next focus. */
-	private readonly pendingResourcesBlocks = new Set<string>();
-	/** Cached transcript components per tab, reused when the tab is unchanged. */
-	private readonly tabTranscript = new Map<string, { signature: string; chat: Component[]; loaded: Component[] }>();
 	/** Raw submitted inputs and ctrl+c drafts, per tab id, newest first. */
 	private readonly promptHistory = new Map<string, string[]>();
 	/** Session-only inline widget mode and collapse state, per tab id. */
@@ -1177,7 +1256,71 @@ export class InteractiveMode {
 	};
 	private autoTrustOnReloadCwd: string | undefined;
 	private themeController: InteractiveThemeController;
-	private paletteCommandDraft: PaletteCommandDraft | undefined;
+	private forkCommands: ForkCommands | undefined;
+
+	/** Lazy construction preserves prototype hosts and reads collaborators after tab/editor swaps. */
+	private static commandsFor(mode: InteractiveMode): ForkCommands {
+		if (mode.forkCommands) return mode.forkCommands;
+		const commands = new ForkCommands({
+			composer: {
+				get editor() {
+					return mode.editor;
+				},
+				setText: (text) => mode.setEditorText(text),
+				submit: (text) => mode.defaultEditor.onSubmit?.(text),
+			},
+			routing: {
+				get manager() {
+					return mode.tabManager;
+				},
+				get activeId() {
+					return mode.tabManager?.getActive().id;
+				},
+				get mountedId() {
+					return mode.activeTabIdForUi;
+				},
+				get homeSelection() {
+					return mode.homeSelection;
+				},
+				get session() {
+					return mode.session;
+				},
+				activateTab: (tab) => mode.activateTab(tab),
+				newTab: (title, focus) => mode.handleNewTab(title, focus),
+				closeSession: (args) => mode.handleCloseSession(args),
+				closeAllSessions: () => mode.handleCloseAllSessions(),
+				deleteSession: (args) => mode.handleDeleteSession(args),
+				deleteAllSessions: () => mode.handleDeleteAllSessions(),
+			},
+			actions: {
+				batch: (args) => mode.handleBatchCommand(args),
+				followUp: (args) => mode.handleFollowUpCommand(args),
+				scopedModels: () => mode.showModelsSelector(),
+				thinking: (searchTerm) => mode.handleThinkingCommand(searchTerm),
+				contextLimit: (args) => mode.handleContextLimitCommand(args),
+				consoleHistory: () => mode.handleConsoleHistoryCommand(),
+				systemPrompt: () => mode.handleSystemPromptCommand(),
+				systemTools: (args) => mode.handleSystemToolsCommand(args),
+				palette: () => mode.showCommandPalette(),
+				jump: () => mode.showTabJump(),
+				externalEditor: (draft) => mode.handleOpenExternalEditor(draft),
+				clone: () => mode.handleCloneCommand(),
+				workdir: (target) => mode.handleWorkdirCommand(target),
+				vim: () => mode.enterActiveTabVimMode(),
+				toggleZen: () => mode.handleToggleZenMode(),
+				toggleInlineWidgets: () => mode.handleToggleInlineWidgets(),
+				widgets: (args) => mode.handleWidgetsCommand(args),
+				clear: () => mode.handleClearCommand(),
+				reset: () => mode.handleResetCommand(),
+				resumeTrash: () => mode.showTrashSelector(),
+				error: (message) => mode.showError(message),
+				warning: (message) => mode.showWarning(message),
+				status: (message) => mode.showStatus(message),
+			},
+		});
+		mode.forkCommands = commands;
+		return commands;
+	}
 
 	// Convenience accessors
 	private get session(): AgentSession {
@@ -2822,11 +2965,7 @@ export class InteractiveMode {
 
 		await this.bindCurrentSessionExtensions();
 		const boundSession = this.session;
-		if (boundSession) {
-			this.boundSessions ??= new WeakSet<AgentSession>();
-			this.boundSessions.add(boundSession);
-			this.markTabReady(boundSession);
-		}
+		if (boundSession) InteractiveMode.handoverFor(this).markSessionBound(boundSession);
 		if (this.activeTabIdForUi) this.tabUi.delete(this.activeTabIdForUi);
 
 		if (this.session !== session) {
@@ -3141,7 +3280,7 @@ export class InteractiveMode {
 		// dispatched keeps its own text there until it returns. The manager's focus can already
 		// be `tab` while another tab's UI is mounted, so only save when the tab being left is a
 		// different one.
-		if (!leavingHome && this.homeCommandDepth === 0 && current.id !== tab.id) {
+		if (!leavingHome && InteractiveMode.commandsFor(this).homeCommandDepth === 0 && current.id !== tab.id) {
 			manager.setDraft(current.id, this.editorText());
 		}
 		const active = manager.activate(tab.id);
@@ -3423,7 +3562,7 @@ export class InteractiveMode {
 	 */
 	private saveComposerDraft(): void {
 		const manager = this.tabManager;
-		if (!manager || this.homeSelection.active || this.homeCommandDepth > 0) return;
+		if (!manager || this.homeSelection.active || InteractiveMode.commandsFor(this).homeCommandDepth > 0) return;
 		manager.setDraft(manager.getActive().id, this.editorText());
 	}
 
@@ -3432,11 +3571,7 @@ export class InteractiveMode {
 	 * the editor showing another tab's draft.
 	 */
 	private enqueueTabSwitch(run: () => Promise<void>): Promise<void> {
-		const next = this.tabSwitchQueue.then(run, run).catch((error: unknown) => {
-			this.showError(`Tab switch failed: ${error instanceof Error ? error.message : String(error)}`);
-		});
-		this.tabSwitchQueue = next;
-		return next;
+		return InteractiveMode.handoverFor(this).enqueueTabSwitch(run);
 	}
 
 	private async activateTabById(id: string): Promise<void> {
@@ -3586,21 +3721,7 @@ export class InteractiveMode {
 	 * the way the command palette treats the draft it took over.
 	 */
 	private async submitHomeCommand(text: string): Promise<void> {
-		const ownerTabId = this.tabManager?.getActive().id;
-		const draft = this.editorText();
-		this.homeCommandDepth += 1;
-		try {
-			this.setEditorText(text);
-			await this.defaultEditor.onSubmit?.(text);
-		} finally {
-			this.homeCommandDepth -= 1;
-		}
-		if (!draft.trim()) return;
-		// A command that moved focus left the draft with the tab it came from, and one that wrote
-		// text of its own into the composer keeps it; otherwise the draft goes back.
-		if (ownerTabId !== undefined && this.tabManager?.getActive().id !== ownerTabId) return;
-		const remaining = this.editorText();
-		if (!remaining.trim() || remaining === text) this.setEditorText(draft);
+		await InteractiveMode.commandsFor(this).runHome(text);
 	}
 
 	/** Run a heading button's command on the tab the roster has selected. */
@@ -3729,129 +3850,24 @@ export class InteractiveMode {
 		return !visibleRosterIndices(this.homeSelection.nonIdleOnly, tabs).includes(this.homeSelection.selectedIndex);
 	}
 
-	/**
-	 * Swap the rendered session to `tab`.
-	 *
-	 * The outgoing tab's extension UI and transcript are set aside for reuse, the
-	 * incoming tab's are restored (or rebuilt when its session changed), and the
-	 * frame is requested before extensions are bound. Binding emits
-	 * `session_start`, so it runs only for a session that has not been bound yet.
-	 */
-	private async switchActiveTab(tab: AgentTab, options: { showCompactionHistory?: boolean } = {}): Promise<void> {
-		this.leaveHome();
-		if (this.activeTabIdForUi && this.activeTabIdForUi !== tab.id) {
-			this.captureTranscript(this.activeTabIdForUi);
-			this.detachTabUi(this.activeTabIdForUi);
-		}
-		this.unsubscribe?.();
-		this.unsubscribe = undefined;
-		this.runtimeHost = tab.runtime;
-		// The outgoing tab's UI is detached above, so the mounted UI is this tab's from
-		// here on. `attachTabUi` decides the widget placement from it.
-		this.activeTabIdForUi = tab.id;
-		// A rebuilt transcript is built with this tab's own thinking label; the plain
-		// field write keeps that off the per-block setter, which re-measures them all.
-		this.hiddenThinkingLabel = this.tabUi.get(tab.id)?.hiddenThinkingLabel;
-		// A settings write in another tab, or outside the app, leaves this tab's manager on
-		// what it was built with; re-read it before the switch applies those values.
-		await this.settingsManager.reload();
-		applySessionCopiedSettings(this.session);
-		this.applyRuntimeSettings();
-		if (!this.restoreTranscript(tab.id)) {
-			this.renderCurrentSessionState({ showCompactionHistory: options.showCompactionHistory ?? false });
-		}
-		// The windowed table stays: the reused transcript is the same component
-		// instances, and each block caches its own render against its content, so a
-		// quiet switch repaints without re-rendering the conversation. A rebuilt
-		// transcript has all-new components, which start with no measurements.
-		// The confirm window and the run markers belong to the session leaving the screen.
-		this.endInterruptArm();
-		this.runStartLeafId = undefined;
-		this.runVisibleOutput = false;
-		this.subscribeToAgent();
-		this.attachTabUi(tab.id);
-		// A tab bound in the background still owes its own resources block and theme
-		// registry; the block belongs to the transcript, so both wait for this focus.
-		if (this.pendingResourcesBlocks.delete(tab.id)) {
-			setRegisteredThemes(tab.runtime.session.resourceLoader.getThemes().themes);
-			this.showLoadedResources({ force: false, showDiagnosticsWhenQuiet: true });
-		}
-		// The shared status line belongs to the previously active session; sync it
-		// to the newly active tab instead of leaving a stale "Working" indicator.
-		if (this.session.isStreaming || this.session.isCompacting) this.showWorkingStatusIndicator();
-		else this.clearStatusIndicator();
-		this.setEditorText(tab.draftInput);
-		this.updateAvailableProviderCount();
-		this.updateEditorBorderColor();
-		this.updateTerminalTitle();
-		// The incoming tab owns its own transient message, if it still has one.
-		this.syncToast();
-		this.hideUserMessagePreview();
-		// A dialog parked on this tab while another one was in front comes back with it.
-		this.focusTabInteractions(tab.id);
-		this.ui.requestRender();
-		this.ensureSessionBound(tab);
+	/** Swap the mounted session through the handover's serialized surface lifecycle. */
+	private switchActiveTab(tab: AgentTab, options: { showCompactionHistory?: boolean } = {}): Promise<void> {
+		return InteractiveMode.handoverFor(this).switchActiveTab(tab, options);
 	}
 
-	/**
-	 * Signature of a session's transcript: entry count, last entry id, and whether
-	 * it is streaming. Rebuilding a long transcript is expensive, so a tab whose
-	 * signature is unchanged reuses the components built for it last time.
-	 */
-	private transcriptSignature(): string {
-		const branch = this.sessionManager.getBranch();
-		const last = branch[branch.length - 1]?.id ?? "";
-		return `${branch.length}:${last}:${this.session.isStreaming ? "s" : ""}`;
-	}
-
-	/**
-	 * Build a tab's transcript without showing it, then park it for reuse.
-	 *
-	 * A restored tab has a bound runtime but no UI, so its first visit would otherwise
-	 * build every block and render the window cold. Building here pays that at startup,
-	 * beside the bind that already walks its resources, and the parked components carry
-	 * their own rendered lines, so the first switch repaints them instead of rebuilding.
-	 */
+	/** Prepare a restored tab's transcript while Home owns the rendered surface. */
 	private warmTabTranscript(tab: AgentTab): void {
-		// The warm pass renders into the shared chat container and then clears it. While a tab is on
-		// screen that container holds that tab's live transcript, so warming is limited to Home,
-		// where the container is parked; a tab's focus path builds its transcript on demand instead.
-		if (!this.homeSelection.active) return;
-		const previousHost = this.runtimeHost;
-		const previousTabId = this.activeTabIdForUi;
-		const previousLabel = this.hiddenThinkingLabel;
-		try {
-			this.runtimeHost = tab.runtime;
-			this.activeTabIdForUi = tab.id;
-			this.hiddenThinkingLabel = this.tabUi.get(tab.id)?.hiddenThinkingLabel;
-			// Leave the shared footer and the editor history alone: this build is not a visit.
-			this.renderSessionEntries(this.sessionManager.buildContextEntries(), { updateFooter: false });
-			// Render the parked blocks: each keeps its own rendered lines, so the first
-			// visit repaints rows it already has instead of rendering the window cold.
-			// The windowed container is not used here because it reads its block list
-			// from the mounted document, which still shows Home while this runs.
-			const warmWidth = Math.max(1, this.ui.terminal.columns);
-			for (const block of this.chatContainer.children) block.render(warmWidth);
-			this.captureTranscript(tab.id);
-		} catch {
-			// A tab that cannot build is left cold; the focus path rebuilds it on demand.
-		} finally {
-			this.runtimeHost = previousHost;
-			this.activeTabIdForUi = previousTabId;
-			this.hiddenThinkingLabel = previousLabel;
-		}
+		InteractiveMode.handoverFor(this).warmTabTranscript(tab);
 	}
 
-	/** Move the outgoing tab's transcript components aside for reuse; do not dispose them. */
+	/** Mount a finished bind's chrome when its tab is the mounted one. */
+	private mountBoundTabChrome(tab: AgentTab): void {
+		InteractiveMode.handoverFor(this).mountBoundTabChrome(tab);
+	}
+
+	/** Park rendered components without disposing their cached rows. */
 	private captureTranscript(tabId: string): void {
-		this.clearCompactionHistoryNotice();
-		this.tabTranscript.set(tabId, {
-			signature: this.transcriptSignature(),
-			chat: [...this.chatContainer.children],
-			loaded: [...this.loadedResourcesContainer.children],
-		});
-		this.chatContainer.clear();
-		this.loadedResourcesContainer.clear();
+		InteractiveMode.handoverFor(this).captureTranscript(tabId);
 	}
 
 	/** Drop the historical compaction notice before parking a tab's transcript. */
@@ -3866,144 +3882,24 @@ export class InteractiveMode {
 
 	/** Re-attach a cached transcript when it is still current. Returns false to rebuild. */
 	private restoreTranscript(tabId: string): boolean {
-		const cached = this.tabTranscript.get(tabId);
-		// Rebuild streaming transcripts so a cached partial reply is not duplicated.
-		if (this.session.isStreaming || !cached || cached.signature !== this.transcriptSignature()) return false;
-		this.chatContainer.clear();
-		for (const child of cached.chat) this.chatContainer.addChild(child);
-		this.loadedResourcesContainer.clear();
-		for (const child of cached.loaded) this.loadedResourcesContainer.addChild(child);
-		this.pendingMessagesContainer.clear();
-		this.pendingTools.clear();
-		this.streamingComponent = undefined;
-		this.streamingMessage = undefined;
-		this.resyncQueuedMessageMirrors();
-		this.updatePendingMessagesDisplay();
-		return true;
-	}
-
-	private ensureSessionBound(tab: AgentTab): void {
-		const session = tab.runtime.session;
-		if (this.boundSessions?.has(session)) {
-			// Shortcuts are per-session but cheap to (re)apply on each switch.
-			this.setupExtensionShortcuts(session.extensionRunner);
-			this.markTabReady(session);
-			return;
-		}
-		// The tab is shown now; its extensions bind in the background and their chrome
-		// is mounted when they land, so a first visit never waits for them.
-		this.queueTabBind(tab);
+		return InteractiveMode.handoverFor(this).restoreTranscript(tabId);
 	}
 
 	/** Bind the submitting tab before its commands or input hooks run. */
 	private async ensureSessionBoundForSubmit(tab: AgentTab | undefined = this.tabManager?.activeTab()): Promise<void> {
 		if (!tab) return;
-		if (this.boundSessions?.has(tab.runtime.session)) return;
+		if (InteractiveMode.handoverFor(this).isSessionBound(tab.runtime.session)) return;
 		await this.bindTabExtensions(tab);
 	}
 
-	/** Queue a tab's extensions to be bound in the background. */
+	/** Queue a session's first bind without delaying its requested frame. */
 	private queueTabBind(tab: AgentTab): void {
-		const session = tab.runtime.session;
-		if (this.boundSessions?.has(session) || this.bindingSessions.has(session)) return;
-		if (!this.pendingTabBinds.includes(tab)) this.pendingTabBinds.push(tab);
-		if (this.bindWorkerRunning) return;
-		this.bindWorkerRunning = true;
-		void this.runTabBindWorker();
+		InteractiveMode.handoverFor(this).queueTabBind(tab);
 	}
 
-	/**
-	 * Bind queued tabs, one at a time. The worker is a queue rather than a pool because a bind
-	 * is filesystem-bound and runs on the main thread: a wider fan-out does not finish earlier,
-	 * it only makes every walk slower.
-	 *
-	 * The queue drains as soon as a tab is queued. The walk a bind runs is synchronous, so it
-	 * freezes the UI wherever it happens; a switch that has to wait for it is far more visible
-	 * than a busy first seconds after launch.
-	 */
-	private async runTabBindWorker(): Promise<void> {
-		for (;;) {
-			const tab = this.pendingTabBinds.shift();
-			if (!tab) break;
-			// A tab closed while it waited has no runtime left to bind.
-			if (!this.tabManager?.get(tab.id)) continue;
-			await this.bindTabExtensions(tab);
-		}
-		this.bindWorkerRunning = false;
-		// A tab queued while the worker was draining still needs its bind.
-		if (this.pendingTabBinds.length > 0) this.queueTabBind(this.pendingTabBinds[0]!);
-	}
-
-	/**
-	 * Bind a tab's extensions once, in the background.
-	 *
-	 * `session_start` handlers do their filesystem work on the main thread, and a
-	 * walk of the skill directories takes seconds on a network filesystem, so the bind
-	 * is started only after the frame the caller asked for is on screen. The bind is
-	 * started at most once per session and never rejects: a tab whose bind fails
-	 * stays unbound, and the next focus tries again.
-	 */
-	private async bindTabExtensions(tab: AgentTab): Promise<void> {
-		const session = tab.runtime.session;
-		if (this.boundSessions?.has(session)) return;
-		const inFlight = this.bindingSessions.get(session);
-		if (inFlight) return inFlight;
-		const bind = new Promise<void>((resolve) => {
-			// A queued render is scheduled on `nextTick`; a timer registered from one
-			// runs after it, so the switch's frame paints before this blocks the loop.
-			process.nextTick(() => setTimeout(resolve, 0));
-		})
-			.then(() => this.bindCurrentSessionExtensions({ runtime: tab.runtime, backgroundTabId: tab.id }))
-			.then(
-				() => {
-					this.bindingSessions.delete(session);
-					this.boundSessions ??= new WeakSet<AgentSession>();
-					this.boundSessions.add(session);
-					this.mountBoundTabChrome(tab);
-					this.markTabReady(session);
-				},
-				() => {
-					this.bindingSessions.delete(session);
-					// A tab whose bind failed is not left spinning: show the failure, and let
-					// the next focus try the bind again.
-					if (this.tabManager?.get(tab.id)) {
-						tab.loading = false;
-						tab.loadingPhase = undefined;
-						tab.status = "error";
-						this.ui.requestRender();
-					}
-				},
-			);
-		this.bindingSessions.set(session, bind);
-		return bind;
-	}
-
-	/** A tab is loading until its runtime is bound; clear it once the session is ready. */
-	private markTabReady(session: AgentSession): void {
-		const tab = this.tabManager?.list().find((item) => item.runtime.session === session);
-		if (tab) this.tabManager?.markLoaded(tab.id);
-	}
-
-	/**
-	 * Show the chrome a background bind recorded. It is mounted now when the tab is the
-	 * focused one, and otherwise by the next switch, which also paints the tab's
-	 * startup resources block into that tab's own transcript.
-	 */
-	private mountBoundTabChrome(tab: AgentTab): void {
-		if (this.activeTabIdForUi !== tab.id) {
-			this.pendingResourcesBlocks.add(tab.id);
-			return;
-		}
-		this.attachTabUi(tab.id);
-		setRegisteredThemes(tab.runtime.session.resourceLoader.getThemes().themes);
-		this.setupExtensionShortcuts(tab.runtime.session.extensionRunner);
-		this.applyRuntimeSettings();
-		this.showLoadedResources({ force: false, showDiagnosticsWhenQuiet: true });
-		// `attachTabUi` mounts this tab's editor skin, which takes the slot a dialog of
-		// this tab may be holding; the dialog goes back on top of it.
-		this.focusTabInteractions(tab.id);
-		this.requestWidgetRender();
-		this.ui.requestRender();
+	/** Share an in-flight bind and keep failed sessions retryable on the next focus. */
+	private bindTabExtensions(tab: AgentTab): Promise<void> {
+		return InteractiveMode.handoverFor(this).bindTabExtensions(tab);
 	}
 	private detachTabUi(tabId: string): void {
 		InteractiveMode.extensionUiFor(this).detachTabUi(tabId);
@@ -4024,10 +3920,9 @@ export class InteractiveMode {
 		this.toolOutputExpanded = ui?.toolsExpanded ?? false;
 	}
 	private disposeTabUi(tabId: string): void {
-		this.tabTranscript.delete(tabId);
+		InteractiveMode.handoverFor(this).disposeTabUi(tabId);
 		this.inlineWidgetTabStates.delete(tabId);
 		this.widgetPanelTabStates.delete(tabId);
-		this.pendingResourcesBlocks.delete(tabId);
 		InteractiveMode.extensionUiFor(this).disposeTabUi(tabId);
 	}
 
@@ -4408,60 +4303,6 @@ export class InteractiveMode {
 		await this.tabs.deleteAllSessions(this.sessionActionHost());
 	}
 
-	private renameActiveTab(title: string): void {
-		const manager = this.tabManager;
-		if (!manager) return;
-		try {
-			manager.rename(manager.getActive().id, title);
-			// Keep the session name in step so the title survives restore and is
-			// what `/name`, auto-rename, and the terminal title report.
-			if (this.sessionManager.getSessionName() !== title) this.session.setSessionName(title);
-		} catch (error) {
-			this.showError(error instanceof Error ? error.message : String(error));
-		}
-	}
-
-	/** Print the open tabs as status lines (`/tabs`). */
-	private showTabList(): void {
-		const manager = this.tabManager;
-		if (!manager) {
-			this.showStatus("Multi-tab is unavailable in this session.");
-			return;
-		}
-		const activeId = manager.getActive().id;
-		const lines = manager.list().map((tab, index) => {
-			const marker = tab.id === activeId ? "*" : " ";
-			return `${marker} ${index + 1}. ${tab.title} [${tab.status}${tab.unread ? ", unread" : ""}]`;
-		});
-		this.showStatus(`Tabs:\n${lines.join("\n")}`);
-	}
-
-	/** `/tab <index|title>` focuses an open tab. */
-	private async handleTabCommand(arg: string): Promise<void> {
-		const manager = this.tabManager;
-		if (!manager) return;
-		if (!arg) {
-			this.showTabList();
-			return;
-		}
-		const index = Number.parseInt(arg, 10);
-		if (!Number.isNaN(index) && String(index) === arg) {
-			const tab = manager.list()[index - 1];
-			if (!tab) {
-				this.showError(`No tab at index ${index}`);
-				return;
-			}
-			await this.activateTab(tab);
-			return;
-		}
-		const tab = manager.list().find((item) => item.title === arg);
-		if (!tab) {
-			this.showError(`Unknown tab: ${arg}`);
-			return;
-		}
-		await this.activateTab(tab);
-	}
-
 	/** Open tabs as `/tab` argument completions; empty when multi-tab is unavailable. */
 	private getTabArgumentOptions(): TabArgumentOption[] {
 		const manager = this.tabManager;
@@ -4472,58 +4313,6 @@ export class InteractiveMode {
 			title: tab.title,
 			description: tab.id === activeId ? `${tab.status} · active` : tab.status,
 		}));
-	}
-
-	/** `/color [name|clear]` sets or clears the active tab's chip color. */
-	private colorActiveTab(arg: string): void {
-		const manager = this.tabManager;
-		if (!manager) {
-			this.showWarning("Multi-tab is unavailable in this session.");
-			return;
-		}
-		const value = arg.trim().toLowerCase();
-		try {
-			if (value === "" || value === "clear") {
-				manager.setColor(manager.getActive().id, undefined);
-				this.showStatus("Cleared tab color.");
-				return;
-			}
-			if (!isTabColorName(value)) {
-				this.showError(`Unknown color: ${arg} (valid: ${TAB_COLOR_NAMES.join(", ")}, clear)`);
-				return;
-			}
-			manager.setColor(manager.getActive().id, value);
-			this.showStatus(`Tab color: ${value}`);
-		} catch (error) {
-			this.showError(error instanceof Error ? error.message : String(error));
-		}
-	}
-
-	/** `/mark-done` flags the active tab as finished without running anything. */
-	private markActiveTabDone(): void {
-		const manager = this.tabManager;
-		if (!manager) {
-			this.showWarning("Multi-tab is unavailable in this session.");
-			return;
-		}
-		try {
-			manager.markDone(manager.getActive().id);
-			this.showStatus("Tab marked done.");
-			setTimeout(() => emitMarkDone(), MARK_DONE_SIGNAL_DELAY_MS).unref?.();
-		} catch (error) {
-			this.showError(error instanceof Error ? error.message : String(error));
-		}
-	}
-
-	/** `/group-colored-tabs`, keeping the Home selection on the same agent. */
-	private groupTabsByColor(): void {
-		const manager = this.tabManager;
-		if (!manager) return;
-		const selectedId = manager.list()[this.homeSelection.selectedIndex]?.id;
-		manager.groupByColor();
-		// The reorder re-clamps the selection against the new order, so follow the id
-		// captured before it rather than an index that may already have moved.
-		selectHomeTabById(this.homeSelection, manager.list(), selectedId);
 	}
 
 	private async handleFatalRuntimeError(prefix: string, error: unknown): Promise<never> {
@@ -5793,43 +5582,24 @@ export class InteractiveMode {
 				}
 			}
 
+			// Fork commands own their parsing and explicit behavior overrides. Declining input must
+			// stay synchronous: yielding here lets a focus change reroute the submitted message.
+			const forkCommand = InteractiveMode.commandsFor(this).dispatch(text);
+			if (forkCommand !== false) {
+				await forkCommand;
+				return;
+			}
+
 			// Handle commands
 			if (text === "/settings") {
 				this.showSettingsSelector();
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/batch" || text.startsWith("/batch ")) {
-				this.editor.setText("");
-				await this.handleBatchCommand(text.slice("/batch".length).trim());
-				return;
-			}
-			if (text === "/follow-up" || text.startsWith("/follow-up ")) {
-				this.editor.setText("");
-				await this.handleFollowUpCommand(text.slice("/follow-up".length));
-				return;
-			}
-			if (text === "/scoped-models") {
-				this.editor.setText("");
-				await this.showModelsSelector();
-				return;
-			}
 			if (text === "/model" || text.startsWith("/model ")) {
 				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
 				this.editor.setText("");
 				await this.handleModelCommand(searchTerm);
-				return;
-			}
-			if (text === "/thinking" || text.startsWith("/thinking ")) {
-				const searchTerm = text.startsWith("/thinking ") ? text.slice(10).trim() : undefined;
-				this.editor.setText("");
-				this.handleThinkingCommand(searchTerm);
-				return;
-			}
-			if (text === "/context-limit" || text.startsWith("/context-limit ")) {
-				const args = text.startsWith("/context-limit ") ? text.slice("/context-limit ".length).trim() : "";
-				this.editor.setText("");
-				this.handleContextLimitCommand(args);
 				return;
 			}
 			if (text === "/export" || text.startsWith("/export ")) {
@@ -5878,73 +5648,10 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/console-history") {
-				this.editor.setText("");
-				await this.handleConsoleHistoryCommand();
-				return;
-			}
-			if (text.startsWith("/console-history ")) {
-				this.showError("Usage: /console-history");
-				return;
-			}
-			if (text === "/system-prompt") {
-				this.editor.setText("");
-				await this.handleSystemPromptCommand();
-				return;
-			}
-			if (text.startsWith("/system-prompt ")) {
-				this.showError("Usage: /system-prompt");
-				return;
-			}
-			if (text === "/system-tools" || text.startsWith("/system-tools ")) {
-				const args = text.startsWith("/system-tools ") ? text.slice("/system-tools ".length) : "";
-				this.editor.setText("");
-				await this.handleSystemToolsCommand(args);
-				return;
-			}
-			if (text === "/palette") {
-				this.editor.setText("");
-				this.showCommandPalette();
-				return;
-			}
-			if (text.startsWith("/palette ")) {
-				this.showError("Usage: /palette");
-				return;
-			}
-			if (text === "/jump") {
-				this.editor.setText("");
-				this.showTabJump();
-				return;
-			}
-			if (text.startsWith("/jump ")) {
-				this.showError("Usage: /jump");
-				return;
-			}
-			if (text === "/editor") {
-				const pending = this.paletteCommandDraft;
-				// An agent tab reaches this with the composer already emptied by its submit. Home re-fills
-				// the composer with the command text, and a queued command leaves it as it was, so a
-				// composer that still holds exactly this command carries no draft.
-				const composer = this.editor.getExpandedText?.() ?? this.editor.getText();
-				const holdsCommand = composer.trim() === text;
-				const draft = pending?.expandedText ?? (holdsCommand ? "" : composer);
-				const wrote = await this.handleOpenExternalEditor(draft);
-				// Once the external editor wrote, what it wrote stays: an emptied draft is a result too.
-				if (pending && wrote) pending.ownsEditor = true;
-				return;
-			}
-			if (text.startsWith("/editor ")) {
-				this.showError("Usage: /editor");
-				return;
-			}
 			if (text === "/fork") {
+				// Explicit fork override: the selector opens a sibling tab and preserves its source draft.
 				this.showUserMessageSelector({ composerHoldsCommand: true });
 				this.editor.setText("");
-				return;
-			}
-			if (text === "/clone") {
-				this.editor.setText("");
-				await this.handleCloneCommand();
 				return;
 			}
 			if (text === "/tree") {
@@ -5966,111 +5673,6 @@ export class InteractiveMode {
 			if (text === "/logout") {
 				this.showOAuthSelector("logout");
 				this.editor.setText("");
-				return;
-			}
-			if (text === "/workdir" || text.startsWith("/workdir ")) {
-				const target = text.slice("/workdir".length).trim();
-				this.editor.setText("");
-				await this.handleWorkdirCommand(target);
-				return;
-			}
-			if (text === "/new-session" || text.startsWith("/new-session ")) {
-				const parsed = parseNewSessionArgs(
-					text.startsWith("/new-session ") ? text.slice("/new-session ".length) : "",
-				);
-				this.editor.setText("");
-				if (parsed.error) {
-					this.showError(parsed.error);
-					return;
-				}
-				await this.handleNewTab(parsed.title, parsed.focus);
-				return;
-			}
-			if (text === "/close-session" || text.startsWith("/close-session ")) {
-				const args = text.slice("/close-session".length).trim();
-				this.editor.setText("");
-				await this.handleCloseSession(args);
-				return;
-			}
-			if (text === "/close-all-sessions") {
-				this.editor.setText("");
-				await this.handleCloseAllSessions();
-				return;
-			}
-			if (text === "/delete-session" || text.startsWith("/delete-session ")) {
-				const args = text.slice("/delete-session".length).trim();
-				this.editor.setText("");
-				await this.handleDeleteSession(args);
-				return;
-			}
-			if (text === "/delete-all-sessions") {
-				this.editor.setText("");
-				await this.handleDeleteAllSessions();
-				return;
-			}
-			if (text === "/rename" || text.startsWith("/rename ")) {
-				const title = text.startsWith("/rename ") ? text.slice("/rename ".length).trim() : "";
-				this.editor.setText("");
-				if (title) this.renameActiveTab(title);
-				else this.showError("Tab title cannot be empty");
-				return;
-			}
-			if (text === "/tabs") {
-				this.editor.setText("");
-				this.showTabList();
-				return;
-			}
-			if (text === "/tab" || text.startsWith("/tab ")) {
-				const arg = text.startsWith("/tab ") ? text.slice("/tab ".length).trim() : "";
-				this.editor.setText("");
-				await this.handleTabCommand(arg);
-				return;
-			}
-			if (text === "/color" || text.startsWith("/color ")) {
-				const arg = text.startsWith("/color ") ? text.slice("/color ".length).trim() : "";
-				this.editor.setText("");
-				this.colorActiveTab(arg);
-				return;
-			}
-			if (text === "/group-colored-tabs") {
-				this.editor.setText("");
-				this.groupTabsByColor();
-				return;
-			}
-			if (text === "/mark-done") {
-				this.editor.setText("");
-				this.markActiveTabDone();
-				return;
-			}
-			if (text === "/vim") {
-				this.editor.setText("");
-				this.enterActiveTabVimMode();
-				return;
-			}
-			if (text === "/toggle-zen-mode") {
-				this.editor.setText("");
-				this.handleToggleZenMode();
-				return;
-			}
-			if (text === "/toggle-inline-widgets") {
-				this.editor.setText("");
-				this.handleToggleInlineWidgets();
-				return;
-			}
-			if (text === "/widgets" || text.startsWith("/widgets ")) {
-				const args = text.startsWith("/widgets ") ? text.slice("/widgets ".length) : "";
-				this.editor.setText("");
-				this.handleWidgetsCommand(args);
-				return;
-			}
-			if (text === "/clear") {
-				this.editor.setText("");
-				await this.handleClearCommand();
-				return;
-			}
-			if (text === "/reset") {
-				this.editor.setText("");
-				await this.handleResetCommand();
 				return;
 			}
 			if (text === "/compact" || text.startsWith("/compact ")) {
@@ -6100,12 +5702,8 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/resume") {
+				// Explicit fork override: the selector resumes into a tab, keeping the current session.
 				this.showSessionSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/resume-trash") {
-				this.showTrashSelector();
 				this.editor.setText("");
 				return;
 			}
@@ -6215,12 +5813,7 @@ export class InteractiveMode {
 		switch (event.type) {
 			case "agent_start":
 				this.pendingTools.clear();
-				this.followUpState.followUpRunFailed = false;
-				// The leaf before this run's prompt is what a retract rewinds past, so
-				// record it before the prompt is persisted at its message_end.
-				this.runStartLeafId = this.sessionManager.getLeafId();
-				this.runVisibleOutput = false;
-				this.endInterruptArm();
+				InteractiveMode.turnFor(this).onAgentStart();
 				break;
 
 			case "turn_start":
@@ -6246,13 +5839,13 @@ export class InteractiveMode {
 			case "entry_appended":
 				if (this.entriesRenderedByBoundaryCompaction.delete(event.entry.id)) break;
 				if (event.entry.type === "custom") {
-					if (this.addCustomEntryToChat(event.entry)) this.runVisibleOutput = true;
+					InteractiveMode.turnFor(this).onCustomEntryRendered(this.addCustomEntryToChat(event.entry));
 					this.ui.requestRender();
 				} else if (event.entry.type === "usage" && event.entry.kind === "cache_warm") {
 					this.addCacheWarmingUsage(event.entry);
 					this.ui.requestRender();
 				} else if (event.entry.type === "custom_message" && event.entry.display) {
-					this.runVisibleOutput = true;
+					InteractiveMode.turnFor(this).onCustomMessageStarting(event.entry.display);
 					this.addMessageToChat(
 						createCustomMessage(
 							event.entry.customType,
@@ -6302,7 +5895,7 @@ export class InteractiveMode {
 
 			case "message_start":
 				if (event.message.role === "custom") {
-					if (event.message.display) this.runVisibleOutput = true;
+					if (event.message.display) InteractiveMode.turnFor(this).onCustomMessageStarting(true);
 					this.addMessageToChat(event.message);
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
@@ -6313,7 +5906,7 @@ export class InteractiveMode {
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
-					if (hasAssistantOutput(event.message)) this.runVisibleOutput = true;
+					InteractiveMode.turnFor(this).onAssistantOutput(event.message);
 					this.startStreamingMessage(event.message);
 					this.ui.requestRender();
 				}
@@ -6323,7 +5916,7 @@ export class InteractiveMode {
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
 					this.streamingComponent.updateContent(this.streamingMessage, true);
-					if (!this.runVisibleOutput) this.runVisibleOutput = hasAssistantOutput(this.streamingMessage);
+					InteractiveMode.turnFor(this).onAssistantOutput(this.streamingMessage);
 
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
@@ -6371,9 +5964,7 @@ export class InteractiveMode {
 					this.streamingComponent.updateContent(this.streamingMessage, false);
 					this.maybeShowResponseModelNotice(this.streamingMessage);
 
-					if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
-						// A failed run pauses queued follow-up rounds once the run settles.
-						this.followUpState.followUpRunFailed = true;
+					if (InteractiveMode.turnFor(this).onAssistantMessageFinalized(this.streamingMessage)) {
 						if (!errorMessage) {
 							errorMessage = this.streamingMessage.errorMessage || "Error";
 						}
@@ -6405,7 +5996,7 @@ export class InteractiveMode {
 				break;
 
 			case "tool_execution_start": {
-				this.runVisibleOutput = true;
+				InteractiveMode.turnFor(this).onToolExecutionStart();
 				let component = this.pendingTools.get(event.toolCallId);
 				if (!component) {
 					component = new ToolExecutionComponent(
@@ -6452,8 +6043,7 @@ export class InteractiveMode {
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
-				this.runStartLeafId = undefined;
-				this.endInterruptArm();
+				InteractiveMode.turnFor(this).onAgentEnd();
 				this.clearStatusIndicator("working");
 				if (this.streamingComponent) {
 					this.chatContainer.removeChild(this.streamingComponent);
@@ -6466,12 +6056,7 @@ export class InteractiveMode {
 				break;
 
 			case "agent_settled":
-				// A failed run pauses queued follow-up rounds, including runs the
-				// drain did not start itself.
-				if (this.followUpState.followUpRunFailed) pauseFollowUps(this.followUpState);
-				// Steer texts left in the queue never start their own turn: send them now.
-				scheduleSteerSettleFlush(this.followUpState, this.followUpHost);
-				await this.checkShutdownRequested();
+				await InteractiveMode.turnFor(this).onAgentSettled();
 				break;
 
 			case "compaction_start": {
@@ -6524,9 +6109,7 @@ export class InteractiveMode {
 					}
 					this.footer.invalidate();
 				} else if (event.errorMessage) {
-					// A failed compaction pauses queued follow-up rounds too.
-					this.followUpState.followUpRunFailed = true;
-					pauseFollowUps(this.followUpState);
+					InteractiveMode.turnFor(this).onCompactionFailure();
 					if (event.reason === "manual") {
 						this.showError(event.errorMessage);
 					} else {
@@ -6534,7 +6117,7 @@ export class InteractiveMode {
 						this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
 					}
 				}
-				void this.flushCompactionQueue({ willRetry: event.willRetry });
+				InteractiveMode.turnFor(this).onCompactionOutcomeRendered(event.willRetry);
 				this.ui.requestRender();
 				break;
 			}
@@ -6550,9 +6133,9 @@ export class InteractiveMode {
 
 			case "auto_retry_end": {
 				this.clearStatusIndicator("retry");
+				InteractiveMode.turnFor(this).onAutoRetryEnd(event.success);
 				// Show error only on final failure (success shows normal response)
 				if (!event.success) {
-					this.followUpState.followUpRunFailed = true;
 					this.showError(`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`);
 				}
 				this.ui.requestRender();
@@ -7054,17 +6637,7 @@ export class InteractiveMode {
 	 * before the deferred syntax grammars registered are rebuilt on the next render.
 	 */
 	private flushTranscriptRenderCaches(): void {
-		const flush = (component: Component): void => {
-			component.invalidate?.();
-			if (component instanceof Container) {
-				for (const child of component.children) flush(child);
-			}
-		};
-		flush(this.chatContainer);
-		for (const parkedTranscript of this.tabTranscript.values()) {
-			for (const block of parkedTranscript.chat) flush(block);
-			for (const block of parkedTranscript.loaded) flush(block);
-		}
+		InteractiveMode.handoverFor(this).flushTranscriptRenderCaches();
 	}
 
 	// =========================================================================
@@ -7375,7 +6948,7 @@ export class InteractiveMode {
 			homeActive: this.homeSelection.active,
 			homeWorkdir: this.tabsWorkdir,
 			followUpStates: this.followUpStates,
-			boundSessions: this.boundSessions,
+			boundSessions: InteractiveMode.handoverFor(this).boundSessions,
 			compactionClaimed: this.compactionClaimed,
 			bindTabExtensions: (tab) => this.bindTabExtensions(tab),
 			showTab: (tab) => this.enqueueTabSwitch(() => this.switchActiveTab(tab)),
@@ -7936,11 +7509,7 @@ export class InteractiveMode {
 	 * after the round, unless the command left text of its own in it.
 	 */
 	private async runQueuedCommandRound(text: string): Promise<void> {
-		const draft = this.editorText();
-		await this.defaultEditor.onSubmit?.(text);
-		if (!draft.trim()) return;
-		const remaining = this.editorText();
-		if (!remaining.trim() || remaining === text) this.setEditorText(draft);
+		await InteractiveMode.commandsFor(this).runQueued(text);
 	}
 
 	/** Session-side integration for the follow-up queue (core/mixcode/follow-up/). */
@@ -8414,36 +7983,7 @@ export class InteractiveMode {
 	 * typed.
 	 */
 	private runCommandFromPalette(name: string): void {
-		const text = `/${name}`;
-		const draft = this.editorText();
-		// Every tab shares one composer, so a draft belongs to the surface that mounts it. A command
-		// that switches tabs must hand the draft back there instead of typing it into the tab it
-		// switched to; Home's composer is ephemeral, so it owns no draft.
-		const ownerOfMountedComposer = () => (this.homeSelection.active ? HOME_TAB_ID : this.activeTabIdForUi);
-		const draftOwner = ownerOfMountedComposer();
-		// `/editor` edits the draft this replaces and keeps what the external editor wrote.
-		const pending: PaletteCommandDraft = {
-			expandedText: this.editor.getExpandedText?.() ?? draft,
-			ownsEditor: false,
-		};
-		this.paletteCommandDraft = pending;
-		// A command that cleared the editor, or left the command text in it, is done with it.
-		const restoreDraft = () => {
-			this.paletteCommandDraft = undefined;
-			if (pending.ownsEditor) return;
-			if (draftOwner && draftOwner !== ownerOfMountedComposer()) {
-				// Park it on the tab that owned the composer; a tab the command closed is ignored.
-				if (draftOwner !== HOME_TAB_ID) this.tabManager?.setDraft(draftOwner, draft);
-				return;
-			}
-			const remaining = this.editorText();
-			if (!remaining.trim() || remaining === text) this.editor.setText(draft);
-		};
-		this.editor.setText(text);
-		void Promise.resolve(this.defaultEditor.onSubmit?.(text)).then(restoreDraft, (error: unknown) => {
-			restoreDraft();
-			this.showError(error instanceof Error ? error.message : String(error));
-		});
+		void InteractiveMode.commandsFor(this).runPalette(name);
 	}
 
 	/**
@@ -8605,7 +8145,7 @@ export class InteractiveMode {
 					onShowCacheMissNoticesChange: (shown) => {
 						applyCacheMissNoticeSetting(this.settingsManager, this.tabManager?.list() ?? [], shown);
 						// Parked transcripts were built under the old setting.
-						this.tabTranscript.clear();
+						InteractiveMode.handoverFor(this).clearTranscripts();
 						this.rebuildChatFromMessages();
 					},
 					onCollapseChangelogChange: (collapsed) => {
@@ -8733,7 +8273,7 @@ export class InteractiveMode {
 	private broadcastSettingsChange(): void {
 		const tabs = this.tabManager?.list() ?? [];
 		if (tabs.length === 0) return;
-		this.tabTranscript.clear();
+		InteractiveMode.handoverFor(this).clearTranscripts();
 		void reloadSettingsAcrossTabs(this.settingsManager, tabs);
 	}
 

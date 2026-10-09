@@ -91,6 +91,22 @@ describe("message block grammar invalidation", () => {
 		const chat = new Container();
 		chat.addChild(block);
 		const plainColor = deletionColor(block.render(60));
+		expect(deletionColor(parkedBlock.render(60))).toBe(plainColor);
+		const parkedChat = new Container();
+		parkedChat.addChild(parkedBlock);
+		const host = {
+			chatContainer: parkedChat,
+			loadedResourcesContainer: new Container(),
+			// The fixture carries no compaction notice, so parking a transcript clears nothing.
+			clearCompactionHistoryNotice: () => {},
+			runtimeHost: { session: { sessionManager: { getBranch: () => [] }, isStreaming: false } },
+		};
+		const captureTranscript = Reflect.get(InteractiveMode.prototype, "captureTranscript") as (
+			this: typeof host,
+			tabId: string,
+		) => void;
+		captureTranscript.call(host, "tab");
+		host.chatContainer = chat;
 
 		await loadAllHighlightLanguages();
 
@@ -104,10 +120,6 @@ describe("message block grammar invalidation", () => {
 
 		// The startup flush drops them in the chat and in a parked tab, so the next paint matches
 		// a cold block. It is private, so drive it against the fields the app provides.
-		const host = {
-			chatContainer: chat,
-			tabTranscript: new Map([["tab", { signature: "", chat: [parkedBlock], loaded: [] }]]),
-		};
 		const flushTranscriptRenderCaches = Reflect.get(InteractiveMode.prototype, "flushTranscriptRenderCaches") as (
 			this: typeof host,
 		) => void;

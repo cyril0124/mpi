@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 
 type SubmitContext = {
-	defaultEditor: { onSubmit?: (text: string) => void };
+	defaultEditor: { onSubmit?: (text: string) => Promise<void> };
 	editor: {
 		addToHistory?: (text: string) => void;
 		setText: (text: string) => void;
@@ -13,6 +13,10 @@ type SubmitContext = {
 		isBashRunning: boolean;
 		prompt: (text: string, options?: unknown) => Promise<void>;
 	};
+	attachHomeSelectionForSubmit: () => Promise<boolean>;
+	ensureSessionBoundForSubmit: () => Promise<void>;
+	homeSelection: { active: boolean };
+	recordPromptHistory: (text: string, tab: undefined) => void;
 	flushPendingBashComponents: () => void;
 	onInputCallback?: (text: string) => void;
 	pendingUserInputs: string[];
@@ -49,6 +53,13 @@ function createSubmitContext(): SubmitContext {
 			isBashRunning: false,
 			prompt: vi.fn(async () => {}),
 		},
+		homeSelection: { active: false },
+		recordPromptHistory: Reflect.get(
+			InteractiveMode.prototype,
+			"recordPromptHistory",
+		) as SubmitContext["recordPromptHistory"],
+		attachHomeSelectionForSubmit: vi.fn(async () => true),
+		ensureSessionBoundForSubmit: vi.fn(async () => {}),
 		flushPendingBashComponents: vi.fn(),
 		pendingUserInputs: [],
 	};

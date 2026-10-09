@@ -20,20 +20,22 @@ const QUEUE_PREVIEW_HEADING = "Steer";
 function makeModeContext(session: AgentSession, tabId: string, state: FollowUpQueueState) {
 	const context = {
 		session,
+		runtimeHost: { session },
 		activeTabIdForUi: tabId,
 		tabManager: { activeTab: () => ({ id: tabId }) },
 		followUpStates: new Map([[tabId, state]]),
 		followUpState: state,
 		compactionQueues: new Map<string, never[]>(),
 		compactionQueuedMessages: [] as Array<{ text: string; mode: string }>,
-		tabTranscript: new Map([[tabId, { signature: "sig", chat: [], loaded: [] }]]),
+
 		chatContainer: new Container(),
 		loadedResourcesContainer: new Container(),
 		pendingMessagesContainer: new Container(),
 		pendingTools: new Map(),
 		streamingComponent: undefined,
 		streamingMessage: undefined,
-		transcriptSignature: () => "sig",
+		// The fixture carries no compaction notice, so parking a transcript clears nothing.
+		clearCompactionHistoryNotice: () => {},
 		getAppKeyDisplay: () => "Ctrl+U",
 		ui: { requestRender: () => {} },
 		updatePendingMessagesDisplay: Reflect.get(InteractiveMode.prototype, "updatePendingMessagesDisplay"),
@@ -104,11 +106,16 @@ describe("steer queue mirror on tab activation", () => {
 			expect(harness.session.getSteeringMessages()).toEqual([]);
 
 			const context = makeModeContext(harness.session, tabId, state);
+			const captureTranscript = Reflect.get(InteractiveMode.prototype, "captureTranscript") as (
+				this: typeof context,
+				id: string,
+			) => void;
+			captureTranscript.call(context, tabId);
 			const restoreTranscript = Reflect.get(InteractiveMode.prototype, "restoreTranscript") as (
 				this: typeof context,
 				id: string,
 			) => boolean;
-			restoreTranscript.call(context, tabId);
+			expect(restoreTranscript.call(context, tabId)).toBe(true);
 
 			const rendered = stripAnsi(context.pendingMessagesContainer.render(80).join("\n"));
 			expect(rendered).not.toContain("STEER-A");

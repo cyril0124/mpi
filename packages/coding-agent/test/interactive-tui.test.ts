@@ -202,7 +202,6 @@ type CopyCommandOptions = { preferSelection?: boolean };
 
 type CopyCommandPrototype = {
 	handleCopyCommand(this: CopyCommandContext, options?: CopyCommandOptions): Promise<void>;
-	notifyCopyResult(this: CopyCommandContext, result: { ok: boolean; detail?: string; graphemes: number }): void;
 };
 
 const copyCommandPrototype = InteractiveMode.prototype as unknown as CopyCommandPrototype;
@@ -303,47 +302,6 @@ describe("InteractiveMode copy confirmation", () => {
 		}
 	});
 
-	it("reports a selection copy through the clipboard result the screen hands over", async () => {
-		const terminal = new RecordingTerminal(40, 4);
-		const showStatus = vi.fn();
-		const showError = vi.fn();
-		const notifyToast = vi.fn();
-		const context = {
-			session: { getLastAssistantText: () => "assistant response" },
-			showStatus,
-			showError,
-			notifyToast,
-		} as unknown as CopyCommandContext;
-		const ui = createInteractiveTui({
-			tuiMode: "fullscreen",
-			showHardwareCursor: false,
-			logDirectory: "/tmp",
-			terminal,
-			fullscreenCopyOnSelect: false,
-			onCopyResult: (result) => copyCommandPrototype.notifyCopyResult.call(context, result),
-		});
-		context.ui = ui;
-		ui.addChild(new Text("alpha\nbeta\ngamma\ndelta", 0, 0));
-
-		ui.start();
-		try {
-			await terminal.waitForRender();
-			terminal.sendInput("\x1b[<0;1;1M");
-			terminal.sendInput("\x1b[<32;4;2M");
-			terminal.sendInput("\x1b[<0;4;2m");
-			await terminal.waitForRender();
-
-			await copyCommandPrototype.handleCopyCommand.call(context, { preferSelection: true });
-			await terminal.waitForRender();
-
-			expect(showStatus).not.toHaveBeenCalled();
-			expect(showError).not.toHaveBeenCalled();
-			expect(notifyToast).toHaveBeenCalledWith("success", "Copied 10 chars.");
-		} finally {
-			ui.stop();
-		}
-	});
-
 	it("reports the copy shortcut through a toast in fullscreen mode", async () => {
 		const terminal = new RecordingTerminal(40, 4);
 		const ui = createInteractiveTui({
@@ -410,6 +368,7 @@ type StatusEditor = {
 };
 
 type ClearStatusContext = {
+	homeSelection: { active: boolean };
 	activeStatusIndicator: { kind: StatusIndicatorKind; dispose: () => void } | undefined;
 	activeWorkingIndicatorEmbedded: boolean;
 	statusContainer: Container;
@@ -435,6 +394,7 @@ describe("clear-on-shrink status spacing", () => {
 		const tui = { requestRender: vi.fn() } as unknown as TUI;
 		const editor: StatusEditor = { embedWorkingStatus, setWorkingStatusIndicator: vi.fn() };
 		const context: ClearStatusContext = {
+			homeSelection: { active: false },
 			activeStatusIndicator: undefined,
 			activeWorkingIndicatorEmbedded: false,
 			statusContainer: new Container(),
@@ -476,6 +436,7 @@ describe("clear-on-shrink status spacing", () => {
 			const dispose = vi.fn();
 			const editor: StatusEditor = { embedWorkingStatus: true, setWorkingStatusIndicator: vi.fn() };
 			const context: ClearStatusContext = {
+				homeSelection: { active: false },
 				activeStatusIndicator: { kind, dispose },
 				activeWorkingIndicatorEmbedded: true,
 				statusContainer: new Container(),
@@ -503,6 +464,7 @@ describe("clear-on-shrink status spacing", () => {
 			const defaultEditor: StatusEditor = { embedWorkingStatus: true, setWorkingStatusIndicator: vi.fn() };
 			const customEditor = { embedWorkingStatus: false, setWorkingStatusIndicator: vi.fn() };
 			const context: ClearStatusContext = {
+				homeSelection: { active: false },
 				activeStatusIndicator: { kind: "working", dispose: vi.fn() },
 				activeWorkingIndicatorEmbedded: false,
 				statusContainer: new Container(),

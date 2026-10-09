@@ -1,69 +1,95 @@
 import { describe, expect, test } from "vitest";
-import type { ExtensionUIContext } from "../../src/core/extensions/types.ts";
-import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
+import { ExtensionUiController } from "../../src/modes/interactive/mixcode/extensions/extension-ui-controller.ts";
+import { createExtensionUiHost } from "./helpers/extension-ui-host.ts";
 
-/**
- * The UI context a tab's extensions get while their session binds. Binding is deferred, so
- * the tab can lose focus between the queued bind and the call: the context records chrome on
- * the tab, and the mounted surfaces decide per call.
- *
- * A notice is routed by the transcript it belongs to. Sending every notice into the tab's
- * record left it invisible until the tab was focused again, so a TPS line at the end of a
- * turn never appeared on a tab opened after startup.
- */
-const createTabScopedExtensionUIContext = Reflect.get(
-	InteractiveMode.prototype,
-	"createTabScopedExtensionUIContext",
-) as (this: unknown, tabId: string) => ExtensionUIContext;
-
-interface NotifyHost {
-	activeTabIdForUi: string | undefined;
-	homeSelection: { active: boolean };
-	shown: Array<{ message: string; type?: string }>;
-	notices: Array<{ message: string; type?: string }>;
-}
-
-/** The fields the context reads, plus the two surfaces it can write a notice to. */
-function createHost(activeTabIdForUi: string | undefined, homeActive: boolean): NotifyHost {
-	return {
-		activeTabIdForUi,
-		homeSelection: { active: homeActive },
-		shown: [],
-		notices: [],
-	};
-}
-
-function buildContext(host: NotifyHost, tabId: string): ExtensionUIContext {
-	const scope = {
-		...host,
-		createExtensionUIContext: () => ({}) as ExtensionUIContext,
-		tabExtensionUi: () => ({ notices: host.notices }),
-		showExtensionNotify: (message: string, type?: string) => {
-			host.shown.push({ message, type });
-		},
-	};
-	return createTabScopedExtensionUIContext.call(scope, tabId);
-}
-
+/** A notice reaches the transcript of the tab that owns it, whenever that tab becomes visible. */
 describe("tab-scoped extension UI context", () => {
-	test("shows a notice at once for the tab that owns the mounted transcript", () => {
-		const host = createHost("tab-2", false);
-		buildContext(host, "tab-2").notify("TPS 100.0 tok/s", "info");
-		expect(host.shown).toEqual([{ message: "TPS 100.0 tok/s", type: "info" }]);
-		expect(host.notices).toEqual([]);
+	test("shows a notice at once for the tab that owns the mounted transcript", async () => {
+		const host = await createExtensionUiHost();
+		const controller = new ExtensionUiController(host);
+		host.bindController(controller);
+		try {
+			host.switchTab("tab-2");
+			const context = ExtensionUiController.createTabScopedExtensionUIContext(host.createTabScope(), "tab-2");
+			context.notify("TPS 100.0 tok/s", "info");
+			expect(host.shown).toEqual([{ tabId: "tab-2", message: "TPS 100.0 tok/s", type: "info" }]);
+			expect(controller.tabExtensionUi("tab-2").notices).toEqual([]);
+			expect(await host.capture()).toContain("TPS 100.0 tok/s");
+
+			host.switchTab("tab-1");
+			expect(await host.capture()).not.toContain("TPS 100.0 tok/s");
+			host.switchTab("tab-2");
+			expect(await host.capture()).toContain("TPS 100.0 tok/s");
+			expect(host.shown).toHaveLength(1);
+		} finally {
+			host.dispose();
+		}
 	});
 
-	test("records a notice for a tab that is not on screen", () => {
-		const host = createHost("tab-1", false);
-		buildContext(host, "tab-2").notify("TPS 100.0 tok/s", "info");
-		expect(host.shown).toEqual([]);
-		expect(host.notices).toEqual([{ message: "TPS 100.0 tok/s", type: "info" }]);
+	test("records a notice for a tab that is not on screen", async () => {
+		const host = await createExtensionUiHost();
+		const controller = new ExtensionUiController(host);
+		host.bindController(controller);
+		try {
+			host.switchTab("tab-1");
+			const context = ExtensionUiController.createTabScopedExtensionUIContext(host.createTabScope(), "tab-2");
+			context.notify("TPS 100.0 tok/s", "info");
+			expect(host.shown).toEqual([]);
+			expect(controller.tabExtensionUi("tab-2").notices).toEqual([{ message: "TPS 100.0 tok/s", type: "info" }]);
+			context.notify("Slow tool", "warning");
+			context.notify("Retry failed", "error");
+			expect(await host.capture()).not.toContain("TPS 100.0 tok/s");
+
+			host.switchTab("tab-2");
+			const replay = await host.capture();
+			expect(replay).toContain("info: TPS 100.0 tok/s");
+			expect(replay).toContain("warning: Slow tool");
+			expect(replay).toContain("error: Retry failed");
+			expect(replay.indexOf("TPS 100.0 tok/s")).toBeLessThan(replay.indexOf("Slow tool"));
+			expect(replay.indexOf("Slow tool")).toBeLessThan(replay.indexOf("Retry failed"));
+			expect(host.shown).toEqual([
+				{ tabId: "tab-2", message: "TPS 100.0 tok/s", type: "info" },
+				{ tabId: "tab-2", message: "Slow tool", type: "warning" },
+				{ tabId: "tab-2", message: "Retry failed", type: "error" },
+			]);
+			expect(controller.tabExtensionUi("tab-2").notices).toEqual([]);
+			host.switchTab("tab-1");
+			expect(await host.capture()).not.toContain("Slow tool");
+			host.switchTab("tab-2");
+			context.notify("Turn complete");
+			expect(await host.capture()).toContain("info: Turn complete");
+			expect(host.shown).toHaveLength(4);
+		} finally {
+			host.dispose();
+		}
 	});
 
-	test("records a notice while Home covers the tab", () => {
-		const host = createHost("tab-2", true);
-		buildContext(host, "tab-2").notify("TPS 100.0 tok/s", "info");
-		expect(host.shown).toEqual([]);
-		expect(host.notices).toEqual([{ message: "TPS 100.0 tok/s", type: "info" }]);
+	test("records a notice while Home covers the tab", async () => {
+		const host = await createExtensionUiHost();
+		const controller = new ExtensionUiController(host);
+		host.bindController(controller);
+		try {
+			host.switchTab("tab-2");
+			const context = ExtensionUiController.createTabScopedExtensionUIContext(host.createTabScope(), "tab-2");
+			host.homeActive = true;
+			context.notify("TPS 100.0 tok/s", "info");
+			expect(host.shown).toEqual([]);
+			expect(controller.tabExtensionUi("tab-2").notices).toEqual([{ message: "TPS 100.0 tok/s", type: "info" }]);
+			const home = await host.capture();
+			expect(home).toContain("HOME");
+			expect(home).not.toContain("TPS 100.0 tok/s");
+
+			host.switchTab("tab-1");
+			expect(await host.capture()).not.toContain("TPS 100.0 tok/s");
+			expect(host.shown).toEqual([]);
+			host.switchTab("tab-2");
+			expect(await host.capture()).toContain("TPS 100.0 tok/s");
+			expect(controller.tabExtensionUi("tab-2").notices).toEqual([]);
+			host.switchTab("tab-1");
+			host.switchTab("tab-2");
+			expect(host.shown).toEqual([{ tabId: "tab-2", message: "TPS 100.0 tok/s", type: "info" }]);
+		} finally {
+			host.dispose();
+		}
 	});
 });

@@ -117,10 +117,15 @@ or adds, on every surface, is collected in [Keybindings](keybindings.md).
 Each one is a potential conflict point, so edits are kept down to the wiring that calls into `mixcode/` code:
 
 - `packages/coding-agent/src/modes/interactive/interactive-mode.ts`: wiring for the fork-owned
-  `TabController` and `ExtensionUiController`. Session binding, Home, transcript rendering, core
-  status rendering, and the delayed `/mark-done` broadcast remain in the host. The extension UI
-  controller owns per-tab dialogs, chrome, widgets, custom editors, input subscriptions, and the
-  process-wide waiting-for-input count.
+  `TabController`, `ExtensionUiController`, `ForkCommands`, `TurnController`, and `TabUiHandover`.
+  Command recognition and displaced draft ownership live in `ForkCommands`; retract markers and
+  failure/settle reactions live in `TurnController` at explicit event checkpoints. `TabUiHandover`
+  owns transcript caching/warming, serialized switching, bind deduplication and deferred resource
+  mounting. Home/transcript rendering, session extension setup and core status rendering retain
+  host integration. `ExtensionUiController` owns per-tab dialogs, chrome, widgets, custom editors,
+  input subscriptions, and the process-wide waiting-for-input count.
+- `packages/coding-agent/src/core/agent-session-runtime.ts`: the runtime factory accepts the
+  project trust context that a tab resumed into another workdir supplies
 - `packages/coding-agent/src/config.ts`: `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are pinned to the `PI_*` names instead of following `piConfig.name`
 - `packages/coding-agent/src/modes/interactive/components/status-indicator.ts`: summary model label and reason-specific message colors
 - `packages/coding-agent/src/modes/interactive/components/session-selector.ts`
@@ -144,7 +149,9 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
   `withThemeColorFallbacks` defaulting it to `toolPendingBg`, which leaves the built-in theme files
   unmodified; the JSON schema validates `panelBg` through the shared `#/$defs/colorValue` definition
 - `packages/coding-agent/test/extensions-runner.test.ts`
-- `packages/coding-agent/test/interactive-tui.test.ts`: the copy confirmation now asserts a toast
+- `packages/coding-agent/test/interactive-tui.test.ts`: upstream copy assertions follow the fork's
+  toast behavior; the fork-only selection-copy handover scenario lives in `test/mixcode/clipboard.test.ts`,
+  and the status-spacing hosts carry the `homeSelection` state `clearStatusIndicator` reads
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: underlines the jump-to-end label while the pointer is over it
 - `packages/coding-agent/src/modes/interactive/components/tool-execution.ts`, `assistant-message.ts`,
   `compaction-summary-message.ts`, `branch-summary-message.ts`, `skill-invocation-message.ts`: clickable regions use the fork's `HoverRegion`, since the bundled `MouseRegion` draws no highlight
@@ -201,8 +208,14 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/test/interactive-mode-status.test.ts`: the `showExtensionCustom` case gives its
   hand-built host the per-tab interaction registry the dialog methods read
 - `packages/coding-agent/src/utils/version-check.ts`: `checkForNewPiVersion` removed, since the startup prompt was its only caller
+- `scripts/build-coding-agent-bundle.mjs`: `fengari` remains external in the bundle and is allowed
+  as a runtime package for Lua batch scripts
 - `scripts/profile-coding-agent-node.mjs`: `--offline` no longer sets the removed `PI_SKIP_VERSION_CHECK`
 - `packages/coding-agent/test/version-check.test.ts`, `packages/coding-agent/test/package-command-paths.test.ts`: the removed check and its env var dropped from the cases
+- `packages/coding-agent/test/interactive-mode-startup-input.test.ts`: the hand-built submit host
+  supplies the Home attachment and session-binding gates required before input dispatch
+- `packages/coding-agent/test/suite/regressions/4167-thinking-toggle-pending-tool-render.test.ts`:
+  the test host provides the response-model notice callback used by transcript rendering
 - `packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts`: the resume-hint case dropped with the hint, leaving the shutdown ordering it was written for
 - `packages/coding-agent/test/format-resume-command.test.ts`: deleted with the `formatResumeCommand` helper it covered
 - `AGENTS.md`, `.gitignore`

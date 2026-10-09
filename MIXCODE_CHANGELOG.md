@@ -352,6 +352,20 @@ point `## [Unreleased]` at the new tag.
   does not; this fork does not read the value itself.
 ### Changed
 
+- The fork-owned `TabUiHandover` owns transcript caching/warming, serialized UI switching,
+  bind deduplication and deferred resource mounting. The host supplies live render/session
+  collaborators while `ExtensionUiController` remains the mounted chrome owner.
+- The fork-owned `ForkCommands` module owns command recognition, tab command parsing/actions,
+  and palette/Home/queued command draft restoration. Unhandled input falls through synchronously
+  to upstream dispatch so a deferred focus change cannot redirect ordinary messages.
+- The fork-owned `TurnController` owns retract run markers and failure/settle reactions at
+  explicit event checkpoints. Rendering, interrupt arms and compaction claim/model state retain
+  their existing host responsibilities and ordering.
+- Fork-specific selection-copy and toast coverage lives in `test/mixcode/clipboard.test.ts`;
+  upstream TUI copy tests retain only the adaptations required by the fork's actual behavior.
+- Extension UI workflow tests construct typed controller hosts and exercise real terminal input,
+  chrome ownership, background updates, and parked dialogs without private host method access.
+
 - The fork-owned `ExtensionUiController` owns per-tab extension chrome, dialogs, widgets,
   custom editors, and terminal-input subscriptions. `InteractiveMode` supplies live session
   settings, editor surfaces, Home visibility, and status callbacks, keeping the extension UI
@@ -536,6 +550,11 @@ point `## [Unreleased]` at the new tag.
 
 - Switching tabs no longer repeats `Session compacted N times`, which could be mistaken for a
   new compaction. Session startup and compaction completion notifications are unchanged.
+- The TUI status, startup-input and thinking-toggle test hosts include the Home state, submit
+  attachment/binding and response-model notice callbacks their host integration reads, retaining
+  the original rendering and startup-input assertions. The submit-routing, prompt-history and
+  transcript-parking hosts provide the mounted-tab lookup, editor text and park-time notice
+  release the extracted controllers call.
 
 - The theme JSON schema resolves `panelBg` through the shared `colorValue` definition, so JSON
   schema validators can check themes containing panel backgrounds.
