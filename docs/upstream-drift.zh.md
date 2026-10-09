@@ -109,7 +109,10 @@
 
 以下每一个都是潜在冲突点，因此改动要压缩到"调用 `mixcode/` 代码的接线"这一层：
 
-- `packages/coding-agent/src/modes/interactive/interactive-mode.ts`：fork 自有 `TabController` 的窄接线，以及进程级 waiting-for-input 计数与延迟发出的 `/mark-done` 广播
+- `packages/coding-agent/src/modes/interactive/interactive-mode.ts`：fork 自有 `TabController` 与
+  `ExtensionUiController` 的接线。宿主保留会话绑定、Home、对话区渲染、核心状态渲染与延迟发出的
+  `/mark-done` 广播。扩展 UI 控制器持有每标签页的对话框、chrome、widget、自定义编辑器、输入订阅
+  与进程级 waiting-for-input 计数。
 - `packages/coding-agent/src/config.ts`：`ENV_AGENT_DIR` / `ENV_SESSION_DIR` 固定为 `PI_*` 名称，不再跟随 `piConfig.name`
 - `packages/coding-agent/src/modes/interactive/components/status-indicator.ts`：摘要模型标签与按压缩原因区分的文案颜色
 - `packages/coding-agent/src/modes/interactive/components/session-selector.ts`

@@ -92,7 +92,7 @@ import type {
 	UserBashEventResult,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
-import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
+import { FooterDataProvider } from "../../core/footer-data-provider.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.ts";
@@ -117,7 +117,7 @@ import {
 	INTERRUPT_ARM_WINDOW_MS,
 	retractableUserMessage,
 } from "../../core/mixcode/escape-retract.ts";
-import { emitMarkDone, setWaitingForInputCount } from "../../core/mixcode/extension-event-bus.ts";
+import { emitMarkDone } from "../../core/mixcode/extension-event-bus.ts";
 import {
 	type FollowUpHost,
 	flushSteerQueue,
@@ -262,8 +262,6 @@ import { CustomMessageComponent } from "./components/custom-message.ts";
 import { DaxnutsComponent } from "./components/daxnuts.ts";
 import { DynamicBorder } from "./components/dynamic-border.ts";
 import { EarendilAnnouncementComponent } from "./components/earendil-announcement.ts";
-import { ExtensionEditorComponent } from "./components/extension-editor.ts";
-import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent, type ExtensionSelectorOptions } from "./components/extension-selector.ts";
 import { type FooterComponent, formatTokens } from "./components/footer.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
@@ -362,6 +360,12 @@ import {
 	runBatchFile as runBatchScript,
 } from "./mixcode/batch/batch-command.ts";
 import { type CommandSource, collectSlashCommands, type TabArgumentOption } from "./mixcode/command-list.ts";
+import {
+	type ExtensionTerminalInputSubscription,
+	ExtensionUiController,
+	type TabExtensionUi,
+	type TabInteraction,
+} from "./mixcode/extensions/extension-ui-controller.ts";
 import { responseModelNoticeText } from "./mixcode/model-mismatch/notice.ts";
 import { TabController } from "./mixcode/multi-tab/tab-controller.ts";
 import {
@@ -377,14 +381,12 @@ import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
 import { shareSession } from "./session-share.ts";
 import {
 	getAvailableThemes,
-	getAvailableThemesWithPaths,
 	getEditorTheme,
 	getMarkdownTheme,
-	getThemeByName,
 	onThemeChange,
 	setRegisteredThemes,
 	stopThemeWatcher,
-	Theme,
+	type Theme,
 	type ThemeColor,
 	theme,
 } from "./theme/theme.ts";
@@ -538,66 +540,6 @@ function parseNewSessionArgs(args: string): { title?: string; focus: boolean; er
 		return { focus: true, error: "Usage: /new-session [--focus|--no-focus] [title]" };
 	}
 	return { title: rest || undefined, focus };
-}
-
-type ExtensionFooterFactory = (
-	tui: TUI,
-	thm: Theme,
-	footerData: ReadonlyFooterDataProvider,
-) => Component & { dispose?(): void };
-type ExtensionHeaderFactory = (tui: TUI, thm: Theme) => Component & { dispose?(): void };
-
-/** Extension-owned UI belonging to one tab, swapped when the tab becomes active. */
-interface TabExtensionUi {
-	widgetsAbove: Map<string, Component & { dispose?(): void }>;
-	widgetsBelow: Map<string, Component & { dispose?(): void }>;
-	footerFactory: ExtensionFooterFactory | undefined;
-	headerFactory: ExtensionHeaderFactory | undefined;
-	statuses: Map<string, string>;
-	autocompleteWrappers: AutocompleteProviderFactory[];
-	editorFactory: EditorFactory | undefined;
-	workingMessage: string | undefined;
-	workingVisible: boolean;
-	workingIndicatorOptions: WorkingIndicatorOptions | undefined;
-	hiddenThinkingLabel: string | undefined;
-	toolsExpanded: boolean;
-	/** Notices an extension raised for this tab while it was not the focused one. */
-	notices: Array<{ message: string; type?: "info" | "warning" | "error" }>;
-}
-
-/**
- * An extension interaction that belongs to one tab.
- *
- * An extension of one session opens it, and a session belongs to one tab, so the
- * surface it takes (the editor slot, or an overlay) is that tab's.
- */
-interface TabInteraction {
-	/** Which surface the interaction took, which decides how it is parked. */
-	kind: "selector" | "input" | "editor" | "custom" | "overlay";
-	/** The tab that owns it, so a close can hand the slot back to what it parked. */
-	tabId?: string;
-	/** Draft a custom component displaced, read when it takes the slot. */
-	savedDraft?: string;
-	/** Component shown on the editor slot; undefined for an overlay interaction. */
-	component?: Component & { dispose?(): void };
-	/** True while `component` occupies the editor slot. */
-	mounted: boolean;
-	/** Overlay handle and whether it takes the keyboard; undefined for a slotted one. */
-	overlay?: { handle: OverlayHandle; capturing: boolean };
-	/** Drops the interaction from its tab's pending list. Set by `trackTabInteraction`. */
-	untrack?: () => void;
-}
-
-/**
- * A terminal-input listener an extension asked for through `ctx.ui.onTerminalInput`, kept for
- * the tab that registered it across tab switches.
- */
-interface ExtensionTerminalInputSubscription {
-	/** Tab that owns the listener; undefined in single-session mode, where it always answers. */
-	tabId: string | undefined;
-	handler: (data: string) => { consume?: boolean; data?: string } | undefined;
-	/** Present only while the listener is registered with the renderer. */
-	unsubscribe?: () => void;
 }
 
 /**
@@ -787,6 +729,164 @@ class TransientOverlay {
 }
 
 export class InteractiveMode {
+	private extensionUiController: ExtensionUiController | undefined;
+
+	/** Lazy construction also supports hosts exercising prototype methods without running the constructor. */
+	private static extensionUiFor(mode: InteractiveMode): ExtensionUiController {
+		if (mode.extensionUiController) return mode.extensionUiController;
+		const controller = new ExtensionUiController({
+			get ui() {
+				return mode.ui;
+			},
+			get editor() {
+				return mode.editor;
+			},
+			set editor(value) {
+				mode.editor = value;
+			},
+			get defaultEditor() {
+				return mode.defaultEditor;
+			},
+			get editorContainer() {
+				return mode.editorContainer;
+			},
+			get footer() {
+				return mode.footer;
+			},
+			get footerContainer() {
+				return mode.footerContainer;
+			},
+			get footerDataProvider() {
+				return mode.footerDataProvider;
+			},
+			get headerContainer() {
+				return mode.headerContainer;
+			},
+			get builtInHeader() {
+				return mode.builtInHeader;
+			},
+			get keybindings() {
+				return mode.keybindings;
+			},
+			get autocompleteProvider() {
+				return mode.autocompleteProvider;
+			},
+			get activeSelectorToken() {
+				return mode.activeSelectorToken;
+			},
+			get workingMessage() {
+				return mode.workingMessage;
+			},
+			set workingMessage(value) {
+				mode.workingMessage = value;
+			},
+			get workingVisible() {
+				return mode.workingVisible;
+			},
+			set workingVisible(value) {
+				mode.workingVisible = value;
+			},
+			get workingIndicatorOptions() {
+				return mode.workingIndicatorOptions;
+			},
+			set workingIndicatorOptions(value) {
+				mode.workingIndicatorOptions = value;
+			},
+			get hiddenThinkingLabel() {
+				return mode.hiddenThinkingLabel;
+			},
+			set hiddenThinkingLabel(value) {
+				mode.hiddenThinkingLabel = value;
+			},
+			get toolOutputExpanded() {
+				return mode.toolOutputExpanded;
+			},
+			set toolOutputExpanded(value) {
+				mode.toolOutputExpanded = value;
+			},
+			get settingsManager() {
+				return mode.settingsManager;
+			},
+			get themeController() {
+				return mode.themeController;
+			},
+			shownTabId: (...args) => mode.shownTabId(...args),
+			isHomeActive: () => mode.homeSelection.active,
+			getLoadingTab: (id) => mode.tabManager?.get(id),
+			disposeActiveSelector: (...args) => mode.disposeActiveSelector(...args),
+			setupAutocompleteProvider: (...args) => mode.setupAutocompleteProvider(...args),
+			parkFooterForHome: (...args) => mode.parkFooterForHome(...args),
+			applyTabWorkingState: (...args) => mode.applyTabWorkingState(...args),
+			setWorkingMessage: (...args) => mode.setWorkingMessage(...args),
+			resetWorkingMessage: (...args) => mode.resetWorkingMessage(...args),
+			setWorkingVisible: (...args) => mode.setWorkingVisible(...args),
+			setWorkingIndicator: (...args) => mode.setWorkingIndicator(...args),
+			setHiddenThinkingLabel: (...args) => mode.setHiddenThinkingLabel(...args),
+			setToolsExpanded: (...args) => mode.setToolsExpanded(...args),
+			toggleToolOutputExpansion: (...args) => mode.toggleToolOutputExpansion(...args),
+			refreshEditorStatus: (...args) => mode.refreshEditorStatus(...args),
+			updateTerminalTitle: (...args) => mode.updateTerminalTitle(...args),
+			requestWidgetRender: (...args) => mode.requestWidgetRender(...args),
+			showError: (...args) => mode.showError(...args),
+			showWarning: (...args) => mode.showWarning(...args),
+			showStatus: (...args) => mode.showStatus(...args),
+			handleTabCycle: (...args) => mode.handleTabCycle(...args),
+			handleTabJumpShortcut: (...args) => mode.handleTabJumpShortcut(...args),
+			handleNewTab: (...args) => mode.handleNewTab(...args),
+			handleCloseTab: (...args) => mode.handleCloseTab(...args),
+			handlePaletteShortcut: (...args) => mode.handlePaletteShortcut(...args),
+			showQuitConfirm: (...args) => mode.showQuitConfirm(...args),
+		});
+		mode.extensionUiController = controller;
+		// Hand-built prototype hosts may provide these collections as own data properties.
+		if (Object.hasOwn(mode, "autocompleteProviderWrappers"))
+			controller.autocompleteProviderWrappers = mode.autocompleteProviderWrappers;
+		if (Object.hasOwn(mode, "tabInteractions")) controller.tabInteractions = mode.tabInteractions;
+		if (Object.hasOwn(mode, "extensionTerminalInputSubscriptions"))
+			controller.extensionTerminalInputSubscriptions = mode.extensionTerminalInputSubscriptions;
+		if (Object.hasOwn(mode, "extensionWidgetsAbove")) controller.extensionWidgetsAbove = mode.extensionWidgetsAbove;
+		if (Object.hasOwn(mode, "extensionWidgetsBelow")) controller.extensionWidgetsBelow = mode.extensionWidgetsBelow;
+		if (Object.hasOwn(mode, "tabUi")) controller.tabUi = mode.tabUi;
+		// Collection replacement during tab handover must reach the host's render callbacks too.
+		for (const property of [
+			"autocompleteProviderWrappers",
+			"tabInteractions",
+			"extensionTerminalInputSubscriptions",
+			"extensionWidgetsAbove",
+			"extensionWidgetsBelow",
+			"tabUi",
+		] as const) {
+			if (!Object.hasOwn(mode, property)) continue;
+			const accessor = Object.getOwnPropertyDescriptor(InteractiveMode.prototype, property);
+			if (accessor) Object.defineProperty(mode, property, accessor);
+		}
+		return controller;
+	}
+
+	private setWorkingMessage(message?: string): void {
+		this.workingMessage = message;
+		if (this.activeStatusIndicator?.kind === "working") {
+			this.activeStatusIndicator.setMessage(message ?? this.defaultWorkingMessage);
+		}
+	}
+
+	private resetWorkingMessage(): void {
+		if (this.activeStatusIndicator?.kind === "working") {
+			this.activeStatusIndicator.setMessage(
+				`${this.defaultWorkingMessage} (${keyText("app.interrupt")} to interrupt)`,
+			);
+		}
+	}
+
+	/** Reattach the host's current status indicator after the extension replaces its editor. */
+	private refreshEditorStatus(): void {
+		if (this.activeStatusIndicator && !this.homeSelection.active) {
+			this.statusContainer.clear();
+			this.activeWorkingIndicatorEmbedded = this.setEditorWorkingStatusIndicator(this.activeStatusIndicator);
+			if (!this.activeWorkingIndicatorEmbedded) this.statusContainer.addChild(this.activeStatusIndicator);
+		}
+	}
+
 	private runtimeHost: AgentSessionRuntime;
 	private tabManager: TabManager | undefined;
 	private readonly tabs: TabController;
@@ -854,9 +954,19 @@ export class InteractiveMode {
 	private statusContainer: Container;
 	private defaultEditor: MixcodePromptEditor;
 	private editor: EditorComponent;
-	private editorComponentFactory: EditorFactory | undefined;
+	private get editorComponentFactory(): EditorFactory | undefined {
+		return InteractiveMode.extensionUiFor(this).editorComponentFactory;
+	}
+	private set editorComponentFactory(value: EditorFactory | undefined) {
+		InteractiveMode.extensionUiFor(this).editorComponentFactory = value;
+	}
 	private autocompleteProvider: AutocompleteProvider | undefined;
-	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
+	private get autocompleteProviderWrappers(): AutocompleteProviderFactory[] {
+		return InteractiveMode.extensionUiFor(this).autocompleteProviderWrappers;
+	}
+	private set autocompleteProviderWrappers(value: AutocompleteProviderFactory[]) {
+		InteractiveMode.extensionUiFor(this).autocompleteProviderWrappers = value;
+	}
 	private fdPath: string | undefined;
 	private editorContainer: Container;
 	private activeSelectorToken?: object;
@@ -961,28 +1071,44 @@ export class InteractiveMode {
 
 	/** The `/bug` hint is shown at most once per session so error output stays readable. */
 	private bugReportHintShown = false;
-
-	// Extension UI state
-	/** Pending extension interactions per tab: only the tab on screen mounts one. */
-	private readonly tabInteractions = new Map<string, TabInteraction[]>();
-	private extensionTerminalInputSubscriptions = new Set<ExtensionTerminalInputSubscription>();
-	/** Listener that answers the app's chrome shortcuts above a focused extension dialog. */
-	private extensionDialogShortcutUnsubscribe?: () => void;
-
-	// Extension widgets (components rendered above/below the editor)
-	private extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
-	private extensionWidgetsBelow = new Map<string, Component & { dispose?(): void }>();
+	private get tabInteractions(): Map<string, TabInteraction[]> {
+		return InteractiveMode.extensionUiFor(this).tabInteractions;
+	}
+	private set tabInteractions(value: Map<string, TabInteraction[]>) {
+		InteractiveMode.extensionUiFor(this).tabInteractions = value;
+	}
+	private get extensionTerminalInputSubscriptions(): Set<ExtensionTerminalInputSubscription> {
+		return InteractiveMode.extensionUiFor(this).extensionTerminalInputSubscriptions;
+	}
+	private set extensionTerminalInputSubscriptions(value: Set<ExtensionTerminalInputSubscription>) {
+		InteractiveMode.extensionUiFor(this).extensionTerminalInputSubscriptions = value;
+	}
+	private get extensionWidgetsAbove(): Map<string, Component & { dispose?(): void }> {
+		return InteractiveMode.extensionUiFor(this).extensionWidgetsAbove;
+	}
+	private set extensionWidgetsAbove(value: Map<string, Component & { dispose?(): void }>) {
+		InteractiveMode.extensionUiFor(this).extensionWidgetsAbove = value;
+	}
+	private get extensionWidgetsBelow(): Map<string, Component & { dispose?(): void }> {
+		return InteractiveMode.extensionUiFor(this).extensionWidgetsBelow;
+	}
+	private set extensionWidgetsBelow(value: Map<string, Component & { dispose?(): void }>) {
+		InteractiveMode.extensionUiFor(this).extensionWidgetsBelow = value;
+	}
 	private dockWidgets!: DockWidgetBudget;
 	private widgetPanel!: WidgetPanelComponent;
-
-	// Custom footer from extension (undefined = use built-in footer)
-	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
-	private customFooterFactory: ExtensionFooterFactory | undefined = undefined;
-	private customHeaderFactory: ExtensionHeaderFactory | undefined = undefined;
-	/** Per-tab extension UI (widgets, footer/header, statuses), swapped on tab switch. */
-	private readonly tabUi = new Map<string, TabExtensionUi>();
-	/** Tab whose extension UI is currently mounted; used to capture state on switch. */
-	private activeTabIdForUi: string | undefined = undefined;
+	private get tabUi(): Map<string, TabExtensionUi> {
+		return InteractiveMode.extensionUiFor(this).tabUi;
+	}
+	private set tabUi(value: Map<string, TabExtensionUi>) {
+		InteractiveMode.extensionUiFor(this).tabUi = value;
+	}
+	private get activeTabIdForUi(): string | undefined {
+		return InteractiveMode.extensionUiFor(this).activeTabIdForUi;
+	}
+	private set activeTabIdForUi(value: string | undefined) {
+		InteractiveMode.extensionUiFor(this).activeTabIdForUi = value;
+	}
 	/**
 	 * Depth of Home's own command dispatches. While one runs the composer holds that command,
 	 * not the focused tab's draft, so the draft handover must not park the composer text; Home
@@ -1034,9 +1160,12 @@ export class InteractiveMode {
 
 	// Built-in header (logo + keybinding hints + changelog)
 	private builtInHeader: Component | undefined = undefined;
-
-	// Custom header from extension (undefined = use built-in header)
-	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
+	private get customHeader(): (Component & { dispose?(): void }) | undefined {
+		return InteractiveMode.extensionUiFor(this).customHeader;
+	}
+	private set customHeader(value: (Component & { dispose?(): void }) | undefined) {
+		InteractiveMode.extensionUiFor(this).customHeader = value;
+	}
 
 	private options: InteractiveModeOptions;
 	private readonly onRightClickPaste = (): void => {
@@ -2613,148 +2742,38 @@ export class InteractiveMode {
 		const mode = this.homeSelection.active ? "hidden" : this.settingsManager.getFullscreenScrollbar();
 		this.transcriptScrollView?.setScrollbar(mode);
 	}
-
-	/**
-	 * Extension UI context for a tab whose chrome is not mounted yet. The chrome an
-	 * extension installs (widgets, footer and header, statuses, autocomplete
-	 * wrappers, editor component, working message, thinking label) is recorded on the
-	 * tab and mounted when the tab takes focus. A surface the tab already owns on
-	 * screen is written live instead, so a background bind does not defer it: a notice
-	 * follows the transcript, and a status replaces the one the footer shows. Any other
-	 * tab records it for its next mount. A dialog or an editor takeover is that tab's
-	 * own surface too: it parks on the tab and shows when the tab takes focus.
-	 */
 	private createTabScopedExtensionUIContext(tabId: string): ExtensionUIContext {
-		const live = this.createExtensionUIContext(tabId);
-		return {
-			...live,
-			get theme() {
-				return theme;
+		const mode = this;
+		return ExtensionUiController.createTabScopedExtensionUIContext(
+			{
+				get ui() {
+					return mode.ui;
+				},
+				get homeActive() {
+					return mode.homeSelection.active;
+				},
+				get activeTabIdForUi() {
+					return mode.activeTabIdForUi;
+				},
+				createExtensionUIContext: (...args) => this.createExtensionUIContext(...args),
+				tabExtensionUi: (...args) => this.tabExtensionUi(...args),
+				showExtensionNotify: (...args) => this.showExtensionNotify(...args),
+				buildExtensionWidget: (...args) => this.buildExtensionWidget(...args),
+				withLoadingPhase: (owner, run) => this.withLoadingPhase(owner, run),
+				showExtensionSelector: (...args) => this.showExtensionSelector(...args),
+				showExtensionConfirm: (...args) => this.showExtensionConfirm(...args),
+				showExtensionInput: (...args) => this.showExtensionInput(...args),
+				showExtensionCustom: (factory, options, owner) => this.showExtensionCustom(factory, options, owner),
+				showExtensionEditor: (...args) => this.showExtensionEditor(...args),
 			},
-			notify: (message, type) => {
-				// A tab that owns the mounted transcript paints the notice at once, like the
-				// startup session. Any other tab has nowhere to put it until its next focus.
-				if (!this.homeSelection.active && this.activeTabIdForUi === tabId) {
-					this.showExtensionNotify(message, type);
-					return;
-				}
-				this.tabExtensionUi(tabId).notices.push({ message, type });
-			},
-			setWorkingMessage: (message) => {
-				this.tabExtensionUi(tabId).workingMessage = message;
-			},
-			setWorkingVisible: (visible) => {
-				this.tabExtensionUi(tabId).workingVisible = visible;
-			},
-			setWorkingIndicator: (options) => {
-				this.tabExtensionUi(tabId).workingIndicatorOptions = options;
-			},
-			setHiddenThinkingLabel: (label) => {
-				this.tabExtensionUi(tabId).hiddenThinkingLabel = label;
-			},
-			setToolsExpanded: (expanded) => {
-				this.tabExtensionUi(tabId).toolsExpanded = expanded;
-			},
-			setStatus: (key: string, text: string | undefined) => {
-				const ui = this.tabExtensionUi(tabId);
-				if (text === undefined) ui.statuses.delete(key);
-				else ui.statuses.set(key, text);
-				// The footer keeps its own copy of the statuses and re-reads the tab's record
-				// only on mount, so write the mounted tab's footer as well.
-				if (!this.homeSelection.active && this.activeTabIdForUi === tabId) live.setStatus(key, text);
-			},
-			setWidget: (
-				key: string,
-				content: string[] | ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined,
-				widgetOptions?: ExtensionWidgetOptions,
-			) => {
-				const ui = this.tabExtensionUi(tabId);
-				for (const map of [ui.widgetsAbove, ui.widgetsBelow]) {
-					const existing = map.get(key);
-					existing?.dispose?.();
-					map.delete(key);
-				}
-				if (content === undefined) return;
-				const component = Array.isArray(content) ? this.buildExtensionWidget(content) : content(this.ui, theme);
-				const target = widgetOptions?.placement === "belowEditor" ? ui.widgetsBelow : ui.widgetsAbove;
-				target.set(key, component);
-			},
-			setFooter: (factory) => {
-				this.tabExtensionUi(tabId).footerFactory = factory;
-			},
-			setHeader: (factory) => {
-				this.tabExtensionUi(tabId).headerFactory = factory;
-			},
-			setTitle: () => {
-				// The terminal title follows the focused tab; a background tab's own title
-				// is applied when it takes focus.
-			},
-			addAutocompleteProvider: (factory) => {
-				this.tabExtensionUi(tabId).autocompleteWrappers.push(factory);
-			},
-			getEditorComponent: () => this.tabExtensionUi(tabId).editorFactory,
-			setEditorComponent: (factory) => {
-				this.tabExtensionUi(tabId).editorFactory = factory;
-			},
-			getToolsExpanded: () => this.tabExtensionUi(tabId).toolsExpanded,
-			// A dialog parks the bind, so the chip names this phase while it is open.
-			select: (title, options, opts) =>
-				this.withLoadingPhase(tabId, () => this.showExtensionSelector(title, options, opts, tabId)),
-			confirm: (title, message, opts) =>
-				this.withLoadingPhase(tabId, () => this.showExtensionConfirm(title, message, opts, tabId)),
-			input: (title, placeholder, opts) =>
-				this.withLoadingPhase(tabId, () => this.showExtensionInput(title, placeholder, opts, tabId)),
-			custom: (factory, options) =>
-				this.withLoadingPhase(tabId, () => this.showExtensionCustom(factory, options, tabId)),
-			editor: (title, prefill) =>
-				this.withLoadingPhase(tabId, () => this.showExtensionEditor(title, prefill, tabId)),
-		};
+			tabId,
+		);
 	}
-
-	/**
-	 * Mark a loading tab as parked on an extension dialog while `run` is pending,
-	 * then hand it back to `resources`. A dialog opened outside a loading tab is
-	 * left alone, so the phase never leaks onto a ready tab.
-	 */
 	private withLoadingPhase<T>(tabId: string, run: () => Promise<T>): Promise<T> {
-		const tab = this.tabManager?.get(tabId);
-		if (!tab?.loading) return run();
-		const restore = () => {
-			if (tab.loading) tab.loadingPhase = "resources";
-			this.ui.requestRender();
-		};
-		tab.loadingPhase = "waiting for input";
-		this.ui.requestRender();
-		try {
-			return run().finally(restore);
-		} catch (error) {
-			restore();
-			throw error;
-		}
+		return InteractiveMode.extensionUiFor(this).withLoadingPhase(tabId, run);
 	}
-
-	/** The extension-UI record of a tab, created on first use. */
 	private tabExtensionUi(tabId: string): TabExtensionUi {
-		let ui = this.tabUi.get(tabId);
-		if (!ui) {
-			ui = {
-				widgetsAbove: new Map(),
-				widgetsBelow: new Map(),
-				footerFactory: undefined,
-				headerFactory: undefined,
-				statuses: new Map(),
-				autocompleteWrappers: [],
-				editorFactory: undefined,
-				workingMessage: undefined,
-				workingVisible: true,
-				workingIndicatorOptions: undefined,
-				hiddenThinkingLabel: undefined,
-				toolsExpanded: false,
-				notices: [],
-			};
-			this.tabUi.set(tabId, ui);
-		}
-		return ui;
+		return InteractiveMode.extensionUiFor(this).tabExtensionUi(tabId);
 	}
 
 	private applyRuntimeSettings(): void {
@@ -3035,35 +3054,11 @@ export class InteractiveMode {
 		if (!this.zenHidesTabBar()) this.cycleTab(delta);
 		return true;
 	}
-
-	/**
-	 * Answer the app's chrome shortcuts while an extension dialog owns the keyboard. A dialog
-	 * an extension opens as a capturing overlay takes focus from the composer, so every action
-	 * bound with `defaultEditor.onAction` goes dead until it closes. Tab is answered here even
-	 * though a dialog may want it: Tab switches agent tabs on every surface in this fork, and a
-	 * dialog keeps its arrow keys for its own navigation.
-	 */
 	private handleExtensionDialogShortcut(data: string): { consume: boolean } | undefined {
-		if (!this.hasFocusedExtensionOverlay()) return undefined;
-		if (this.keybindings.matches(data, "app.tab.next")) this.handleTabCycle(1);
-		else if (this.keybindings.matches(data, "app.tab.previous")) this.handleTabCycle(-1);
-		else if (this.keybindings.matches(data, "app.tab.jump")) this.handleTabJumpShortcut();
-		else if (this.keybindings.matches(data, "app.tab.new")) void this.handleNewTab();
-		else if (this.keybindings.matches(data, "app.tab.close")) void this.handleCloseTab();
-		else if (this.keybindings.matches(data, "app.palette")) this.handlePaletteShortcut();
-		else if (this.keybindings.matches(data, "app.quit")) this.showQuitConfirm();
-		else return undefined;
-		return { consume: true };
+		return InteractiveMode.extensionUiFor(this).handleExtensionDialogShortcut(data);
 	}
-
-	/** Whether an extension dialog opened as an overlay currently owns the keyboard. */
 	private hasFocusedExtensionOverlay(): boolean {
-		for (const interactions of this.tabInteractions.values()) {
-			for (const interaction of interactions) {
-				if (interaction.overlay?.handle.isFocused()) return true;
-			}
-		}
-		return false;
+		return InteractiveMode.extensionUiFor(this).hasFocusedExtensionOverlay();
 	}
 
 	/**
@@ -3987,81 +3982,11 @@ export class InteractiveMode {
 		this.requestWidgetRender();
 		this.ui.requestRender();
 	}
-
-	/** Move the active tab's extension UI aside (widgets are kept alive, not disposed). */
 	private detachTabUi(tabId: string): void {
-		const leavingHeader = this.customHeader;
-		this.tabUi.set(tabId, {
-			widgetsAbove: this.extensionWidgetsAbove,
-			widgetsBelow: this.extensionWidgetsBelow,
-			footerFactory: this.customFooterFactory,
-			headerFactory: this.customHeaderFactory,
-			statuses: new Map(this.footerDataProvider.getExtensionStatuses()),
-			autocompleteWrappers: this.autocompleteProviderWrappers,
-			editorFactory: this.editorComponentFactory,
-			workingMessage: this.workingMessage,
-			workingVisible: this.workingVisible,
-			workingIndicatorOptions: this.workingIndicatorOptions,
-			hiddenThinkingLabel: this.hiddenThinkingLabel,
-			toolsExpanded: this.toolOutputExpanded,
-			// A notice queued by a background bind is not shown yet; keep it.
-			notices: this.tabUi.get(tabId)?.notices ?? [],
-		});
-		// Footer/header are rebuilt from their factories on re-attach, so dispose
-		// the outgoing instances instead of orphaning them.
-		this.customFooter?.dispose?.();
-		this.customHeader?.dispose?.();
-		// Reset live UI to a clean slate for the incoming tab.
-		this.extensionWidgetsAbove = new Map();
-		this.extensionWidgetsBelow = new Map();
-		this.customFooter = undefined;
-		this.customFooterFactory = undefined;
-		this.customHeader = undefined;
-		this.customHeaderFactory = undefined;
-		this.autocompleteProviderWrappers = [];
-		this.editorComponentFactory = undefined;
-		this.workingMessage = undefined;
-		this.workingVisible = true;
-		this.workingIndicatorOptions = undefined;
-		this.hiddenThinkingLabel = undefined;
-		this.toolOutputExpanded = false;
-		this.footerDataProvider.clearExtensionStatuses();
-		// The tab's pending dialogs park with it: the extension still waits for its answer, the
-		// dialog comes back with the tab, and the chip reports the wait meanwhile. An overlay of
-		// this tab stays in the stack, where its focus gate keeps it off the screen.
-		this.parkTabInteractions(tabId);
-		this.detachExtensionTerminalInputListeners(tabId);
-		this.defaultEditor.onExtensionShortcut = undefined;
-		this.restoreBuiltInChrome(leavingHeader);
+		InteractiveMode.extensionUiFor(this).detachTabUi(tabId);
 	}
-
-	/** Mount a tab's saved extension UI into the live fields. */
 	private attachTabUi(tabId: string): void {
-		const ui = this.tabUi.get(tabId);
-		this.extensionWidgetsAbove = ui?.widgetsAbove ?? new Map();
-		this.extensionWidgetsBelow = ui?.widgetsBelow ?? new Map();
-		this.customFooter = undefined;
-		this.customFooterFactory = undefined;
-		this.customHeader = undefined;
-		this.customHeaderFactory = undefined;
-		this.autocompleteProviderWrappers = ui?.autocompleteWrappers ?? [];
-		this.applyTabWorkingState(ui);
-		this.footerDataProvider.clearExtensionStatuses();
-		for (const [key, value] of ui?.statuses ?? []) this.footerDataProvider.setExtensionStatus(key, value);
-		this.setExtensionFooter(ui?.footerFactory);
-		this.setExtensionHeader(ui?.headerFactory);
-		this.setCustomEditorComponent(ui?.editorFactory);
-		this.setupAutocompleteProvider();
-		this.requestWidgetRender();
-		this.footer.invalidate();
-		// Notices an extension raised while this tab was not the focused one belong to
-		// its transcript, which is mounted by now.
-		if (ui && ui.notices.length > 0) {
-			const notices = ui.notices;
-			ui.notices = [];
-			for (const notice of notices) this.showExtensionNotify(notice.message, notice.type);
-		}
-		this.attachExtensionTerminalInputListeners(tabId);
+		InteractiveMode.extensionUiFor(this).attachTabUi(tabId);
 	}
 
 	/** Apply the streaming and thinking state a tab owned while it was not focused. */
@@ -4075,36 +4000,12 @@ export class InteractiveMode {
 		this.hiddenThinkingLabel = ui?.hiddenThinkingLabel;
 		this.toolOutputExpanded = ui?.toolsExpanded ?? false;
 	}
-
-	/** Remove any custom footer/header and show the built-ins (without disposing the tab's copies). */
-	private restoreBuiltInChrome(leavingHeader: (Component & { dispose?(): void }) | undefined): void {
-		this.footerContainer.clear();
-		this.footerContainer.addChild(this.footer);
-		if (this.builtInHeader && leavingHeader) {
-			const index = this.headerContainer.children.indexOf(leavingHeader);
-			if (index >= 0) {
-				if (isExpandable(this.builtInHeader)) this.builtInHeader.setExpanded(this.toolOutputExpanded);
-				this.headerContainer.children[index] = this.builtInHeader;
-			}
-		}
-		this.requestWidgetRender();
-	}
-
-	/** Dispose and forget a closed tab's extension UI and its pending dialogs. */
 	private disposeTabUi(tabId: string): void {
 		this.tabTranscript.delete(tabId);
 		this.inlineWidgetTabStates.delete(tabId);
 		this.widgetPanelTabStates.delete(tabId);
 		this.pendingResourcesBlocks.delete(tabId);
-		this.forgetTabInteractions(tabId);
-		// A close no longer runs this tab's own scoped reset, so its terminal-input listeners
-		// go with the rest of its UI here.
-		this.clearExtensionTerminalInputListeners(tabId);
-		const ui = this.tabUi.get(tabId);
-		if (!ui) return;
-		this.tabUi.delete(tabId);
-		for (const widget of ui.widgetsAbove.values()) widget.dispose?.();
-		for (const widget of ui.widgetsBelow.values()) widget.dispose?.();
+		InteractiveMode.extensionUiFor(this).disposeTabUi(tabId);
 	}
 
 	/**
@@ -4797,14 +4698,6 @@ export class InteractiveMode {
 		};
 	}
 
-	/**
-	 * Set extension status text in the footer.
-	 */
-	private setExtensionStatus(key: string, text: string | undefined): void {
-		this.footerDataProvider.setExtensionStatus(key, text);
-		this.ui.requestRender();
-	}
-
 	private setEditorWorkingStatusIndicator(indicator: StatusIndicator | undefined): boolean {
 		this.defaultEditor.setWorkingStatusIndicator(undefined);
 		if (!isWorkingStatusEditor(this.editor)) return false;
@@ -4902,112 +4795,19 @@ export class InteractiveMode {
 		this.windowedTranscript?.resetMeasurements();
 		this.ui.requestRender();
 	}
-
-	/**
-	 * Wrap a string-array widget in the container the dock paints. Shared by the
-	 * focused tab's setter and the record kept for a background tab.
-	 */
 	private buildExtensionWidget(lines: string[]): Component & { dispose?(): void } {
-		const container = new Container();
-		for (const line of lines.slice(0, InteractiveMode.MAX_WIDGET_LINES)) {
-			container.addChild(new Text(line, 1, 0));
-		}
-		if (lines.length > InteractiveMode.MAX_WIDGET_LINES) {
-			container.addChild(new Text(theme.fg("muted", "... (widget truncated)"), 1, 0));
-		}
-		return container;
+		return InteractiveMode.extensionUiFor(this).buildExtensionWidget(lines);
 	}
-
-	/**
-	 * Set an extension widget (string array or custom component).
-	 */
 	private setExtensionWidget(
 		key: string,
 		content: string[] | ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined,
 		options?: ExtensionWidgetOptions,
 	): void {
-		const placement = options?.placement ?? "aboveEditor";
-		const removeExisting = (map: Map<string, Component & { dispose?(): void }>) => {
-			const existing = map.get(key);
-			if (existing?.dispose) existing.dispose();
-			map.delete(key);
-		};
-
-		removeExisting(this.extensionWidgetsAbove);
-		removeExisting(this.extensionWidgetsBelow);
-
-		if (content === undefined) {
-			this.requestWidgetRender();
-			return;
-		}
-
-		let component: Component & { dispose?(): void };
-
-		if (Array.isArray(content)) {
-			component = this.buildExtensionWidget(content);
-		} else {
-			// Factory function - create component
-			component = content(this.ui, theme);
-		}
-
-		const targetMap = placement === "belowEditor" ? this.extensionWidgetsBelow : this.extensionWidgetsAbove;
-		targetMap.set(key, component);
-		this.requestWidgetRender();
+		InteractiveMode.extensionUiFor(this).setExtensionWidget(key, content, options);
 	}
-
-	private clearExtensionWidgets(): void {
-		for (const widget of this.extensionWidgetsAbove.values()) {
-			widget.dispose?.();
-		}
-		for (const widget of this.extensionWidgetsBelow.values()) {
-			widget.dispose?.();
-		}
-		this.extensionWidgetsAbove.clear();
-		this.extensionWidgetsBelow.clear();
-		this.requestWidgetRender();
-	}
-
 	private resetExtensionUI(tabId?: string): void {
-		// Extensions are going away, so the dialogs they wait on go with them: only an answered
-		// dialog resolves, and none of these will be. A session replacement invalidates one tab's
-		// extensions, so only that tab's dialogs are dropped; no tab given means every one.
-		const doomed =
-			tabId === undefined ? [...this.tabInteractions.values()].flat() : [...this.tabInteractionsFor(tabId)];
-		for (const interaction of doomed) {
-			interaction.overlay?.handle.hide();
-			this.unmountTabInteraction(interaction);
-			interaction.untrack?.();
-			try {
-				interaction.component?.dispose?.();
-			} catch {
-				/* A dialog that fails to dispose is already gone with its extension. */
-			}
-		}
-		if (tabId === undefined) this.tabInteractions.clear();
-		this.clearExtensionTerminalInputListeners(tabId);
-		this.setExtensionFooter(undefined);
-		this.setExtensionHeader(undefined);
-		this.clearExtensionWidgets();
-		this.footerDataProvider.clearExtensionStatuses();
-		this.footer.invalidate();
-		this.autocompleteProviderWrappers = [];
-		this.setCustomEditorComponent(undefined);
-		this.setupAutocompleteProvider();
-		this.defaultEditor.onExtensionShortcut = undefined;
-		this.updateTerminalTitle();
-		this.workingMessage = undefined;
-		this.workingVisible = true;
-		this.setWorkingIndicator();
-		if (this.activeStatusIndicator?.kind === "working") {
-			this.activeStatusIndicator.setMessage(
-				`${this.defaultWorkingMessage} (${keyText("app.interrupt")} to interrupt)`,
-			);
-		}
-		this.setHiddenThinkingLabel();
+		InteractiveMode.extensionUiFor(this).resetExtensionUI(tabId);
 	}
-
-	// Maximum total widget lines to prevent viewport overflow
-	private static readonly MAX_WIDGET_LINES = 10;
 
 	/**
 	 * Ask for a frame after the widget set changed. What the slots render, and
@@ -5055,16 +4855,8 @@ export class InteractiveMode {
 	private widgetPanelVisible(): boolean {
 		return this.widgetPanel.isOpen(this.ui.terminal.columns);
 	}
-
-	/**
-	 * Whether an extension interaction owns the composer on the tab on screen. Keys already
-	 * route to a mounted dialog through focus; this feeds the side panel, which must leave the
-	 * wheel to the chat while a pending interaction is up, matching the input the chat would get.
-	 * An overlay is not one of them: it takes the screen, which the overlay guards already cover.
-	 */
 	private extensionUiPending(): boolean {
-		if (this.activeSelectorToken !== undefined) return true;
-		return this.tabInteractionsFor(this.shownTabId()).some((interaction) => interaction.mounted);
+		return InteractiveMode.extensionUiFor(this).extensionUiPending();
 	}
 
 	/** Copy a finished side-panel selection and report it like any other copy. */
@@ -5298,151 +5090,26 @@ export class InteractiveMode {
 		}
 		this.rebuildChatFromMessages();
 	}
-
-	/**
-	 * Set a custom footer component, or restore the built-in footer.
-	 */
-	private setExtensionFooter(
-		factory:
-			| ((tui: TUI, thm: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
-			| undefined,
-	): void {
-		this.customFooterFactory = factory;
-		// Dispose existing custom footer
-		if (this.customFooter?.dispose) {
-			this.customFooter.dispose();
-		}
-
-		this.footerContainer.clear();
-		if (factory) {
-			// The dock row is gone, so its pointer state goes with it: a cue kept
-			// across the swap would light up cells the extension footer now paints.
-			this.footer.invalidate();
-			// Create and add custom footer, passing the data provider
-			this.customFooter = factory(this.ui, theme, this.footerDataProvider);
-			this.footerContainer.addChild(this.customFooter);
-		} else {
-			// Restore built-in footer
-			this.customFooter = undefined;
-			this.footerContainer.addChild(this.footer);
-		}
-
-		// Home shows no footer: park whatever was just installed.
-		if (this.homeSelection.active) this.parkFooterForHome(true);
-
-		this.ui.requestRender();
-	}
-
-	/**
-	 * Set a custom header component, or restore the built-in header.
-	 */
-	private setExtensionHeader(factory: ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined): void {
-		// Header may not be initialized yet if called during early initialization
-		if (!this.builtInHeader) {
-			return;
-		}
-
-		this.customHeaderFactory = factory;
-		// Dispose existing custom header
-		if (this.customHeader?.dispose) {
-			this.customHeader.dispose();
-		}
-
-		// Find the index of the current header in the header container
-		const currentHeader = this.customHeader || this.builtInHeader;
-		const index = this.headerContainer.children.indexOf(currentHeader);
-
-		if (factory) {
-			// Create and add custom header
-			this.customHeader = factory(this.ui, theme);
-			if (isExpandable(this.customHeader)) {
-				this.customHeader.setExpanded(this.toolOutputExpanded);
-			}
-			if (index !== -1) {
-				this.headerContainer.children[index] = this.customHeader;
-			} else {
-				// If not found (e.g. builtInHeader was never added), add at the top
-				this.headerContainer.children.unshift(this.customHeader);
-			}
-		} else {
-			// Restore built-in header
-			this.customHeader = undefined;
-			if (isExpandable(this.builtInHeader)) {
-				this.builtInHeader.setExpanded(this.toolOutputExpanded);
-			}
-			if (index !== -1) {
-				this.headerContainer.children[index] = this.builtInHeader;
-			}
-		}
-
-		this.ui.requestRender();
-	}
-
-	/**
-	 * Register a listener an extension asked for through `ctx.ui.onTerminalInput`. One
-	 * registered while its tab is off screen waits for `attachTabUi`, so it never answers
-	 * keys meant for the tab in front.
-	 */
 	private addExtensionTerminalInputListener(
 		tabId: string | undefined,
 		handler: (data: string) => { consume?: boolean; data?: string } | undefined,
 	): () => void {
-		const subscription: ExtensionTerminalInputSubscription = { tabId, handler };
-		this.extensionTerminalInputSubscriptions.add(subscription);
-		if (tabId === undefined || this.tabShowsOnScreen(tabId)) {
-			subscription.unsubscribe = this.ui.addInputListener(handler);
-		}
-		return () => {
-			subscription.unsubscribe?.();
-			this.extensionTerminalInputSubscriptions.delete(subscription);
-		};
+		return InteractiveMode.extensionUiFor(this).addExtensionTerminalInputListener(tabId, handler);
 	}
-
-	/** Register the terminal listeners a tab's extensions asked for while it was off screen. */
 	private attachExtensionTerminalInputListeners(tabId: string): void {
-		for (const subscription of this.extensionTerminalInputSubscriptions) {
-			if (subscription.tabId !== tabId) continue;
-			subscription.unsubscribe ??= this.ui.addInputListener(subscription.handler);
-		}
+		InteractiveMode.extensionUiFor(this).attachExtensionTerminalInputListeners(tabId);
 	}
-
-	/** Park a tab's terminal listeners; `attachTabUi` puts them back when the tab returns. */
 	private detachExtensionTerminalInputListeners(tabId: string): void {
-		for (const subscription of this.extensionTerminalInputSubscriptions) {
-			if (subscription.tabId !== tabId) continue;
-			subscription.unsubscribe?.();
-			subscription.unsubscribe = undefined;
-		}
+		InteractiveMode.extensionUiFor(this).detachExtensionTerminalInputListeners(tabId);
 	}
-
 	private rebindExtensionTerminalInputListeners(): void {
-		for (const subscription of this.extensionTerminalInputSubscriptions) {
-			if (!subscription.unsubscribe) continue;
-			subscription.unsubscribe();
-			subscription.unsubscribe = this.ui.addInputListener(subscription.handler);
-		}
+		InteractiveMode.extensionUiFor(this).rebindExtensionTerminalInputListeners();
 	}
-
-	/**
-	 * Route the app's chrome shortcuts to the renderer now in use. The reference `this.ui`
-	 * forwards every call to the current renderer, so a TUI-mode switch leaves the listener on
-	 * the stopped renderer and the new one needs its own; dropping the previous one keeps a
-	 * second registration from answering every key twice.
-	 */
 	private registerExtensionDialogShortcutListener(): void {
-		this.extensionDialogShortcutUnsubscribe?.();
-		this.extensionDialogShortcutUnsubscribe = this.ui.addInputListener((data) =>
-			this.handleExtensionDialogShortcut(data),
-		);
+		InteractiveMode.extensionUiFor(this).registerExtensionDialogShortcutListener();
 	}
-
-	/** Drop the terminal listeners of a replaced tab, or every one when no tab is given. */
 	private clearExtensionTerminalInputListeners(tabId?: string): void {
-		for (const subscription of [...this.extensionTerminalInputSubscriptions]) {
-			if (tabId !== undefined && subscription.tabId !== tabId) continue;
-			subscription.unsubscribe?.();
-			this.extensionTerminalInputSubscriptions.delete(subscription);
-		}
+		InteractiveMode.extensionUiFor(this).clearExtensionTerminalInputListeners(tabId);
 	}
 
 	/**
@@ -5462,71 +5129,8 @@ export class InteractiveMode {
 			},
 		};
 	}
-
-	/**
-	 * Extension UI context of the live surfaces.
-	 *
-	 * `ownerTabId` pins the dialogs it opens to one tab. Without it the context
-	 * belongs to whatever tab the user is looking at when a dialog is requested,
-	 * which is right for a context made on the spot (a shortcut handler) and wrong
-	 * for one a session keeps, so a session bind passes its own tab, as a getter:
-	 * a bind runs before its tab is registered, and the tab a later dialog belongs
-	 * to is only known when the dialog is requested.
-	 */
 	private createExtensionUIContext(ownerTabId?: string | (() => string | undefined)): ExtensionUIContext {
-		const ownerTab = () => (typeof ownerTabId === "function" ? ownerTabId() : ownerTabId);
-		const dialogTabId = () => ownerTab() ?? this.shownTabId();
-		return {
-			select: (title, options, opts) => this.showExtensionSelector(title, options, opts, dialogTabId()),
-			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts, dialogTabId()),
-			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts, dialogTabId()),
-			notify: (message, type) => this.showExtensionNotify(message, type),
-			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(dialogTabId(), handler),
-			setStatus: (key, text) => this.setExtensionStatus(key, text),
-			setWorkingMessage: (message) => {
-				this.workingMessage = message;
-				if (this.activeStatusIndicator?.kind === "working") {
-					this.activeStatusIndicator.setMessage(message ?? this.defaultWorkingMessage);
-				}
-			},
-			setWorkingVisible: (visible) => this.setWorkingVisible(visible),
-			setWorkingIndicator: (options) => this.setWorkingIndicator(options),
-			setHiddenThinkingLabel: (label) => this.setHiddenThinkingLabel(label),
-			setWidget: (key, content, options) => this.setExtensionWidget(key, content, options),
-			setFooter: (factory) => this.setExtensionFooter(factory),
-			setHeader: (factory) => this.setExtensionHeader(factory),
-			setTitle: (title) => this.ui.terminal.setTitle(title),
-			custom: (factory, options) => this.showExtensionCustom(factory, options, dialogTabId()),
-			pasteToEditor: (text) => this.editor.handleInput(`\x1b[200~${text}\x1b[201~`),
-			setEditorText: (text) => this.editor.setText(text),
-			getEditorText: () => this.editor.getExpandedText?.() ?? this.editor.getText(),
-			editor: (title, prefill) => this.showExtensionEditor(title, prefill, dialogTabId()),
-			addAutocompleteProvider: (factory) => {
-				this.autocompleteProviderWrappers.push(factory);
-				this.setupAutocompleteProvider();
-			},
-			setEditorComponent: (factory) => this.setCustomEditorComponent(factory),
-			getEditorComponent: () => this.editorComponentFactory,
-			get theme() {
-				return theme;
-			},
-			getAllThemes: () => getAvailableThemesWithPaths(),
-			getTheme: (name) => getThemeByName(name),
-			setTheme: (themeOrName) => {
-				if (themeOrName instanceof Theme) {
-					return this.themeController.setThemeInstance(themeOrName);
-				}
-				const result = this.themeController.setThemeName(themeOrName);
-				if (result.success) {
-					if (this.settingsManager.getTheme() !== themeOrName) {
-						this.settingsManager.setTheme(themeOrName);
-					}
-				}
-				return result;
-			},
-			getToolsExpanded: () => this.toolOutputExpanded,
-			setToolsExpanded: (expanded) => this.setToolsExpanded(expanded),
-		};
+		return InteractiveMode.extensionUiFor(this).createExtensionUIContext(ownerTabId);
 	}
 
 	/**
@@ -5546,229 +5150,33 @@ export class InteractiveMode {
 	private tabIdForRuntime(runtime: AgentSessionRuntime): string | undefined {
 		return this.tabManager?.list().find((tab) => tab.runtime === runtime)?.id;
 	}
-
-	/** True while `tabId` is the tab the UI is showing, rather than Home or another tab. */
-	private tabShowsOnScreen(tabId: string): boolean {
-		return !this.homeSelection.active && this.shownTabId() === tabId;
-	}
-
-	/** True while an extension interaction on the tab waits on a human. */
 	private tabWaitingForInput(tabId: string): boolean {
-		return (this.tabInteractions.get(tabId)?.length ?? 0) > 0;
+		return InteractiveMode.extensionUiFor(this).tabWaitingForInput(tabId);
 	}
-
-	/** The interactions pending on a tab, empty when it has none. */
-	private tabInteractionsFor(tabId: string | undefined): readonly TabInteraction[] {
-		return tabId === undefined ? [] : (this.tabInteractions.get(tabId) ?? []);
-	}
-
-	/**
-	 * Register an interaction on its tab. A context without a tab (a host that
-	 * supplies none) leaves it unscoped, which mounts it wherever the UI is.
-	 */
-	private trackTabInteraction(tabId: string | undefined, interaction: TabInteraction): void {
-		if (tabId === undefined) return;
-		interaction.tabId = tabId;
-		const pending = this.tabInteractions.get(tabId);
-		if (pending) pending.push(interaction);
-		else this.tabInteractions.set(tabId, [interaction]);
-		interaction.untrack = () => {
-			const list = this.tabInteractions.get(tabId);
-			if (!list) return;
-			const index = list.indexOf(interaction);
-			if (index >= 0) list.splice(index, 1);
-			if (list.length === 0) this.tabInteractions.delete(tabId);
-			this.syncWaitingInputCount();
-			this.ui.requestRender();
-		};
-		this.syncWaitingInputCount();
-	}
-
-	/** Broadcast the process-wide count of extension dialogs waiting on a human. */
-	private syncWaitingInputCount(): void {
-		let count = 0;
-		for (const pending of this.tabInteractions.values()) count += pending.length;
-		setWaitingForInputCount(count);
-	}
-
-	/**
-	 * Register an interaction and mount it when its tab is the one on screen. Any
-	 * other tab parks it: the tab bar reports the wait, and the dialog appears the
-	 * moment the user switches to it.
-	 */
-	private openTabInteraction(tabId: string | undefined, interaction: TabInteraction): void {
-		this.trackTabInteraction(tabId, interaction);
-		if (tabId === undefined || this.tabShowsOnScreen(tabId)) this.mountTabInteraction(tabId, interaction);
-		this.ui.requestRender();
-	}
-
-	/** Drop an answered interaction: park it, dispose it, stop reporting the wait. */
-	private closeTabInteraction(interaction: TabInteraction): void {
-		interaction.overlay?.handle.hide();
-		this.unmountTabInteraction(interaction);
-		interaction.untrack?.();
-		try {
-			interaction.component?.dispose?.();
-		} catch {
-			/* A dialog that fails to dispose has already answered. */
-		}
-		this.remountParkedTabInteraction(interaction.tabId);
-		this.ui.requestRender();
-	}
-
-	/**
-	 * Put the dialog a closing one displaced back on the slot. A tab holds one dialog at a
-	 * time, and the one it parked still waits for its own answer.
-	 */
-	private remountParkedTabInteraction(tabId: string | undefined): void {
-		// A parked dialog returns only while its own tab is the one on screen: an extension
-		// that closes its dialog from the background must not paint over the tab in front.
-		if (tabId === undefined || !this.tabShowsOnScreen(tabId)) return;
-		const previous = this.tabInteractionsFor(tabId)
-			.filter((interaction) => !interaction.mounted)
-			.at(-1);
-		if (previous) this.mountTabInteraction(tabId, previous);
-	}
-
-	/**
-	 * Show a slotted interaction on the editor slot. A dialog of the same tab that is
-	 * already on the slot is parked rather than disposed, and `remountParkedTabInteraction`
-	 * hands the slot back to it when this one closes.
-	 */
-	private mountTabInteraction(tabId: string | undefined, interaction: TabInteraction): void {
-		if (interaction.kind === "overlay" || interaction.mounted || !interaction.component) return;
-		for (const other of this.tabInteractionsFor(tabId)) {
-			if (other !== interaction) this.unmountTabInteraction(other);
-		}
-		// A custom component owns the composer from the moment it takes the slot, so the draft
-		// it displaces is read here. Read at request time instead, it would hold the draft of
-		// whichever tab was in front when a background tab asked for its dialog.
-		if (interaction.kind === "custom") interaction.savedDraft ??= this.editor.getText();
-		this.disposeActiveSelector();
-		this.editorContainer.clear();
-		this.editorContainer.addChild(interaction.component);
-		this.ui.setFocus(interaction.component);
-		interaction.mounted = true;
-		this.ui.requestRender();
-	}
-
-	/** Take a dialog off the editor slot, keeping its component and its promise alive. */
-	private unmountTabInteraction(interaction: TabInteraction): void {
-		if (!interaction.mounted) return;
-		interaction.mounted = false;
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
-	}
-
-	/**
-	 * Give a tab the dialogs that waited for it: mount its parked ones, then hand the
-	 * keyboard to its newest overlay, which the tab switch took focus from.
-	 */
 	private focusTabInteractions(tabId: string): void {
-		// Home covers every tab, so a dialog waits for its tab to be shown again.
-		if (!this.tabShowsOnScreen(tabId)) return;
-		const pending = this.tabInteractionsFor(tabId);
-		for (const interaction of pending) this.mountTabInteraction(tabId, interaction);
-		const overlay = pending.filter((interaction) => interaction.overlay).at(-1);
-		if (overlay?.overlay?.capturing) overlay.overlay.handle.focus();
+		InteractiveMode.extensionUiFor(this).focusTabInteractions(tabId);
 	}
-
-	/** Park a tab's dialogs when it loses focus. Overlays gate on focus instead of unmounting. */
 	private parkTabInteractions(tabId: string): void {
-		for (const interaction of this.tabInteractionsFor(tabId)) this.unmountTabInteraction(interaction);
+		InteractiveMode.extensionUiFor(this).parkTabInteractions(tabId);
 	}
-
-	/** Forget a closed tab's interactions, leaving their components to the extension that owns them. */
 	private forgetTabInteractions(tabId: string): void {
-		for (const interaction of this.tabInteractionsFor(tabId)) {
-			// An overlay has no slot to unmount, and only its handle drops the stack entry.
-			interaction.overlay?.handle.hide();
-			this.unmountTabInteraction(interaction);
-		}
-		this.tabInteractions.delete(tabId);
-		this.syncWaitingInputCount();
+		InteractiveMode.extensionUiFor(this).forgetTabInteractions(tabId);
 	}
-
-	/**
-	 * Gate an extension overlay on its tab being the one on screen.
-	 *
-	 * The overlay keeps its place in the TUI's overlay stack, so the extension stays
-	 * in control of it: the handle it was given still hides and shows it, and a
-	 * collapse it applied survives the gate. Nothing pops the stack for a tab switch:
-	 * a pop takes whatever sits on top, which may belong to another surface.
-	 */
-	private scopeOverlayToTab(options: OverlayOptions, tabId: string | undefined): OverlayOptions {
-		if (tabId === undefined) return options;
-		const visible = options.visible;
-		return {
-			...options,
-			visible: (termWidth, termHeight) =>
-				this.tabShowsOnScreen(tabId) && (visible ? visible(termWidth, termHeight) : true),
-		};
-	}
-
-	/**
-	 * Show a selector for extensions.
-	 */
 	private showExtensionSelector(
 		title: string,
 		options: string[],
 		opts?: ExtensionUIDialogOptions & ExtensionSelectorOptions,
 		tabId?: string,
 	): Promise<string | undefined> {
-		const interaction: TabInteraction = { kind: "selector", mounted: false };
-		return new Promise((resolve) => {
-			if (opts?.signal?.aborted) {
-				resolve(undefined);
-				return;
-			}
-
-			const finish = (option: string | undefined) => {
-				opts?.signal?.removeEventListener("abort", onAbort);
-				this.closeTabInteraction(interaction);
-				resolve(option);
-			};
-			const onAbort = () => finish(undefined);
-			opts?.signal?.addEventListener("abort", onAbort, { once: true });
-
-			interaction.component = new ExtensionSelectorComponent(
-				title,
-				options,
-				(option) => finish(option),
-				() => finish(undefined),
-				{
-					tui: this.ui,
-					timeout: opts?.timeout,
-					keyShortcuts: opts?.keyShortcuts,
-					onToggleToolsExpanded: () => this.toggleToolOutputExpansion(),
-				},
-			);
-
-			this.openTabInteraction(tabId, interaction);
-		});
+		return InteractiveMode.extensionUiFor(this).showExtensionSelector(title, options, opts, tabId);
 	}
-
-	/**
-	 * Show a confirmation dialog for extensions.
-	 */
 	private async showExtensionConfirm(
 		title: string,
 		message: string,
 		opts?: ExtensionUIDialogOptions,
 		tabId?: string,
 	): Promise<boolean> {
-		const result = await this.showExtensionSelector(
-			`${title}\n${message}`,
-			["Yes", "No"],
-			{
-				...opts,
-				keyShortcuts: { y: "Yes", n: "No" },
-			},
-			tabId,
-		);
-		return result === "Yes";
+		return InteractiveMode.extensionUiFor(this).showExtensionConfirm(title, message, opts, tabId);
 	}
 
 	private async promptForMissingSessionCwd(error: MissingSessionCwdError): Promise<string | undefined> {
@@ -5778,184 +5186,20 @@ export class InteractiveMode {
 		);
 		return confirmed ? error.issue.fallbackCwd : undefined;
 	}
-
-	/**
-	 * Show a text input for extensions.
-	 */
 	private showExtensionInput(
 		title: string,
 		placeholder?: string,
 		opts?: ExtensionUIDialogOptions,
 		tabId?: string,
 	): Promise<string | undefined> {
-		const interaction: TabInteraction = { kind: "input", mounted: false };
-		return new Promise((resolve) => {
-			if (opts?.signal?.aborted) {
-				resolve(undefined);
-				return;
-			}
-
-			const finish = (value: string | undefined) => {
-				opts?.signal?.removeEventListener("abort", onAbort);
-				this.closeTabInteraction(interaction);
-				resolve(value);
-			};
-			const onAbort = () => finish(undefined);
-			opts?.signal?.addEventListener("abort", onAbort, { once: true });
-
-			interaction.component = new ExtensionInputComponent(
-				title,
-				placeholder,
-				(value) => finish(value),
-				() => finish(undefined),
-				{ tui: this.ui, timeout: opts?.timeout },
-			);
-
-			this.openTabInteraction(tabId, interaction);
-		});
+		return InteractiveMode.extensionUiFor(this).showExtensionInput(title, placeholder, opts, tabId);
 	}
-
-	/**
-	 * Show a multi-line editor for extensions (with Ctrl+G support).
-	 */
 	private showExtensionEditor(title: string, prefill?: string, tabId?: string): Promise<string | undefined> {
-		const interaction: TabInteraction = { kind: "editor", mounted: false };
-		return new Promise((resolve) => {
-			interaction.component = new ExtensionEditorComponent(
-				this.ui,
-				this.keybindings,
-				title,
-				prefill,
-				(value) => {
-					this.closeTabInteraction(interaction);
-					resolve(value);
-				},
-				() => {
-					this.closeTabInteraction(interaction);
-					resolve(undefined);
-				},
-				undefined,
-				this.settingsManager.getExternalEditorCommand(),
-			);
-
-			this.openTabInteraction(tabId, interaction);
-		});
+		return InteractiveMode.extensionUiFor(this).showExtensionEditor(title, prefill, tabId);
 	}
-
-	/**
-	 * Set a custom editor component from an extension.
-	 * Pass undefined to restore the default editor.
-	 */
-	private setCustomEditorComponent(factory: EditorFactory | undefined): void {
-		this.editorComponentFactory = factory;
-
-		// Save text from current editor before switching
-		const currentText = this.editor.getText();
-
-		this.disposeActiveSelector();
-		this.editorContainer.clear();
-
-		if (factory) {
-			// Create the custom editor with tui, theme, and keybindings
-			const newEditor = factory(this.ui, getEditorTheme(), this.keybindings);
-
-			// Wire up callbacks from the default editor
-			newEditor.onSubmit = this.defaultEditor.onSubmit;
-			newEditor.onChange = this.defaultEditor.onChange;
-
-			// Copy text from previous editor
-			newEditor.setText(currentText);
-
-			// Copy appearance settings if supported
-			if (newEditor.borderColor !== undefined) {
-				newEditor.borderColor = this.defaultEditor.borderColor;
-			}
-			if (newEditor.setPaddingX !== undefined) {
-				newEditor.setPaddingX(this.defaultEditor.getPaddingX());
-			}
-			if (newEditor.setAutocompleteMaxVisible !== undefined) {
-				newEditor.setAutocompleteMaxVisible(this.defaultEditor.getAutocompleteMaxVisible());
-			}
-
-			// Set autocomplete if supported
-			if (newEditor.setAutocompleteProvider && this.autocompleteProvider) {
-				newEditor.setAutocompleteProvider(this.autocompleteProvider);
-			}
-
-			// If extending CustomEditor, copy app-level handlers
-			// Use duck typing since instanceof fails across jiti module boundaries
-			const customEditor = newEditor as unknown as Record<string, unknown>;
-			if ("actionHandlers" in customEditor && customEditor.actionHandlers instanceof Map) {
-				if (!customEditor.onEscape) {
-					customEditor.onEscape = () => this.defaultEditor.onEscape?.();
-				}
-				if (!customEditor.onCtrlD) {
-					customEditor.onCtrlD = () => this.defaultEditor.onCtrlD?.();
-				}
-				if (!customEditor.onPasteImage) {
-					customEditor.onPasteImage = () => this.defaultEditor.onPasteImage?.();
-				}
-				if (!customEditor.onExtensionShortcut) {
-					customEditor.onExtensionShortcut = (data: string) => this.defaultEditor.onExtensionShortcut?.(data);
-				}
-				if (!customEditor.getPlaceholder) {
-					customEditor.getPlaceholder = () => this.defaultEditor.getPlaceholder?.();
-				}
-				if (!customEditor.onVimKey) {
-					customEditor.onVimKey = (data: string) => this.defaultEditor.onVimKey?.(data) ?? false;
-				}
-				if (!customEditor.onVimEnterArmKey) {
-					customEditor.onVimEnterArmKey = (data: string) => this.defaultEditor.onVimEnterArmKey?.(data) ?? false;
-				}
-				if (!customEditor.onWidgetPanelKey) {
-					customEditor.onWidgetPanelKey = (data: string) => this.defaultEditor.onWidgetPanelKey?.(data) ?? false;
-				}
-				if (!customEditor.onQueueEditArmKey) {
-					customEditor.onQueueEditArmKey = (data: string) => this.defaultEditor.onQueueEditArmKey?.(data) ?? false;
-				}
-				// Copy action handlers (clear, suspend, model switching, etc.)
-				for (const [action, handler] of this.defaultEditor.actionHandlers) {
-					customEditor.actionHandlers.set(action, handler);
-				}
-			}
-
-			this.editor = newEditor;
-		} else {
-			// Restore default editor with text from custom editor
-			this.defaultEditor.setText(currentText);
-			this.editor = this.defaultEditor;
-		}
-
-		this.editorContainer.addChild(this.editor as Component);
-		// Home paints no working chrome; restoreStatusAfterHome repaints on leave.
-		if (this.activeStatusIndicator && !this.homeSelection.active) {
-			this.statusContainer.clear();
-			this.activeWorkingIndicatorEmbedded = this.setEditorWorkingStatusIndicator(this.activeStatusIndicator);
-			if (!this.activeWorkingIndicatorEmbedded) {
-				this.statusContainer.addChild(this.activeStatusIndicator);
-			}
-		}
-		this.ui.setFocus(this.editor as Component);
-		this.ui.requestRender();
-	}
-
-	/**
-	 * Show a notification for extensions.
-	 */
 	private showExtensionNotify(message: string, type?: "info" | "warning" | "error"): void {
-		if (type === "error") {
-			this.showError(message);
-		} else if (type === "warning") {
-			this.showWarning(message);
-		} else {
-			this.showStatus(message);
-		}
+		InteractiveMode.extensionUiFor(this).showExtensionNotify(message, type);
 	}
-
-	/**
-	 * Show a custom component with keyboard focus. Overlay mode renders on top of
-	 * existing content; either form belongs to `tabId`, so it follows that tab.
-	 */
 	private async showExtensionCustom<T>(
 		factory: (
 			tui: TUI,
@@ -5970,80 +5214,7 @@ export class InteractiveMode {
 		},
 		tabId?: string,
 	): Promise<T> {
-		const isOverlay = options?.overlay ?? false;
-		const interaction: TabInteraction = { kind: isOverlay ? "overlay" : "custom", mounted: false };
-		this.trackTabInteraction(tabId, interaction);
-
-		// A custom component owns the composer while it is on the slot, so the draft it displaced
-		// goes back when it closes. `mountTabInteraction` reads that draft, so a dialog that waits
-		// for a background tab never records another tab's.
-		const restoreDraft = () => {
-			if (isOverlay || !interaction.mounted || interaction.savedDraft === undefined) return;
-			this.editor.setText(interaction.savedDraft);
-		};
-
-		return new Promise((resolve, reject) => {
-			let component: Component & { dispose?(): void };
-			let closed = false;
-
-			const close = (result: T) => {
-				if (closed) return;
-				closed = true;
-				// The draft goes back before the slot: `unmountTabInteraction` is what hands focus
-				// back to an overlay this component displaced.
-				restoreDraft();
-				interaction.overlay?.handle.hide();
-				this.unmountTabInteraction(interaction);
-				interaction.untrack?.();
-				this.remountParkedTabInteraction(interaction.tabId);
-				this.ui.requestRender();
-				resolve(result);
-				try {
-					component?.dispose?.();
-				} catch {
-					/* ignore dispose errors */
-				}
-			};
-
-			Promise.resolve(factory(this.ui, theme, this.keybindings, close))
-				.then((c) => {
-					if (closed) return;
-					component = c;
-					interaction.component = component;
-					if (isOverlay) {
-						// Resolve overlay options - can be static or dynamic function
-						const resolveOptions = (): OverlayOptions | undefined => {
-							if (options?.overlayOptions) {
-								const opts =
-									typeof options.overlayOptions === "function"
-										? options.overlayOptions()
-										: options.overlayOptions;
-								return opts;
-							}
-							// Fallback: use component's width property if available
-							const w = (component as { width?: number }).width;
-							return w ? { width: w } : undefined;
-						};
-						const overlayOptions = this.scopeOverlayToTab(resolveOptions() ?? {}, tabId);
-						const handle = this.ui.showOverlay(component, overlayOptions);
-						interaction.overlay = { handle, capturing: overlayOptions.nonCapturing !== true };
-						// Expose handle to caller for visibility control
-						options?.onHandle?.(handle);
-						this.ui.requestRender();
-					} else {
-						if (tabId === undefined || this.tabShowsOnScreen(tabId)) this.mountTabInteraction(tabId, interaction);
-						this.ui.requestRender();
-					}
-				})
-				.catch((err) => {
-					if (closed) return;
-					closed = true;
-					restoreDraft();
-					this.unmountTabInteraction(interaction);
-					interaction.untrack?.();
-					reject(err);
-				});
-		});
+		return InteractiveMode.extensionUiFor(this).showExtensionCustom(factory, options, tabId);
 	}
 
 	/**
@@ -11679,9 +10850,7 @@ export class InteractiveMode {
 		}
 		this.clearStatusIndicator();
 		this.themeController.disableAutoSync();
-		this.clearExtensionTerminalInputListeners();
-		this.extensionDialogShortcutUnsubscribe?.();
-		this.extensionDialogShortcutUnsubscribe = undefined;
+		InteractiveMode.extensionUiFor(this).stop();
 		this.footer.dispose();
 		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {

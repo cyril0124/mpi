@@ -113,7 +113,11 @@ or adds, on every surface, is collected in [Keybindings](keybindings.md).
 
 Each one is a potential conflict point, so edits are kept down to the wiring that calls into `mixcode/` code:
 
-- `packages/coding-agent/src/modes/interactive/interactive-mode.ts`: thin wiring for the fork-owned `TabController`, plus the process-wide waiting-for-input count and delayed `/mark-done` broadcast
+- `packages/coding-agent/src/modes/interactive/interactive-mode.ts`: wiring for the fork-owned
+  `TabController` and `ExtensionUiController`. Session binding, Home, transcript rendering, core
+  status rendering, and the delayed `/mark-done` broadcast remain in the host. The extension UI
+  controller owns per-tab dialogs, chrome, widgets, custom editors, input subscriptions, and the
+  process-wide waiting-for-input count.
 - `packages/coding-agent/src/config.ts`: `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are pinned to the `PI_*` names instead of following `piConfig.name`
 - `packages/coding-agent/src/modes/interactive/components/status-indicator.ts`: summary model label and reason-specific message colors
 - `packages/coding-agent/src/modes/interactive/components/session-selector.ts`

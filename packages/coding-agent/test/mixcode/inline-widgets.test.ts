@@ -1,5 +1,5 @@
 import { type Component, Container, type ScrollView, Text, type TuiAltScreen } from "@earendil-works/pi-tui";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import type { MixCodeSettings } from "../../src/core/mixcode/mixcode-settings.ts";
 import { createChatViewport } from "../../src/modes/interactive/chat-viewport.ts";
@@ -70,6 +70,7 @@ type InlineWiringContext = {
 	handleWidgetsCommand(this: InlineWiringContext, args: string): void;
 	inlineViewportRows(this: InlineWiringContext): number | undefined;
 	buildDocumentChildren(this: InlineWiringContext): void;
+	applyFullscreenScrollbarSetting(this: InlineWiringContext): void;
 	leaveHome(this: InlineWiringContext): void;
 };
 const proto = InteractiveMode.prototype as unknown as InlineWiringContext;
@@ -598,10 +599,13 @@ describe("inline widget tab state", () => {
 		const chat = new Container();
 		const inlineWidgets = new Container();
 		const documentContainer = new Container();
+		const setScrollbar = vi.fn();
 		// Home replaces the document's children while it owns the surface.
 		documentContainer.addChild(new Container());
 		const context = {
 			homeSelection: { active: true },
+			settingsManager: { getFullscreenScrollbar: () => "always" },
+			transcriptScrollView: { setScrollbar },
 			homeView: { resetCapture: () => {} },
 			setEditorText: () => {},
 			updateEditorBorderColor: () => {},
@@ -616,9 +620,13 @@ describe("inline widget tab state", () => {
 			windowedTranscript: { invalidate: () => {}, resetMeasurements: () => {} },
 		} as unknown as InlineWiringContext;
 		context.buildDocumentChildren = () => proto.buildDocumentChildren.call(context);
+		context.applyFullscreenScrollbarSetting = () => proto.applyFullscreenScrollbarSetting.call(context);
+		context.applyFullscreenScrollbarSetting();
+		expect(setScrollbar).toHaveBeenLastCalledWith("hidden");
 
 		proto.leaveHome.call(context);
 
+		expect(setScrollbar).toHaveBeenLastCalledWith("always");
 		// The transcript's blocks are this container's children, so the block has to be
 		// back, and last, or the tail stops rendering after a visit to Home.
 		expect(documentContainer.children).toEqual([header, loaded, chat, inlineWidgets]);

@@ -352,6 +352,10 @@ point `## [Unreleased]` at the new tag.
   does not; this fork does not read the value itself.
 ### Changed
 
+- The fork-owned `ExtensionUiController` owns per-tab extension chrome, dialogs, widgets,
+  custom editors, and terminal-input subscriptions. `InteractiveMode` supplies live session
+  settings, editor surfaces, Home visibility, and status callbacks, keeping the extension UI
+  lifecycle in one module.
 - `InteractiveMode` now delegates tab-manager construction, shared-layout lifecycle, tab session actions, resume routing, and layout publication to the fork-owned `TabController`. Home rendering, transcript caching, extension binding, and runtime UI rebinds remain in the host so this step changes the merge boundary without changing tab behavior.
 - `Escape` interrupts a running turn in two steps: the first press arms a 1 s window and shows
   `<interrupt key> again: stop`, and the second press inside that window interrupts. A turn that has
@@ -515,6 +519,8 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The inline-widget Home-return test restores its scrollbar-setting dependency and checks that
+  leaving Home restores the configured scrollbar and the widget block at the transcript tail.
 - A queued host command no longer consumes the composer draft of the tab that queued it.
   `runQueuedCommand` mounts the owning tab, which loads that tab's parked draft into the shared
   composer, and then submits the command; the command's branch clears the composer, so a draft typed
