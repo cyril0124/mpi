@@ -233,7 +233,7 @@ function singleModeThemeItems(availableThemes: string[], currentTheme: string): 
 		...system,
 		{
 			value: AUTOMATIC_THEME_VALUE,
-			label: "  automatic",
+			label: "  Automatic",
 			description: "Use separate themes for light and dark terminal appearance",
 		},
 		...items,

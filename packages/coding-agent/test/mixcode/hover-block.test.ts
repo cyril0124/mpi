@@ -115,7 +115,7 @@ describe("block hover", () => {
 		expect(hover.dispatch(mouse("move", 2, 1))).toMatchObject({ handled: true, render: true });
 		const painted = hover.paint(["gap", "card"], 4);
 		expect(painted[0]).toBe("gap");
-		expect(painted[1]).toContain("\x1b[48;2;58;58;74m");
+		expect(painted[1]).toContain(hoverBackgroundOpen());
 		expect(hover.dispatch(mouse("click", 2, 1))).toMatchObject({ handled: true });
 		expect(clicks).toBe(1);
 	});

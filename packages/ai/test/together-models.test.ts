@@ -15,7 +15,7 @@ function generateDeepSeekV4Model(): Model<"openai-completions"> {
 		const preloadPath = join(root, "catalog.mjs");
 		const outputPath = join(root, "output");
 		const catalog = {
-			together: { models: { "deepseek-ai/DeepSeek-V4-Pro": { tool_call: true, reasoning: true } } },
+			together: { models: { "deepseek-ai/DeepSeek-V4-Pro-0813": { tool_call: true, reasoning: true } } },
 		};
 		writeFileSync(
 			preloadPath,
@@ -45,7 +45,7 @@ function generateDeepSeekV4Model(): Model<"openai-completions"> {
 		const models: Record<string, Model<"openai-completions">> = JSON.parse(
 			readFileSync(join(outputPath, "providers/together.json"), "utf8"),
 		);
-		return models["deepseek-ai/DeepSeek-V4-Pro"];
+		return models["deepseek-ai/DeepSeek-V4-Pro-0813"];
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
@@ -107,6 +107,8 @@ describe("Together models", () => {
 			thinkingFormat: "openai",
 		});
 
+		// Together renamed the model to deepseek-ai/DeepSeek-V4-Pro-0813; the baseline
+		// catalog keeps the rename out of the fixture while the effort mapping stays tested.
 		const deepSeekV4 = generateDeepSeekV4Model();
 		expect(deepSeekV4.thinkingLevelMap).toEqual({
 			minimal: null,
