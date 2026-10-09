@@ -7,6 +7,7 @@
  * follow-up rounds.
  */
 
+import type { PromptDisposition } from "../../agent-session.ts";
 import {
 	attachFollowUpCommand,
 	FOLLOW_UP_BATCH_FLAG,
@@ -40,8 +41,8 @@ export type RemovedQueuedMessage = ReturnType<FollowUpSession["removeQueuedMessa
 export interface FollowUpHost {
 	/** Session to dispatch against; re-read each turn so a rebound session is picked up. */
 	readonly session: FollowUpSession;
-	/** Run one idle prompt turn; preflightResult reports whether text was delivered. */
-	promptTurn(text: string, preflightResult: (accepted: boolean) => void): Promise<void>;
+	/** Run one idle prompt turn; preflightResult reports the prompt disposition. */
+	promptTurn(text: string, preflightResult: (disposition: PromptDisposition) => void): Promise<void>;
 	/** Execute a queued command text host-side (resubmit through the input pipeline). */
 	runQueuedCommand(text: string): Promise<void>;
 	/** True when a queued slash/skill/template text should run host-side. */
@@ -236,7 +237,7 @@ export function drainFollowUps(state: FollowUpQueueState, host: FollowUpHost): P
 							return;
 						}
 						await host.promptTurn(batch.map((entry) => entry.text).join("\n\n"), (value) => {
-							accepted = value;
+							accepted = value !== "handled";
 							signalRegistered();
 						});
 						await session.waitForIdle();

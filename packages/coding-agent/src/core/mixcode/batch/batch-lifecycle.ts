@@ -72,6 +72,8 @@ export async function createBatchTab<TTab extends BatchLifecycleTab>(
  * built below, so a drain keeps dispatching into the owning tab even after the
  * visible focus moved elsewhere.
  */
+import type { PromptDisposition } from "../../agent-session.ts";
+
 export interface OwnerQueuePort {
 	/** Session that owns the queue, or undefined once its tab is gone. */
 	ownerSession(tabId: string): AgentSession | undefined;
@@ -80,7 +82,7 @@ export interface OwnerQueuePort {
 	/** True when the text must run host-side instead of as a model turn. */
 	isOwnerCommandText(tabId: string, text: string): boolean;
 	/** Run one idle prompt turn on the owner session. */
-	promptOwner(tabId: string, text: string, preflightResult: (accepted: boolean) => void): Promise<void>;
+	promptOwner(tabId: string, text: string, preflightResult: (disposition: PromptDisposition) => void): Promise<void>;
 	/** True while a manual compaction was claimed but has not settled. */
 	isCompactionClaimed(): boolean;
 	/** Queue display changed; refresh and re-render. */

@@ -36,7 +36,7 @@ function createEventHost(prototype = false) {
 		session,
 		promptTurn: async (text, accepted) => {
 			trace.push(`prompt:${text}`);
-			accepted(true);
+			accepted("started");
 		},
 		runQueuedCommand: async () => {},
 		isQueuedCommandText: () => false,

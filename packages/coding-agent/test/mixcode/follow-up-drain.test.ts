@@ -92,7 +92,7 @@ function makeHost(session: FakeSession, overrides: Partial<FollowUpHost> = {}): 
 		},
 		promptTurn: (text, preflightResult) => {
 			prompts.push({ text, accepted: undefined });
-			return Promise.resolve(preflightResult(true));
+			return Promise.resolve(preflightResult("started"));
 		},
 		runQueuedCommand: (text) => {
 			commands.push(text);
@@ -143,7 +143,7 @@ describe("follow-up drain", () => {
 		const host = makeHost(makeSession(), {
 			// Preflight rejected: text was never delivered.
 			promptTurn: (_text, preflightResult) => {
-				preflightResult(false);
+				preflightResult("handled");
 				return Promise.reject(new Error("turn lock conflict"));
 			},
 		});
@@ -167,7 +167,7 @@ describe("follow-up drain", () => {
 			round += 1;
 			if (round === 1) {
 				// Delivered, then the run fails after settling.
-				preflightResult(true);
+				preflightResult("started");
 				state.followUpRunFailed = true;
 			}
 			return Promise.resolve();
