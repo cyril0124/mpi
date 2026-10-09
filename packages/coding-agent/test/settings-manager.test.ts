@@ -478,7 +478,7 @@ describe("SettingsManager", () => {
 	});
 
 	describe("TUI mode", () => {
-		it("defaults to fullscreen and persists an explicit mode", async () => {
+		it("defaults to fullscreen and persists regular mode", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 
 			expect(manager.getTuiMode()).toBe("fullscreen");

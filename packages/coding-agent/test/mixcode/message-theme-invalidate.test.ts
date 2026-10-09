@@ -25,7 +25,7 @@ function message(): UserMessageComponent {
 	// Inline code is used here because the surrounding box resamples its background on every
 	// render, which would mask a stale Markdown cache. The inline code span retains whatever
 	// color the Markdown body produced when it last rendered.
-	return new UserMessageComponent("hello `world`", getMarkdownTheme(), 1, [], undefined, "both");
+	return new UserMessageComponent("hello `world`", getMarkdownTheme(), 1, [], "both");
 }
 
 describe("message block theme invalidation", () => {

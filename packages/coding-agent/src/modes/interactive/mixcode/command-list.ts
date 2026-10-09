@@ -43,6 +43,7 @@ type LoginProviderCompletionOption = {
 	id: string;
 	name: string;
 	authTypes: AuthSelectorProvider["authType"][];
+	subscription?: boolean;
 };
 
 const AUTH_TYPE_ORDER = { oauth: 0, api_key: 1 } satisfies Record<AuthSelectorProvider["authType"], number>;
@@ -133,6 +134,7 @@ function getLoginProviderCompletionOptions(
 			id: provider.id,
 			name: provider.name,
 			authTypes: [provider.authType],
+			subscription: provider.subscription,
 		});
 	}
 	return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
@@ -146,7 +148,7 @@ function getLoginProviderSearchText(provider: LoginProviderCompletionOption): st
 }
 
 function formatLoginProviderCompletionDescription(provider: LoginProviderCompletionOption): string {
-	const authTypes = provider.authTypes.map(formatAuthSelectorProviderType).join("/");
+	const authTypes = provider.authTypes.map((t) => formatAuthSelectorProviderType(t, provider.subscription)).join("/");
 	return provider.name === provider.id ? authTypes : `${provider.name} · ${authTypes}`;
 }
 

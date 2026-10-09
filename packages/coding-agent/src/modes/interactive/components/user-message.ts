@@ -1,8 +1,7 @@
-import { Box, Container, Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
+import { Container, Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { getActiveThemeName, getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
-import { ClockedMessageBody, formatMessageClock } from "./mixcode/message-clock.ts";
 
 /**
  * Lines a message block may hold before it is split into several blocks.
@@ -68,8 +67,6 @@ export class UserMessageComponent extends Container {
 	private markdownTheme: MarkdownTheme;
 	private outputPad: number;
 	private markdownTransformers: readonly MarkdownTransformer[];
-	/** Send time of the message, drawn at the right end of the block's first row. */
-	private timestamp: number | undefined;
 	/** Which ends of the message the shell prompt zone markers belong to. */
 	private readonly marks: UserMessageZoneMarks;
 	/** Last rendered block, reused while the width and the content are unchanged. */
@@ -84,7 +81,6 @@ export class UserMessageComponent extends Container {
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
-		timestamp?: number,
 		marks: UserMessageZoneMarks = "both",
 	) {
 		super();
@@ -93,7 +89,6 @@ export class UserMessageComponent extends Container {
 		this.markdownTheme = markdownTheme;
 		this.outputPad = outputPad;
 		this.markdownTransformers = markdownTransformers;
-		this.timestamp = timestamp;
 		this.rebuild();
 	}
 
@@ -131,23 +126,25 @@ export class UserMessageComponent extends Container {
 		this.rebuildPending = false;
 		this.renderedLines = undefined;
 		this.clear();
-		const contentBox = new Box(this.outputPad, 1, (content: string) => theme.bg("userMessageBg", content));
-		const body = new Markdown(
-			this.text,
-			0,
-			0,
-			this.markdownTheme,
-			{
-				color: (content: string) => theme.fg("userMessageText", content),
-			},
-			{
-				preserveOrderedListMarkers: true,
-				preserveBackslashEscapes: true,
-				transform: createMarkdownTransform("user", false, this.markdownTransformers),
-			},
+		// The Markdown pads and colors its own background: a Box around it would keep a second full-width copy of every
+		// line, with identical output.
+		this.addChild(
+			new Markdown(
+				this.text,
+				this.outputPad,
+				1,
+				this.markdownTheme,
+				{
+					color: (content: string) => theme.fg("userMessageText", content),
+					bgColor: (content: string) => theme.bg("userMessageBg", content),
+				},
+				{
+					preserveOrderedListMarkers: true,
+					preserveBackslashEscapes: true,
+					transform: createMarkdownTransform("user", false, this.markdownTransformers),
+				},
+			),
 		);
-		contentBox.addChild(new ClockedMessageBody(body, formatMessageClock(this.timestamp)));
-		this.addChild(contentBox);
 	}
 
 	override render(width: number): string[] {
