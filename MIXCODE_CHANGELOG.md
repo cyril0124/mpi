@@ -519,6 +519,9 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The theme JSON schema resolves `panelBg` through the shared `colorValue` definition, so JSON
+  schema validators can check themes containing panel backgrounds.
+
 - `/reload` leaves the other tabs' extension dialogs alone. Only the mounted tab's session reloads
   (`this.session.reload(...)`), but the command first called `resetExtensionUI()` with no tab id, which
   takes the "every tab" branch: it hid and disposed every tab's interactions and dropped every tab's

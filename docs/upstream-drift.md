@@ -139,7 +139,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`, `theme/theme-json.ts`,
   `theme/theme-schema.json`: the `panelBg` background used to fill framed cards, with
   `withThemeColorFallbacks` defaulting it to `toolPendingBg`, which leaves the built-in theme files
-  unmodified
+  unmodified; the JSON schema validates `panelBg` through the shared `#/$defs/colorValue` definition
 - `packages/coding-agent/test/extensions-runner.test.ts`
 - `packages/coding-agent/test/interactive-tui.test.ts`: the copy confirmation now asserts a toast
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: underlines the jump-to-end label while the pointer is over it

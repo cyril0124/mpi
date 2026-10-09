@@ -131,7 +131,7 @@
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调与选中选项转发给备用屏幕
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`、`theme/theme-json.ts`、
   `theme/theme-schema.json`：带框卡片填充用的 `panelBg` 背景色，由 `withThemeColorFallbacks` 默认为
-  `toolPendingBg`，因此内置主题文件不需要修改
+  `toolPendingBg`，因此内置主题文件不需要修改；JSON schema 通过共用的 `#/$defs/colorValue` 定义校验 `panelBg`
 - `packages/coding-agent/test/extensions-runner.test.ts`
 - `packages/coding-agent/test/interactive-tui.test.ts`：复制确认改为断言 toast
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：指针位于跳到底部标签上时加下划线

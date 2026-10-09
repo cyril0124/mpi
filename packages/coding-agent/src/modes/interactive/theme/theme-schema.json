@@ -153,7 +153,7 @@
 					"description": "Transcript search match background and current-match text (falls back to selectedBg when omitted)"
 				},
 				"panelBg": {
-					"$ref": "#/definitions/ColorValue"
+					"$ref": "#/$defs/colorValue"
 				},
 				"searchMatchText": {
 					"$ref": "#/$defs/colorValue",
