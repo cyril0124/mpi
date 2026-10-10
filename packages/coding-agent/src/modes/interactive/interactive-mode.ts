@@ -5907,6 +5907,13 @@ export class InteractiveMode {
 				return;
 			}
 
+			// Run Home commands through submitHomeCommand so the tab's parked draft survives the command.
+			if (fromHome && submitTab && InteractiveMode.isHomeCommandInput(text)) {
+				await this.activateTab(submitTab);
+				await this.submitHomeCommand(text);
+				return;
+			}
+
 			// Local commands need their tab mounted; ordinary prompts can run in the background.
 			if (submitTab && InteractiveMode.isHomeCommandInput(text)) {
 				if (this.homeSelection.active || this.activeTabIdForUi !== submitTab.id) {

@@ -22,6 +22,10 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A `/command` submitted on MixCode Home from the suggestion list no longer erases the parked draft of
+  the tab it runs on. Enter on the list applied the completion and fell through to the composer's submit,
+  which dispatched the command without the draft handling that Enter after Escape and the command palette
+  use. The list path now uses the same handling.
 - A command picked from the `ctrl+p` palette on MixCode Home no longer erases the parked draft of
   the tab it runs on. The palette read the composer's owner before it submitted, and Home's composer
   is ephemeral, so it recorded Home as the owner; the submit then attached the roster's selected tab,
