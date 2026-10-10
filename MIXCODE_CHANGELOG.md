@@ -15,6 +15,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A tab switch to a session that is compacting or summarizing no longer leaves `Working` stuck in
+  the composer's top edge after the summary ends. `TabUiHandover.switchActiveTab` can only read
+  `session.isCompacting`, so it paints a plain working indicator, while `compaction_end` and the
+  branch summary path cleared with `clearStatusIndicator("compaction")`/`("branchSummary")`, whose
+  kind check finds no match and returns without clearing. `InteractiveMode.clearSummaryStatusIndicator`
+  now clears that working indicator too, and leaves it alone while an agent run owns it
+  (`session.isStreaming`).
 - `/reload` no longer leaves the mounted tab without `$` skill completion until it is remounted.
   `ExtensionUiController.resetExtensionUI` replaced the live `autocompleteProviderWrappers` array,
   while a tab restored in the background keeps a tab-scoped extension context that pushes into the

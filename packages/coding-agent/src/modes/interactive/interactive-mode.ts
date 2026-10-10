@@ -4697,6 +4697,19 @@ export class InteractiveMode {
 		}
 	}
 
+	/**
+	 * Clear a compaction or branch-summary indicator, accepting the plain working indicator a tab
+	 * switch paints while one runs, since the switch cannot know the summary's kind. A working
+	 * indicator an active agent run owns is left to that run.
+	 */
+	private clearSummaryStatusIndicator(kind: "compaction" | "branchSummary"): void {
+		const activeIndicator = this.activeStatusIndicator;
+		if (!activeIndicator) return;
+		if (activeIndicator.kind !== kind && activeIndicator.kind !== "working") return;
+		if (activeIndicator.kind === "working" && this.session.isStreaming) return;
+		this.clearStatusIndicator();
+	}
+
 	private showWorkingStatusIndicator(): void {
 		const colorFn = isWorkingStatusEditor(this.editor)
 			? (text: string) =>
@@ -6357,7 +6370,7 @@ export class InteractiveMode {
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
-				this.clearStatusIndicator("compaction");
+				this.clearSummaryStatusIndicator("compaction");
 				if (event.aborted) {
 					if (event.reason === "manual") {
 						this.showError("Compaction cancelled");
@@ -9328,7 +9341,7 @@ export class InteractiveMode {
 						this.showError(error instanceof Error ? error.message : String(error));
 					} finally {
 						if (showingSummaryIndicator) {
-							this.clearStatusIndicator("branchSummary");
+							this.clearSummaryStatusIndicator("branchSummary");
 						}
 					}
 				},
