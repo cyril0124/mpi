@@ -22,6 +22,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A queued host command that moves the tab (`/follow-up /new-session`, `/follow-up /close-session`,
+  `/follow-up /tab 2`) no longer types the origin tab's composer draft into the tab the command
+  opened, and no longer wipes it from the origin. `runQueued` put the displaced draft back into
+  whatever composer the command left behind; the tab switch had already parked the just-cleared
+  composer over the origin's draft, so the text survived only in the new tab and the origin lost it.
+  `runQueued` now parks the draft back on the tab it was typed in, the way `runHome` and `runPalette`
+  already hand a draft to the surface that owned it.
 - A `/command` submitted on MixCode Home from the suggestion list no longer erases the parked draft of
   the tab it runs on. Enter on the list applied the completion and fell through to the composer's submit,
   which dispatched the command without the draft handling that Enter after Escape and the command palette

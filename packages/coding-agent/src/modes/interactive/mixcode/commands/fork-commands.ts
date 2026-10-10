@@ -317,11 +317,28 @@ export class ForkCommands {
 
 	/** Preserve the queued round's existing draft restoration after a successful dispatch. */
 	async runQueued(text: string): Promise<void> {
+		// The round mounts the tab that queued it, so the composer holds that tab's own draft here.
 		const draft = this.host.composer.editor.getText();
+		const draftOwner = this.mountedComposerOwner();
 		await this.host.composer.submit(text);
 		if (!draft.trim()) return;
+		// A command that opens or focuses another tab moves the composer with it, so the draft goes
+		// back to the tab it was typed in instead of into the tab the command showed.
+		if (draftOwner && draftOwner !== this.mountedComposerOwner()) {
+			if (draftOwner !== HOME_TAB_ID) this.host.routing.manager?.setDraft(draftOwner, draft);
+			return;
+		}
 		const remaining = this.host.composer.editor.getText();
 		if (!remaining.trim() || remaining === text) this.host.composer.setText(draft);
+	}
+
+	/**
+	 * Tab that owns the shared composer: Home's sentinel while Home covers it, the mounted tab
+	 * otherwise. A tab switch during a command changes it, which is how a caller detects that the
+	 * command moved the composer out from under the draft it displaced.
+	 */
+	private mountedComposerOwner(): string | undefined {
+		return this.host.routing.homeSelection.active ? HOME_TAB_ID : this.host.routing.mountedId;
 	}
 
 	/** Restore the displaced draft to its mounted surface, unless /editor wrote a result. */
@@ -334,9 +351,7 @@ export class ForkCommands {
 		// Every tab shares one composer, so a draft belongs to the surface that mounts it. A command
 		// that switches tabs must hand the draft back there instead of typing it into the tab it
 		// switched to; Home's composer is ephemeral, so it owns no draft.
-		const ownerOfMountedComposer = () =>
-			this.host.routing.homeSelection.active ? HOME_TAB_ID : this.host.routing.mountedId;
-		const draftOwner = ownerOfMountedComposer();
+		const draftOwner = this.mountedComposerOwner();
 		// `/editor` edits the draft this replaces and keeps what the external editor wrote.
 		const pending: PaletteCommandDraft = {
 			expandedText: this.host.composer.editor.getExpandedText?.() ?? draft,
@@ -347,7 +362,7 @@ export class ForkCommands {
 		const restoreDraft = () => {
 			this.paletteCommandDraft = undefined;
 			if (pending.ownsEditor) return;
-			if (draftOwner && draftOwner !== ownerOfMountedComposer()) {
+			if (draftOwner && draftOwner !== this.mountedComposerOwner()) {
 				// Park it on the tab that owned the composer; a tab the command closed is ignored.
 				if (draftOwner !== HOME_TAB_ID) this.host.routing.manager?.setDraft(draftOwner, draft);
 				return;
