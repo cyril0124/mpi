@@ -381,10 +381,12 @@ export class ExtensionUiController {
 		return false;
 	}
 
-	/** Move the active tab's extension UI aside (widgets are kept alive, not disposed). */
-	detachTabUi(tabId: string): void {
-		const leavingHeader = this.customHeader;
-		this.tabUi.set(tabId, {
+	/**
+	 * The live extension chrome as a tab record: the mounted tab holds its chrome in these fields, and
+	 * the record is how that chrome survives a switch.
+	 */
+	private liveTabUiRecord(tabId: string): TabExtensionUi {
+		return {
 			widgetsAbove: this.extensionWidgetsAbove,
 			widgetsBelow: this.extensionWidgetsBelow,
 			footerFactory: this.customFooterFactory,
@@ -398,7 +400,13 @@ export class ExtensionUiController {
 			hiddenThinkingLabel: this.host.hiddenThinkingLabel,
 			toolsExpanded: this.host.toolOutputExpanded,
 			notices: this.tabUi.get(tabId)?.notices ?? [],
-		});
+		};
+	}
+
+	/** Move the active tab's extension UI aside (widgets are kept alive, not disposed). */
+	detachTabUi(tabId: string): void {
+		const leavingHeader = this.customHeader;
+		this.tabUi.set(tabId, this.liveTabUiRecord(tabId));
 		// Footer/header are rebuilt from their factories on re-attach, so dispose
 		// the outgoing instances instead of orphaning them.
 		this.customFooter?.dispose?.();
@@ -426,9 +434,13 @@ export class ExtensionUiController {
 		this.restoreBuiltInChrome(leavingHeader);
 	}
 
-	/** Mount a tab's saved extension UI into the live fields. */
+	/** Mount a tab's extension UI into the live fields. */
 	attachTabUi(tabId: string): void {
-		const ui = this.tabUi.get(tabId);
+		const parkedUi = this.tabUi.get(tabId);
+		// A session replacement drops the mounted tab's record, and the tab's extensions install again
+		// through the focus it keeps, so the live fields are its chrome then. Mounting an empty record
+		// instead would drop the footer, statuses, widgets and editor they installed.
+		const ui = parkedUi === undefined && this.activeTabIdForUi === tabId ? this.liveTabUiRecord(tabId) : parkedUi;
 		this.extensionWidgetsAbove = ui?.widgetsAbove ?? new Map();
 		this.extensionWidgetsBelow = ui?.widgetsBelow ?? new Map();
 		this.customFooter = undefined;

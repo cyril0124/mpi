@@ -15,6 +15,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Extension chrome no longer disappears when a tab keeps its session slot but gets a new session.
+  `ExtensionUiController.attachTabUi` mounts a tab's record, and a session replacement drops that
+  record (`rebindCurrentSession`) while the tab's own extensions install again through the focus it
+  still holds. Attaching the tab that is already mounted therefore mounted an empty record and wiped
+  its footer, statuses, widgets and replaced editor, and the next switch parked the wiped state, so
+  it never came back. `/delete-session` and `/delete-all-sessions` replace the session of the tab
+  they keep and re-attach it, so they dropped the chrome of the tab the user stayed on; the live
+  chrome of the mounted tab is the record now.
 - `/close-session` no longer leaves the active session with two live event listeners when the close
   is refused. The command called the module-level `handleCloseTab` without the unsubscribe the
   keyboard path did first, and the refusal branch re-subscribed on top of the existing listener, so
