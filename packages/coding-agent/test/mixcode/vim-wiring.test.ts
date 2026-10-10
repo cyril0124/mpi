@@ -10,6 +10,7 @@ import {
 	type VimTabState,
 } from "../../src/core/mixcode/vim/vim-mode.ts";
 import { createChatViewport } from "../../src/modes/interactive/chat-viewport.ts";
+import { DockWidgetBudget } from "../../src/modes/interactive/components/mixcode/dock-widgets/dock-widgets.ts";
 import { WindowedTranscript } from "../../src/modes/interactive/components/mixcode/windowed-chat/windowed-transcript.ts";
 import { UserMessageComponent } from "../../src/modes/interactive/components/user-message.ts";
 import { createInteractiveTui, InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
@@ -377,26 +378,44 @@ describe("vim mode chrome", () => {
 });
 
 describe("vim mode and the editor widget slots", () => {
-	it("hides both widget rows while vim mode owns the viewport", () => {
+	it("drops the widget rows but keeps the dock's separating row above the editor", () => {
 		let vimActive = false;
+		const above = new Map([["above", new Text("widget-above", 0, 0)]]);
+		const below = new Map([["below", new Text("widget-below", 0, 0)]]);
+		const budget = new DockWidgetBudget({
+			widgets: () => ({ above, below }),
+			chromeRows: () => 0,
+			viewportRows: () => 12,
+			// Vim mode hides the widget rows; the slot keeps its separating row.
+			widgetsHidden: () => vimActive,
+		});
+		// A transcript taller than its viewport fills every chat row with content, so the tail
+		// holds only the dock's own rows, and 3 editor rows fill the editor entry's minimum.
+		const transcriptText = Array.from({ length: 30 }, (_, index) => `chat-${index}`).join("\n");
+		const editorText = "editor-a\neditor-b\neditor-c";
 		const viewport = createChatViewport({
-			document: new Text("transcript body", 0, 0),
+			document: new Text(transcriptText, 0, 0),
 			pendingMessages: new Container(),
 			status: new Container(),
-			widgetsAbove: new Text("widget-above", 0, 0),
-			editor: new Text("editor-row", 0, 0),
-			widgetsBelow: new Text("widget-below", 0, 0),
+			widgetsAbove: budget.above,
+			editor: new Text(editorText, 0, 0),
+			widgetsBelow: budget.below,
 			footer: new Text("footer-row", 0, 0),
-			widgetsVisible: () => !vimActive,
 		});
-		const rows = () => renderLayoutFrame(viewport.root, 30, 12, () => {}).lines.join("\n");
+		const rows = () => renderLayoutFrame(viewport.root, 30, 12, () => {}).lines.map((line) => line.trimEnd());
 
-		expect(rows()).toContain("widget-above");
-		expect(rows()).toContain("widget-below");
+		// Everything the dock draws while the widget rows render.
+		expect(rows().slice(-7)).toEqual([
+			"",
+			"widget-above",
+			"editor-a",
+			"editor-b",
+			"editor-c",
+			"widget-below",
+			"footer-row",
+		]);
 
 		vimActive = true;
-		expect(rows()).not.toContain("widget-above");
-		expect(rows()).not.toContain("widget-below");
-		expect(rows()).toContain("editor-row");
+		expect(rows().slice(-5)).toEqual(["", "editor-a", "editor-b", "editor-c", "footer-row"]);
 	});
 });

@@ -1519,10 +1519,7 @@ export class InteractiveMode {
 			widgets: () => ({ above: this.extensionWidgetsAbove, below: this.extensionWidgetsBelow }),
 			chromeRows: (width) => this.dockChromeRows(width),
 			viewportRows: () => this.renderer.terminal.rows,
-			// The dock shows no widget rows in inline mode (the chat tail has them), on
-			// MixCode Home, or while the side panel owns them on a wide enough terminal.
-			widgetsHidden: () =>
-				this.inlineWidgetState()?.enabled === true || this.homeSelection.active || this.widgetPanelVisible(),
+			widgetsHidden: () => this.dockWidgetRowsHidden(),
 		});
 		this.widgetPanel = new WidgetPanelComponent({
 			widgets: () => ({ above: this.extensionWidgetsAbove, below: this.extensionWidgetsBelow }),
@@ -1818,8 +1815,6 @@ export class InteractiveMode {
 			editor: this.editorContainer,
 			widgetsBelow: this.dockWidgets.below,
 			footer: this.footerContainer,
-			// Vim mode is a reading surface: its rows go to the transcript instead.
-			widgetsVisible: () => this.dockWidgetsVisible(),
 			// The side panel splits the transcript rows while it is visible; the
 			// composer dock below keeps the full width either way.
 			panel: { component: this.widgetPanel, visible: (width) => this.widgetPanel.isOpen(width) },
@@ -4833,6 +4828,20 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Whether the dock leaves the extension widget rows out: vim mode makes the transcript a
+	 * reading surface, inline mode puts the widgets in the chat tail, and Home and the side panel
+	 * own the dock. The slots still render, so the above slot keeps the row above the editor.
+	 */
+	private dockWidgetRowsHidden(): boolean {
+		return (
+			this.vimTabState().active ||
+			this.inlineWidgetState()?.enabled === true ||
+			this.homeSelection.active ||
+			this.widgetPanelVisible()
+		);
+	}
+
+	/**
 	 * Rows the dock's fixed entries occupy at this width, which the widget budget
 	 * has to leave alone.
 	 */
@@ -5503,20 +5512,12 @@ export class InteractiveMode {
 		const containers = [
 			this.pendingMessagesContainer,
 			this.statusContainer,
-			...(this.dockWidgetsVisible() ? [this.dockWidgets.above, this.dockWidgets.below] : []),
+			this.dockWidgets.above,
+			this.dockWidgets.below,
 			this.editorContainer,
 			this.footerContainer,
 		];
 		return containers.reduce((rows, container) => rows + container.render(width).length, 0);
-	}
-
-	/**
-	 * Whether the dock draws the extension widget slots. Vim mode is a reading surface,
-	 * so its rows go to the transcript; the dock layout and the preview's geometry share
-	 * this one rule.
-	 */
-	private dockWidgetsVisible(): boolean {
-		return !this.vimTabState().active;
 	}
 
 	// =========================================================================

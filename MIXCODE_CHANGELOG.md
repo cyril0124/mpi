@@ -15,6 +15,15 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Vim mode no longer removes the blank row between the transcript and the editor. The dock's
+  above-editor widget slot draws that row even while it hides its widget rows, but the fullscreen
+  dock also carried a `widgetsVisible` predicate that dropped both slot entries from the layout,
+  taking the row with them: in inline widget mode the last widget body sat directly against the
+  input card, and a docked widget stack lost the same row. The slot owns that decision now
+  (`widgetsHidden` covers vim mode), and the viewport keeps every entry, so the row stays.
+  `createChatViewport` drops the predicate and returns to upstream's shape. Home and an open side
+  panel hide their widget rows through the same slot, so in fullscreen they gain that row too,
+  which regular mode already draws.
 - A manual `/compact` no longer leaves the interrupt retract and the steer flush dead for the rest
   of the process when its compaction ends on a background tab. `compactionClaimed` is a
   process-wide guard that `/compact` sets synchronously and only the focused session's own
