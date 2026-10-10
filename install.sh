@@ -148,12 +148,12 @@ BUILD_TMPDIR=$(mktemp -d)
 trap 'rm -rf "${BUILD_TMPDIR:-}" "${STAGE_DIR:-}"' EXIT
 
 info "Compiling standalone binary..."
-# Mirrors scripts/build-binaries.sh: the worker must be an explicit entrypoint to
+# Mirrors scripts/build-binaries.sh: the workers must be explicit entrypoints to
 # be embedded, and bunfig autoload is disabled so preloads cannot crash the
 # standalone binary (see #7684).
 cd "$REPO_DIR/packages/coding-agent"
 bun build --compile --no-compile-autoload-bunfig --target="$BUN_TARGET" \
-  ./dist/bun/cli.js ./src/utils/image-resize-worker.ts \
+  ./dist/bun/cli.js ./src/utils/image-resize-worker.ts ./src/extensions/codemode/worker.ts \
   --outfile "$BUILD_TMPDIR/$INSTALL_NAME" || error "Compilation failed"
 
 if [ ! -f "$BUILD_TMPDIR/$INSTALL_NAME" ]; then

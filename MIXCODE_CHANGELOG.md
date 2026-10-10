@@ -15,6 +15,10 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `install.sh` compiles the standalone binary with `src/extensions/codemode/worker.ts` as an explicit
+  entrypoint, matching `scripts/build-binaries.sh`. A bun-compiled binary resolves the codemode
+  worker to that embedded source path, so the omitted entrypoint made every codemode script fail
+  with `Cannot find module './src/extensions/codemode/worker.ts'`.
 - Restored the send time at the right end of a user message's first text row. The v1.0.0 merge took
   upstream's `UserMessageComponent` wholesale and left `mixcode/message-clock.ts` unreferenced, so
   the block lost its clock. The timestamp is the component's last constructor argument again, and
