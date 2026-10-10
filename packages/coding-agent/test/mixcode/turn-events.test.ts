@@ -68,6 +68,7 @@ function createEventHost(prototype = false) {
 		streamingComponent: undefined as typeof streamingComponent | undefined,
 		entriesRenderedByBoundaryCompaction: new Set<string>(),
 		compactionClaimed: false,
+		compactionClaimedSession: undefined as unknown,
 		compactionModelRefs: new Map([[session, "summary/model"]]),
 		footer: { invalidate: () => {} },
 		settingsManager: { getShowTerminalProgress: () => true },
@@ -89,6 +90,11 @@ function createEventHost(prototype = false) {
 		maybeShowResponseModelNotice: () => trace.push(`model-notice:${state.followUpRunFailed}`),
 		maybeSuggestBugReport: () => trace.push(`bug-notice:${state.followUpRunFailed}`),
 		clearStatusIndicator: (kind: string) =>
+			trace.push(
+				`status-clear:${kind}:${host.runStartLeafId}:${state.followUpRunFailed}:${host.compactionClaimed}:${host.compactionModelRefs.size}`,
+			),
+		// The compaction end handler clears the summary working indicator through this method.
+		clearSummaryStatusIndicator: (kind: string) =>
 			trace.push(
 				`status-clear:${kind}:${host.runStartLeafId}:${state.followUpRunFailed}:${host.compactionClaimed}:${host.compactionModelRefs.size}`,
 			),
@@ -288,6 +294,25 @@ describe("interactive host turn event ordering", () => {
 			expect(state.followUpRunFailed).toBe(true);
 		},
 	);
+
+	it("keeps a manual compaction claim that another session's compaction ends", async () => {
+		const { host, state, event } = createEventHost();
+		// The claim belongs to a tab that is compacting behind this one. Its own `compaction_end`
+		// reaches the tab manager, and this handler is bound to the focused session, so an event
+		// from any other session must leave the claim set.
+		host.compactionClaimed = true;
+		host.compactionClaimedSession = { otherSession: true };
+		state.followUpQueue.push({ text: "retained", kind: "next" });
+		await event({
+			type: "compaction_end",
+			reason: "threshold",
+			result: undefined,
+			aborted: false,
+			willRetry: true,
+			errorMessage: "failed",
+		});
+		expect(host.compactionClaimed).toBe(true);
+	});
 
 	it("honors abort precedence and prevents flush when successful compaction rendering throws", async () => {
 		const { host, state, trace, event } = createEventHost();

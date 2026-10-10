@@ -1177,6 +1177,13 @@ export class InteractiveMode {
 	private readonly followUpStates = new Map<string, FollowUpQueueState>();
 	/** True from the moment a manual compact is requested until compaction_end. */
 	private compactionClaimed = false;
+	/**
+	 * The session whose manual compaction set `compactionClaimed`. Only that session's own
+	 * `compaction_end` releases it: the claim is process-wide, and a compaction that ends behind
+	 * another tab never reaches this instance's event handler, which is bound to the focused
+	 * session.
+	 */
+	private compactionClaimedSession: AgentSession | undefined;
 	/** Manual compaction model labels belong to their originating sessions. */
 	private readonly compactionModelRefs = new Map<AgentSession, string>();
 	/** Deadline of the armed interrupt confirm; 0 = unarmed. */
@@ -1442,7 +1449,12 @@ export class InteractiveMode {
 			},
 			// Ring the bell when a tab the user is not looking at finishes.
 			onBackgroundCompletion: () => this.ui.terminal.write("\x07"),
-			onCompactionEnd: (tabId, willRetry) => this.flushParkedCompactionQueue(tabId, willRetry),
+			onCompactionEnd: (tabId, willRetry) => {
+				// The tab's compaction ended while another tab held the focus, so its `compaction_end`
+				// reaches this callback instead of the focused session's event handler.
+				InteractiveMode.releaseCompactionClaim(this, this.tabManager?.get(tabId)?.runtime.session);
+				this.flushParkedCompactionQueue(tabId, willRetry);
+			},
 			configureRuntime: (runtime) => this.bindRuntimeCallbacks(runtime),
 			enqueueTabSwitch: (op) => this.enqueueTabSwitch(op),
 			refreshActiveTab: async () => {
@@ -6387,7 +6399,9 @@ export class InteractiveMode {
 			}
 
 			case "compaction_end": {
-				this.compactionClaimed = false;
+				// This handler is bound to the focused session, so its end must not release a claim that
+				// another tab made.
+				InteractiveMode.releaseCompactionClaim(this, this.session);
 				this.compactionModelRefs.delete(this.session);
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
@@ -8212,6 +8226,23 @@ export class InteractiveMode {
 	 */
 	private flushParkedCompactionQueue(tabId: string, willRetry: boolean): void {
 		void this.flushCompactionQueue({ willRetry, tabId });
+	}
+
+	/**
+	 * Release the manual compaction claim when the session that made it ends its own compaction.
+	 *
+	 * `compactionClaimed` blocks the interrupt retract and the steer flush until it is released, and
+	 * it is set on one session while the guards read it for the focused one. A compaction that ends
+	 * behind another tab delivers `compaction_end` through the tab manager, so the release has to
+	 * happen there too, or the claim stays set and those keys never work again in this process.
+	 *
+	 * A claim with no recorded session has no owner to compare against and releases, so the guard can
+	 * never stick with only the flag set; a recorded claim is released by its own session alone.
+	 */
+	private static releaseCompactionClaim(mode: InteractiveMode, session: AgentSession | undefined): void {
+		if (mode.compactionClaimedSession !== undefined && mode.compactionClaimedSession !== session) return;
+		mode.compactionClaimedSession = undefined;
+		mode.compactionClaimed = false;
 	}
 
 	/** Move pending bash components from pending area to chat */
@@ -10914,12 +10945,13 @@ export class InteractiveMode {
 
 		// Claim synchronously so queued rounds cannot enter before compaction starts.
 		this.compactionClaimed = true;
+		this.compactionClaimedSession = session;
 		try {
 			await runInTabConsole(tab, () => session.compact(customInstructions || undefined, model));
 		} catch {
 			// A throw before compaction starts never reaches compaction_end, so this is
 			// the only place the synchronous claim is released.
-			this.compactionClaimed = false;
+			InteractiveMode.releaseCompactionClaim(this, session);
 		} finally {
 			this.compactionModelRefs.delete(session);
 		}

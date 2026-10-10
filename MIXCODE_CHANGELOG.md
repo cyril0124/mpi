@@ -15,6 +15,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A manual `/compact` no longer leaves the interrupt retract and the steer flush dead for the rest
+  of the process when its compaction ends on a background tab. `compactionClaimed` is a
+  process-wide guard that `/compact` sets synchronously and only the focused session's own
+  `compaction_end` used to clear, so a tab that compacted and then lost the focus kept the guard
+  set forever: the confirmed `Escape` fell through to a plain abort and `Escape` with queued steer
+  texts stopped flushing them. The guard now records the session that claimed it, and that session's
+  own `compaction_end` releases it from either path, including the tab manager's callback for a tab
+  that is not on screen.
 - Extension chrome no longer disappears when a tab keeps its session slot but gets a new session.
   `ExtensionUiController.attachTabUi` mounts a tab's record, and a session replacement drops that
   record (`rebindCurrentSession`) while the tab's own extensions install again through the focus it
