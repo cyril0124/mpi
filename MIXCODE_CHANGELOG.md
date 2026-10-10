@@ -15,6 +15,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/close-session` no longer leaves the active session with two live event listeners when the close
+  is refused. The command called the module-level `handleCloseTab` without the unsubscribe the
+  keyboard path did first, and the refusal branch re-subscribed on top of the existing listener, so
+  every later event was handled and rendered twice (duplicate user bubbles, duplicated streaming
+  components) until the process exited. `handleCloseTab` owns the subscription move now, so both
+  paths take the same unsubscribe/re-subscribe step.
 - A tab switch to a session that is compacting or summarizing no longer leaves `Working` stuck in
   the composer's top edge after the summary ends. `TabUiHandover.switchActiveTab` can only read
   `session.isCompacting`, so it paints a plain working indicator, while `compaction_end` and the

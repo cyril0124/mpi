@@ -3131,6 +3131,10 @@ export class InteractiveMode {
 			enqueueTabSwitch: (run) => this.enqueueTabSwitch(run),
 			switchActiveTab: (tab) => this.switchActiveTab(tab),
 			disposeTabUi: (id) => this.disposeTabUi(id),
+			unsubscribeFromAgent: () => {
+				this.unsubscribe?.();
+				this.unsubscribe = undefined;
+			},
 			subscribeToAgent: () => this.subscribeToAgent(),
 			showError: (msg) => this.showError(msg),
 			showWarning: (msg) => this.showWarning(msg),
@@ -4165,8 +4169,6 @@ export class InteractiveMode {
 	}
 
 	private async handleCloseTab(): Promise<void> {
-		this.unsubscribe?.();
-		this.unsubscribe = undefined;
 		await this.tabs.closeTab(this.tabLifecycleHost());
 	}
 

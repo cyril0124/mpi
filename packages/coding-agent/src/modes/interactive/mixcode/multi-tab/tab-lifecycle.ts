@@ -39,6 +39,8 @@ export interface TabLifecycleHost {
 	enqueueTabSwitch(run: () => Promise<void>): Promise<void>;
 	switchActiveTab(tab: AgentTab): Promise<void>;
 	disposeTabUi(tabId: string): void;
+	/** Drop the active session subscription; a close re-subscribes or hands it to the next tab. */
+	unsubscribeFromAgent(): void;
 	subscribeToAgent(): void;
 	showError(message: string): void;
 	showWarning(message: string): void;
@@ -199,8 +201,9 @@ export async function handleResumeIntoTab(host: ResumeTabHost, sessionPath: stri
  * Removal is published through SharedTabLayout.transaction() so peers learn the
  * session is gone without an interleaving write.
  *
- * The caller is responsible for unsubscribing from the active session BEFORE
- * calling this function so the event handler does not fire into a detached session.
+ * The subscription move belongs to this function: it drops the active session's listener before
+ * the close, so the handler does not fire into a detached session, and re-subscribes when the
+ * close is refused.
  */
 export async function handleCloseTab(host: TabLifecycleHost): Promise<void> {
 	const { tabManager } = host;
@@ -210,12 +213,13 @@ export async function handleCloseTab(host: TabLifecycleHost): Promise<void> {
 		return;
 	}
 	const closing = tabManager.getActive();
+	host.unsubscribeFromAgent();
 	try {
 		await (host.sharedTabLayout?.transaction(async () => {
 			await tabManager.closeTab(closing.id);
 		}) ?? tabManager.closeTab(closing.id));
 	} catch (error) {
-		// Refused (a turn in progress): caller must re-subscribe.
+		// Refused (a turn in progress): the tab stays, so it keeps its listener.
 		host.subscribeToAgent();
 		host.showError(error instanceof Error ? error.message : String(error));
 		return;

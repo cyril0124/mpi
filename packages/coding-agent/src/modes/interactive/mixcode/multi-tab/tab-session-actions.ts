@@ -22,6 +22,7 @@ export interface SessionActionHost {
 	enqueueTabSwitch(run: () => Promise<void>): Promise<void>;
 	switchActiveTab(tab: AgentTab): Promise<void>;
 	disposeTabUi(tabId: string): void;
+	unsubscribeFromAgent(): void;
 	subscribeToAgent(): void;
 	runtimeHost: { newSession(options?: unknown): Promise<{ cancelled: boolean }> };
 	showExtensionConfirm(title: string, message: string): Promise<boolean>;
