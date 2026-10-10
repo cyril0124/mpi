@@ -6,6 +6,9 @@ function commandHost() {
 	let text = "draft [paste]";
 	let mountedId: string | undefined = "A";
 	let activeId: string | undefined = "A";
+	// Draft parked on the tab Home's roster has selected while Home covers it.
+	const parkedDraft = "parked draft";
+	const homeSelection = { active: false, selectedIndex: 0, nonIdleOnly: false };
 	const trace: string[] = [];
 	const errors: string[] = [];
 	const editor = {
@@ -37,12 +40,19 @@ function commandHost() {
 				return mountedId;
 			},
 			get homeSelection() {
-				return { active: false, selectedIndex: 0, nonIdleOnly: false };
+				return homeSelection;
 			},
 			get session() {
 				return { setSessionName: vi.fn(), sessionManager: { getSessionName: () => undefined } };
 			},
 			activateTab: async () => {},
+			attachHomeSelection: async () => {
+				// The product attaches the selected tab, which loads that tab's own parked draft into
+				// the shared composer before the command takes the composer over.
+				trace.push("attach-home");
+				homeSelection.active = false;
+				editor.setText(parkedDraft);
+			},
 			newTab: vi.fn(async (title, focus) => {
 				trace.push(`new:${title}:${focus}`);
 			}),
@@ -152,6 +162,17 @@ describe("fork command workflows", () => {
 		};
 		await commands.runPalette("batch");
 		expect(editor.getText()).toBe("new draft from command");
+	});
+
+	it("hands Home's palette command the draft of the tab it attaches", async () => {
+		const { commands, host, editor, trace } = commandHost();
+		host.routing.homeSelection.active = true;
+		host.actions.batch = async () => {
+			editor.setText("");
+		};
+		await commands.runPalette("batch");
+		expect(trace[0]).toBe("attach-home");
+		expect(editor.getText()).toBe("parked draft");
 	});
 
 	it("suspends Home draft handover until completion, including rejection and focus change", async () => {

@@ -22,6 +22,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A command picked from the `ctrl+p` palette on MixCode Home no longer erases the parked draft of
+  the tab it runs on. The palette read the composer's owner before it submitted, and Home's composer
+  is ephemeral, so it recorded Home as the owner; the submit then attached the roster's selected tab,
+  which loads that tab's own parked draft into the shared composer, and the command cleared it. The
+  restore path compared against Home, took the "the command moved focus" branch and handed nothing
+  back, and the next park wrote that emptiness over the tab's draft, so the text was gone for good.
+  `runPalette` attaches Home's selection before it reads the composer, the way a command typed on Home
+  already did, so the draft comes back exactly as it does for a command started on an agent tab.
 - `install.sh` and `run.sh` refresh the generated model catalog on every build instead of only when
   `check:model-data` fails. The catalog under `packages/ai/src/providers/data/` is gitignored, so an
   upstream sync leaves the local copy behind, and `check:model-data` compares only its structure: an

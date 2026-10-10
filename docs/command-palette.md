@@ -31,10 +31,11 @@ Selecting a row submits `/<command>` through the ordinary submit path, so argume
 gating, confirmations and error messages are exactly what typing the command would produce. Once
 the command is done with the editor, the draft that was there comes back, so picking from the
 palette never costs the user what they had typed. A command that switches tabs returns the draft to
-the tab it was typed in, not the tab it switched to, and Home owns no draft, so text typed there is
-dropped. `/editor` is the exception: it takes that draft to the external editor, and what that
-editor writes is the draft from then on; only a launch that fails leaves the original draft in
-place.
+the tab it was typed in, not the tab it switched to. Home owns no draft, so text typed on Home
+itself is dropped, but the tab Home's roster has selected is attached before the command takes the
+composer, so that tab's parked draft comes back the way it does on an agent tab. `/editor` is the
+exception: it takes that draft to the external editor, and what that editor writes is the draft from
+then on; only a launch that fails leaves the original draft in place.
 
 `ctrl+p` used to cycle models forward. That binding now opens the palette and `app.model.cycleForward`
 ships with no default key; `shift+ctrl+p` (or `alt+p` on Windows and WSL) still cycles backwards, and

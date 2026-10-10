@@ -1368,6 +1368,7 @@ export class InteractiveMode {
 					return mode.session;
 				},
 				activateTab: (tab) => mode.activateTab(tab),
+				attachHomeSelection: () => mode.attachHomeSelection(),
 				newTab: (title, focus) => mode.handleNewTab(title, focus),
 				closeSession: (args) => mode.handleCloseSession(args),
 				closeAllSessions: () => mode.handleCloseAllSessions(),
@@ -5851,6 +5852,18 @@ export class InteractiveMode {
 	private handleStartupSubmit(text: string): void {
 		this.editor.setText(text);
 		this.showStatus("Startup is still in progress");
+	}
+
+	/**
+	 * Attach the tab Home's roster has selected, the way the `right` key and a Home command do.
+	 * Unlike {@link attachHomeSelectionForSubmit}, this attaches even when the tab already holds the
+	 * manager's focus, so the attach loads that tab's parked draft into the composer a palette command
+	 * is about to take over.
+	 */
+	private async attachHomeSelection(): Promise<void> {
+		if (!this.homeSelection.active) return;
+		const selected = homeSelectedTab(this.homeSelection, this.homeRoster())?.tab;
+		if (selected) await this.activateTab(selected);
 	}
 
 	/**

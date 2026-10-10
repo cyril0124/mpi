@@ -24,6 +24,12 @@ export interface ForkCommandHost {
 			sessionManager: Pick<SessionManager, "getSessionName">;
 		};
 		activateTab(tab: AgentTab): Promise<void>;
+		/**
+		 * Put the tab Home's roster has selected on screen, if Home owns the composer. It resolves with that
+		 * tab's own parked draft in the composer, so a caller can read it as the draft it is about to
+		 * displace.
+		 */
+		attachHomeSelection(): Promise<void>;
 		newTab(title?: string, focus?: boolean): Promise<void>;
 		closeSession(args: string): Promise<void>;
 		closeAllSessions(): Promise<void>;
@@ -319,8 +325,11 @@ export class ForkCommands {
 	}
 
 	/** Restore the displaced draft to its mounted surface, unless /editor wrote a result. */
-	runPalette(name: string): Promise<void> {
+	async runPalette(name: string): Promise<void> {
 		const text = `/${name}`;
+		// Home's composer owns no draft: the tab the submit attaches owns the one this command
+		// displaces, so attach that tab before the composer is read.
+		if (this.host.routing.homeSelection.active) await this.host.routing.attachHomeSelection();
 		const draft = this.host.composer.editor.getText();
 		// Every tab shares one composer, so a draft belongs to the surface that mounts it. A command
 		// that switches tabs must hand the draft back there instead of typing it into the tab it
