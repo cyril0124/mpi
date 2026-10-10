@@ -15,6 +15,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/reload` no longer leaves the mounted tab without `$` skill completion until it is remounted.
+  `ExtensionUiController.resetExtensionUI` replaced the live `autocompleteProviderWrappers` array,
+  while a tab restored in the background keeps a tab-scoped extension context that pushes into the
+  tab record, so the provider was rebuilt without the wrappers the reloaded extension registered.
+  The reset now empties that record's array and adopts it as the live one.
 - `install.sh` compiles the standalone binary with `src/extensions/codemode/worker.ts` as an explicit
   entrypoint, matching `scripts/build-binaries.sh`. A bun-compiled binary resolves the codemode
   worker to that embedded source path, so the omitted entrypoint made every codemode script fail

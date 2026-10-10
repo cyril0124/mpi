@@ -228,4 +228,37 @@ describe("extension UI controller workflows", () => {
 			host.dispose();
 		}
 	});
+
+	test("a reload reset keeps a tab-scoped completion registration wired on the mounted tab", async () => {
+		const host = await createExtensionUiHost();
+		const controller = new ExtensionUiController(host);
+		host.bindController(controller);
+		const requested: string[] = [];
+		try {
+			const scope = host.createTabScope();
+			// A restored tab binds its extensions before it takes focus, so its completion wrapper
+			// reaches the provider through the mount that follows.
+			const tabContext = ExtensionUiController.createTabScopedExtensionUIContext(scope, "tab-a");
+			tabContext.addAutocompleteProvider(completionFactory("before-reload", requested));
+			host.switchTab("tab-a");
+			await completeFromTerminal(host, "before-reload");
+
+			// The reset drops the tab's extensions, and the reloaded one registers through the same
+			// context while the tab stays mounted.
+			controller.resetExtensionUI("tab-a");
+			host.setupAutocompleteProvider();
+			host.editor.setText("");
+			host.terminal.sendInput("#");
+			host.terminal.sendInput("\t");
+			expect(await host.capture()).not.toContain("before-reload first choice");
+
+			tabContext.addAutocompleteProvider(completionFactory("after-reload", requested));
+			host.setupAutocompleteProvider();
+			await completeFromTerminal(host, "after-reload");
+
+			expect(requested).toEqual(["before-reload", "after-reload"]);
+		} finally {
+			host.dispose();
+		}
+	});
 });

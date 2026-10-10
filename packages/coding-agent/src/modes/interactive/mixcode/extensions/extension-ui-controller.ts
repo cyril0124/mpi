@@ -571,7 +571,20 @@ export class ExtensionUiController {
 		this.clearExtensionWidgets();
 		this.host.footerDataProvider.clearExtensionStatuses();
 		this.host.footer.invalidate();
-		this.autocompleteProviderWrappers = [];
+		// The provider is rebuilt from the live wrapper array, while a tab-scoped extension context
+		// pushes into its tab record, so the mounted tab needs both to be one array: a reloaded tab
+		// never remounts, and a separate live array would miss every registration it makes.
+		const resetCoversMountedTab = tabId === undefined || tabId === this.activeTabIdForUi;
+		if (resetCoversMountedTab && this.activeTabIdForUi !== undefined) {
+			const mountedRecord = this.tabExtensionUi(this.activeTabIdForUi);
+			mountedRecord.autocompleteWrappers.length = 0;
+			this.autocompleteProviderWrappers = mountedRecord.autocompleteWrappers;
+		} else if (tabId === undefined) {
+			this.autocompleteProviderWrappers.length = 0;
+		} else {
+			const resetRecord = this.tabUi.get(tabId);
+			if (resetRecord) resetRecord.autocompleteWrappers.length = 0;
+		}
 		this.setCustomEditorComponent(undefined);
 		this.host.setupAutocompleteProvider();
 		this.host.defaultEditor.onExtensionShortcut = undefined;
