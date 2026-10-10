@@ -181,24 +181,6 @@ export class WindowedTranscript extends Container {
 	}
 
 	/**
-	 * Content row of a block matching `matches`, at or after `from` (or the last one
-	 * before it when `direction` is -1). Reads its rows from {@link matchingBlocks},
-	 * so they are exact; the whole document is measured on the way.
-	 */
-	findBlockRow(from: number, direction: -1 | 1, matches: (block: Component) => boolean): number | undefined {
-		const target = Math.max(0, Math.floor(from));
-		let previous: number | undefined;
-		for (const entry of this.matchingBlocks(matches)) {
-			if (direction === 1) {
-				if (entry.row >= target) return entry.row;
-			} else if (entry.row < target) {
-				previous = entry.row;
-			}
-		}
-		return direction === -1 ? previous : undefined;
-	}
-
-	/**
 	 * The components painted at a content row, outermost first, each with the row inside it: the
 	 * document child that owns the row, then the child chain within it, as of the last render. Resolves
 	 * a content row the way a mouse event does, without dispatching to it, so a caller can ask what a

@@ -52,9 +52,9 @@ against the prompt card's border does not wipe the clipboard.
 
 ## Highlight
 
-Selected cells are painted with the theme's `selectedBg` (the same token the transcript search
-uses), not with reverse video. The background is re-opened after every SGR inside the selection,
-so a tool block's or a thinking block's own background cannot swallow it.
+Selected cells are painted with the theme's `selectedBg`, not with reverse video. The background is
+re-opened after every SGR inside the selection, so a tool block's or a thinking block's own
+background cannot swallow it.
 
 Inside a block that carries the pointer cue — a tool call, a summary card, a skill invocation, the
 thinking block — the selected cells of its card rows also gain an underline. The cue fills those same

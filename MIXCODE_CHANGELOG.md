@@ -45,8 +45,21 @@ point `## [Unreleased]` at the new tag.
   also lost their `tui.altScreen.top`/`bottom` and `formatResumeCommand` rows: upstream v1.0.3 moved
   transcript scrolling to `ctrl+home`/`ctrl+end` and left plain `home`/`end` to the editor, which is
   what the fork had asked for, so the fork no longer patches those defaults.
+- Three fork docs described behavior the code does not have. `docs/windowed-transcript.md` said vim's
+  user-message jumps read rows from the height table without materializing, while the jump calls
+  `matchingBlocks`, which measures the whole document because the preview panel needs each match's
+  label and its row; the preview-panel change left the sentence behind. `docs/inline-widgets.md` said
+  nothing suppresses the inline widget block, while the widget panel stands it down; that sentence
+  predates the panel. `docs/mouse-selection.md` called `selectedBg` the transcript search's token,
+  which held while the shipped themes aliased `searchMatchBg` to `selectedBg`; the v0.99.0 merge gave
+  `searchMatchBg` its own colour, so the parenthetical is gone. Each `.zh.md` mirror carries the
+  corrected statement.
 
 ### Removed
+
+- `WindowedTranscript.findBlockRow`: the preview-panel change replaced its single caller in
+  `interactive-mode.ts` with `matchingBlocks`, which also returns the block the panel has to label,
+  so the row-only helper had no call site left.
 
 ## base pi v1.1.0 — 2026-10-09
 

@@ -30,7 +30,8 @@ renders only the rows near the viewport. Long conversations scroll at a bounded 
 7. Search, prompt jumps (`ctrl+shift+up/down`) and clipboard selections ask for exact rows on demand,
    and materialize the document once. The open search overlay keeps its materialized lines until the
    transcript's measured height changes, so an idle frame stays O(window). Vim's user-message jumps
-   read block rows from the same height table instead, which needs no materialization.
+   read the matched blocks and their exact rows through `matchingBlocks`, since the preview panel
+   lists every match; one jump measures the whole document once.
 
 ## What stays the same
 

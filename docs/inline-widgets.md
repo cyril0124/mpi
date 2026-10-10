@@ -118,8 +118,9 @@ reported as errors. The argument completes the action, then the keys the active 
 
 ## Behaviour limits
 
-There is no extension side panel here, so nothing suppresses inline mode, and the editor border
-carries no inline-mode badge. A widget keeps the colours its own component renders, and its text is
+Nothing in inline mode itself suppresses the block, and the editor border carries no inline-mode
+badge; the [widget side panel](widget-layout.md) is the one exception, standing the chat-tail block
+down while it owns the widgets. A widget keeps the colours its own component renders, and its text is
 reduced to one printable row per line: colour sequences survive, every other escape sequence and
 control character is dropped, so a widget cannot move the cursor, clear the screen, or split a row.
 Bodies are drawn at the chat column width, so they wrap differently than a narrow dock would.
