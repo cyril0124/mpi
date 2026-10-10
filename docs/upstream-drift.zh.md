@@ -8,7 +8,7 @@
 
 | 方面 | 上游 | 本 fork | 原因 |
 | --- | --- | --- | --- |
-| `install.sh` | 通过 `scripts/build-binaries.sh` 构建发布归档 | 在 `<prefix>/lib/<name>/` 安装 standalone 运行时，并在 `<prefix>/bin/<name>` 安装包装脚本；`<name>` 默认为 `mpi`，也可通过 `--name` 或 `MIXCODE_INSTALL_NAME` 设置 | 单机安装可以使用自定义命令名，同时保持运行时目录与包装脚本名称一致 |
+| `install.sh` | 通过 `scripts/build-binaries.sh` 构建发布归档 | 在 `<prefix>/lib/<name>/` 安装 standalone 运行时，并在 `<prefix>/bin/<name>` 安装包装脚本；`<name>` 默认为 `mpi`，也可通过 `--name` 或 `INSTALL_NAME` 设置 | 单机安装可以使用自定义命令名，同时保持运行时目录与包装脚本名称一致 |
 | 发行名称 | 应用是 `pi`；`ENV_AGENT_DIR` / `ENV_SESSION_DIR` 由 `APP_NAME` 推导，调试日志为 `pi-debug.log` | `piConfig.name` 设为 `mpi`，因此 `--help`、包管理子命令帮助、终端标题与运行时报错都显示 `mpi`；`PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` 在 `config.ts` 里固定为上游名字，不支持的 `update` 命令也不再列在 `--help` | 本 fork 以 `mpi` 安装与分发（见 `install.sh`），同时不移动用户的 agent 目录环境变量与共用的 `.pi` 目录 |
 | 内置主题发现 | `getBuiltinThemes()` 按名字读取 `dark.json` 与 `light.json`，丢进主题目录的 JSON 不会被发现；主题选择器只列出它们与用户主题 | 主题目录下每个 `*.json` 都会被加载，并以文件内的 `name` 作为键（跳过 `theme-schema.json`）；某个文件解析或校验失败时只是被丢弃，不会带掉其余内置主题。`aurora` 即由此提供 | 一个主题一个文件，新增主题就是新增文件，无需改动加载器 |
 | `app.thinking.cycle` 默认键 | `shift+tab` | `alt+t` | `shift+tab` 改作 `app.tab.previous` |

@@ -8,7 +8,7 @@ set -euo pipefail
 # docs, wasm, native prebuilds) from its own directory, so the binary lives in
 # <prefix>/lib/<name>/ and <prefix>/bin/<name> is a wrapper that execs it.
 
-INSTALL_NAME="${MIXCODE_INSTALL_NAME:-mpi}"
+INSTALL_NAME="${INSTALL_NAME:-mpi}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Helpers ---
@@ -21,7 +21,7 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 
 # --- Parse args ---
 
-PREFIX="${MIXCODE_INSTALL_PREFIX:-$HOME/.local}"
+PREFIX="${INSTALL_PREFIX:-$HOME/.local}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -46,9 +46,9 @@ Options:
   -h, --help        Show this help
 
 Environment variables:
-  MIXCODE_INSTALL_NAME    Same as --name
-  MIXCODE_INSTALL_PREFIX  Same as --prefix
-  MIXCODE_SKIP_MODEL_HYDRATE=1
+  INSTALL_NAME            Same as --name
+  INSTALL_PREFIX          Same as --prefix
+  SKIP_MODEL_HYDRATE=1
                           Keep the model catalog already under
                           packages/ai/src/providers/data/ instead of refreshing it
                           from the upstream catalogs. Use for offline builds.
@@ -144,8 +144,8 @@ info "Building packages..."
 # the one baking it into this build. check:model-data only validates the data's
 # structure, so content drift - a model entry missing a field the generator now always
 # writes - passes it. Refresh from the upstream catalogs on every build instead.
-if [ "${MIXCODE_SKIP_MODEL_HYDRATE:-0}" = "1" ]; then
-  bun run check:model-data >/dev/null 2>&1 || error "Model data is missing or structurally stale; rerun without MIXCODE_SKIP_MODEL_HYDRATE=1"
+if [ "${SKIP_MODEL_HYDRATE:-0}" = "1" ]; then
+  bun run check:model-data >/dev/null 2>&1 || error "Model data is missing or structurally stale; rerun without SKIP_MODEL_HYDRATE=1"
 else
   info "Refreshing model data from upstream catalogs..."
   bun run hydrate:model-data || error "Failed to hydrate model data"

@@ -10,7 +10,7 @@ commit that causes it.
 
 | Area | Upstream | This fork | Reason |
 | --- | --- | --- | --- |
-| `install.sh` | release archives via `scripts/build-binaries.sh` | installs a standalone runtime in `<prefix>/lib/<name>/` and a wrapper at `<prefix>/bin/<name>`; `<name>` defaults to `mpi` and supports `--name` or `MIXCODE_INSTALL_NAME` | single-machine installs can use a custom command name while keeping the runtime and wrapper names aligned |
+| `install.sh` | release archives via `scripts/build-binaries.sh` | installs a standalone runtime in `<prefix>/lib/<name>/` and a wrapper at `<prefix>/bin/<name>`; `<name>` defaults to `mpi` and supports `--name` or `INSTALL_NAME` | single-machine installs can use a custom command name while keeping the runtime and wrapper names aligned |
 | Distribution name | the app is `pi`; `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are derived from `APP_NAME`, and the debug log is `pi-debug.log` | `piConfig.name` is `mpi`, so `--help`, the package-command help, the terminal title and runtime messages say `mpi`; `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` are pinned to their upstream names in `config.ts`, and the unsupported `update` command is not listed in `--help` | the fork installs and ships as `mpi` (see `install.sh`) without moving users' agent-dir env vars or the shared `.pi` directory |
 | `app.thinking.cycle` default key | `shift+tab` | `alt+t` | `shift+tab` became `app.tab.previous` |
 | Agent tabs | one session per terminal | several concurrent tabs, each with its own `AgentSessionRuntime`; returning during a response rebuilds the transcript from saved history plus the current streaming message | the live answer must remain visible and continue updating after a tab switch; see [Agent Tabs](tabs.md) |
