@@ -47,7 +47,17 @@ if [ "${PI_DEV:-0}" = "1" ]; then
 fi
 
 if needs_build; then
-  if ! bun run check:model-data >/dev/null 2>&1; then
+  # The generated catalog under packages/ai/src/providers/data/ is gitignored, so an
+  # upstream sync does not carry it forward and it can describe an older generator than
+  # the one baking it into this build. check:model-data only validates the data's
+  # structure, so content drift - a model entry missing a field the generator now always
+  # writes - passes it. Refresh from the upstream catalogs on every build instead.
+  if [ "${MIXCODE_SKIP_MODEL_HYDRATE:-0}" = "1" ]; then
+    bun run check:model-data >/dev/null 2>&1 || {
+      echo "Model data is missing or structurally stale; rerun without MIXCODE_SKIP_MODEL_HYDRATE=1" >&2
+      exit 1
+    }
+  else
     bun run hydrate:model-data
   fi
   bun run build:offline

@@ -15,6 +15,15 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `install.sh` and `run.sh` refresh the generated model catalog on every build instead of only when
+  `check:model-data` fails. The catalog under `packages/ai/src/providers/data/` is gitignored, so an
+  upstream sync leaves the local copy behind, and `check:model-data` compares only its structure: an
+  entry that keeps the same layout but lost a field the generator now always writes passed the check
+  and was baked into the binary. That is what happened to `claude-haiku-5-5`, whose missing
+  `thinkingLevelMap` capped it at `high` for every consumer of the static catalog — extension
+  providers such as `claude-bridge` read it directly, while the built-in picker was masked by the
+  pi.dev catalog overlay. `MIXCODE_SKIP_MODEL_HYDRATE=1` keeps the existing catalog for an offline
+  build and fails loudly when it is structurally stale.
 - Vim mode no longer removes the blank row between the transcript and the editor. The dock's
   above-editor widget slot draws that row even while it hides its widget rows, but the fullscreen
   dock also carried a `widgetsVisible` predicate that dropped both slot entries from the layout,

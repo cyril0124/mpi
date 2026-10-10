@@ -48,6 +48,10 @@ Options:
 Environment variables:
   MIXCODE_INSTALL_NAME    Same as --name
   MIXCODE_INSTALL_PREFIX  Same as --prefix
+  MIXCODE_SKIP_MODEL_HYDRATE=1
+                          Keep the model catalog already under
+                          packages/ai/src/providers/data/ instead of refreshing it
+                          from the upstream catalogs. Use for offline builds.
 
 Requires bun (installed automatically if missing) and network access for the
 first build. Builds all workspace packages, then compiles one standalone binary.
@@ -135,9 +139,15 @@ bun install --force --ignore-scripts --no-save || error "bun install failed"
 # --- Build ---
 
 info "Building packages..."
-# Offline build path with bundled model data; hydrate first when the check says
-# the committed data is stale (mirrors run.sh).
-if ! bun run check:model-data >/dev/null 2>&1; then
+# The generated catalog under packages/ai/src/providers/data/ is gitignored, so an
+# upstream sync does not carry it forward and it can describe an older generator than
+# the one baking it into this build. check:model-data only validates the data's
+# structure, so content drift - a model entry missing a field the generator now always
+# writes - passes it. Refresh from the upstream catalogs on every build instead.
+if [ "${MIXCODE_SKIP_MODEL_HYDRATE:-0}" = "1" ]; then
+  bun run check:model-data >/dev/null 2>&1 || error "Model data is missing or structurally stale; rerun without MIXCODE_SKIP_MODEL_HYDRATE=1"
+else
+  info "Refreshing model data from upstream catalogs..."
   bun run hydrate:model-data || error "Failed to hydrate model data"
 fi
 bun run build:offline || error "Package build failed"
