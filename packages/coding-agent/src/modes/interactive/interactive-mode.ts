@@ -946,7 +946,8 @@ export class InteractiveMode {
 					mode.streamingMessage = value;
 				},
 				beforeCapture: () => mode.clearCompactionHistoryNotice(),
-				rebuild: (options) => mode.renderCurrentSessionState(options),
+				rebuild: () => mode.renderCurrentSessionState(),
+				showCompactionHistory: () => mode.showCompactionHistoryNotice(),
 				renderEntries: (entries, options) => mode.renderSessionEntries(entries, options),
 				resyncQueues: () => mode.resyncQueuedMessageMirrors(),
 				updatePending: () => mode.updatePendingMessagesDisplay(),
@@ -3128,7 +3129,7 @@ export class InteractiveMode {
 			sharedTabLayout: this.sharedTabLayout,
 			saveComposerDraft: () => this.saveComposerDraft(),
 			enqueueTabSwitch: (run) => this.enqueueTabSwitch(run),
-			switchActiveTab: (tab, options) => this.switchActiveTab(tab, options),
+			switchActiveTab: (tab) => this.switchActiveTab(tab),
 			disposeTabUi: (id) => this.disposeTabUi(id),
 			subscribeToAgent: () => this.subscribeToAgent(),
 			showError: (msg) => this.showError(msg),
@@ -3953,8 +3954,8 @@ export class InteractiveMode {
 	}
 
 	/** Swap the mounted session through the handover's serialized surface lifecycle. */
-	private switchActiveTab(tab: AgentTab, options: { showCompactionHistory?: boolean } = {}): Promise<void> {
-		return InteractiveMode.handoverFor(this).switchActiveTab(tab, options);
+	private switchActiveTab(tab: AgentTab): Promise<void> {
+		return InteractiveMode.handoverFor(this).switchActiveTab(tab);
 	}
 
 	/** Prepare a restored tab's transcript while Home owns the rendered surface. */
@@ -3976,10 +3977,29 @@ export class InteractiveMode {
 	private clearCompactionHistoryNotice(): void {
 		if (this.compactionHistorySpacer) this.chatContainer.removeChild(this.compactionHistorySpacer);
 		if (this.compactionHistoryText) this.chatContainer.removeChild(this.compactionHistoryText);
-		if (this.lastStatusSpacer === this.compactionHistorySpacer) this.lastStatusSpacer = undefined;
-		if (this.lastStatusText === this.compactionHistoryText) this.lastStatusText = undefined;
 		this.compactionHistorySpacer = undefined;
 		this.compactionHistoryText = undefined;
+	}
+
+	/**
+	 * Append `Session compacted N times` for the mounted session, once per render.
+	 *
+	 * The line is transcript history, not a transient status: it stays out of the status
+	 * line's reuse chain, so a status printed right after it appends below rather than
+	 * replacing it.
+	 */
+	private showCompactionHistoryNotice(): void {
+		if (this.compactionHistoryText) return;
+		const compactionCount = this.sessionManager.getEntries().filter((entry) => entry.type === "compaction").length;
+		if (compactionCount === 0) return;
+		const times = compactionCount === 1 ? "1 time" : `${compactionCount} times`;
+		this.compactionHistorySpacer = new Spacer(1);
+		this.chatContainer.addChild(this.compactionHistorySpacer);
+		this.compactionHistoryText = new Text(theme.fg("dim", `Session compacted ${times}`), 1, 0);
+		this.chatContainer.addChild(this.compactionHistoryText);
+		this.lastStatusSpacer = undefined;
+		this.lastStatusText = undefined;
+		this.ui.requestRender();
 	}
 
 	/** Re-attach a cached transcript when it is still current. Returns false to rebuild. */
@@ -4509,14 +4529,14 @@ export class InteractiveMode {
 		return true;
 	}
 
-	private renderCurrentSessionState(options: { showCompactionHistory?: boolean } = {}): void {
+	private renderCurrentSessionState(): void {
 		this.loadedResourcesContainer.clear();
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
-		this.renderInitialMessages(options);
+		this.renderInitialMessages();
 		const streamingMessage = this.session.agent.state.streamingMessage;
 		if (streamingMessage?.role === "assistant") {
 			this.startStreamingMessage(streamingMessage);
@@ -6501,10 +6521,6 @@ export class InteractiveMode {
 		const secondLast = children.length > 1 ? children[children.length - 2] : undefined;
 
 		if (last && secondLast && last === this.lastStatusText && secondLast === this.lastStatusSpacer) {
-			if (last === this.compactionHistoryText) {
-				this.compactionHistorySpacer = undefined;
-				this.compactionHistoryText = undefined;
-			}
 			this.lastStatusText.setText(theme.fg("dim", message));
 			this.ui.requestRender();
 			return;
@@ -6888,24 +6904,13 @@ export class InteractiveMode {
 		this.addTranscriptNotice(text);
 	}
 
-	renderInitialMessages(options: { showCompactionHistory?: boolean } = {}): void {
-		this.compactionHistorySpacer = undefined;
-		this.compactionHistoryText = undefined;
+	renderInitialMessages(): void {
+		this.clearCompactionHistoryNotice();
 		const entries = this.sessionManager.buildContextEntries();
 		this.renderSessionEntries(entries, { updateFooter: true });
 		this.syncEditorHistory();
 		this.renderProjectTrustWarningIfNeeded();
-
-		if (options.showCompactionHistory === false) return;
-
-		const allEntries = this.sessionManager.getEntries();
-		const compactionCount = allEntries.filter((e) => e.type === "compaction").length;
-		if (compactionCount > 0) {
-			const times = compactionCount === 1 ? "1 time" : `${compactionCount} times`;
-			this.showStatus(`Session compacted ${times}`);
-			this.compactionHistorySpacer = this.lastStatusSpacer;
-			this.compactionHistoryText = this.lastStatusText;
-		}
+		this.showCompactionHistoryNotice();
 	}
 
 	private renderProjectTrustWarningIfNeeded(): void {

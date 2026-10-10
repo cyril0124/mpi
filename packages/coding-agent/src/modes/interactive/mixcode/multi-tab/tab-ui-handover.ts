@@ -28,7 +28,8 @@ export interface TabUiTranscriptPort {
 	streamingComponent: AssistantMessageComponent | undefined;
 	streamingMessage: AssistantMessage | undefined;
 	beforeCapture(): void;
-	rebuild(options: { showCompactionHistory?: boolean }): void;
+	rebuild(): void;
+	showCompactionHistory(): void;
 	renderEntries(entries: SessionEntry[], options: { updateFooter: false }): void;
 	resyncQueues(): void;
 	updatePending(): void;
@@ -93,6 +94,8 @@ export class TabUiHandover {
 	private readonly pendingTabBinds = new Map<AgentSession, AgentTab>();
 	/** Tabs whose startup resources block is still to be painted on their next focus. */
 	private readonly pendingResourceBlocks = new Set<string>();
+	/** Sessions already left once, so their compaction history is not reported again. */
+	private readonly departedSessions = new Set<string>();
 	private bindWorkerRunning = false;
 	private switchQueue: Promise<void> = Promise.resolve();
 
@@ -110,12 +113,13 @@ export class TabUiHandover {
 	}
 
 	/** Swap a tab's UI in the host's existing queue, painting before any first bind begins. */
-	async switchActiveTab(tab: AgentTab, options: { showCompactionHistory?: boolean } = {}): Promise<void> {
+	async switchActiveTab(tab: AgentTab): Promise<void> {
 		const { runtime, transcript, turn, extensions, view } = this.ports;
 		const controller = extensions.controller;
 		view.leaveHome();
 		const outgoingId = controller.activeTabIdForUi;
 		if (outgoingId && outgoingId !== tab.id) {
+			this.departedSessions.add(runtime.current.session.sessionManager.getSessionId());
 			this.captureTranscript(outgoingId);
 			controller.detachTabUi(outgoingId);
 		}
@@ -130,7 +134,11 @@ export class TabUiHandover {
 		applySessionCopiedSettings(runtime.current.session);
 		runtime.applySettings();
 		if (!this.restoreTranscript(tab.id)) {
-			transcript.rebuild({ showCompactionHistory: options.showCompactionHistory ?? false });
+			transcript.rebuild();
+		}
+		// A tab's first view reports its compaction history; coming back to one does not.
+		if (!this.departedSessions.has(tab.runtime.session.sessionManager.getSessionId())) {
+			transcript.showCompactionHistory();
 		}
 		turn.endInterruptArm();
 		turn.resetRunMarkers();

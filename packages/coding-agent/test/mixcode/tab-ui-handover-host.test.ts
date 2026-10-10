@@ -418,4 +418,32 @@ describe("InteractiveMode tab handover integration", () => {
 			await host.dispose();
 		}
 	});
+
+	test("reports compaction history on a tab's first view and keeps it off a return", async () => {
+		const host = await fixture();
+		try {
+			const a = host.manager.getActive();
+			a.runtime.session.sessionManager.appendCompaction("HISTORICAL-SUMMARY", null, 35000);
+			await host.rebind();
+			host.mode.renderInitialMessages();
+			expect(await host.capture()).toContain("Session compacted 1 time");
+
+			// A status printed after the notice appends below it instead of replacing it.
+			const showStatus: (message: string) => void = Reflect.get(host.mode, "showStatus").bind(host.mode);
+			showStatus("STATUS-AFTER-NOTICE");
+			const afterStatus = await host.capture();
+			expect(afterStatus).toContain("STATUS-AFTER-NOTICE");
+			expect(afterStatus).toContain("Session compacted 1 time");
+
+			const b = await host.manager.createTab({ title: "B" });
+			await host.bind(b);
+			await host.activate(b);
+			await host.activate(a);
+			const returned = await host.capture();
+			expect(host.chat.children.length).toBeGreaterThan(0);
+			expect(returned).not.toContain("Session compacted");
+		} finally {
+			await host.dispose();
+		}
+	});
 });

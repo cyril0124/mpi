@@ -634,8 +634,10 @@ point `## [Unreleased]` at the new tag.
 - The submit-routing test fixture supplies the Home-selection callback required by the editor
   submission path.
 
-- Switching tabs no longer repeats `Session compacted N times`, which could be mistaken for a
-  new compaction. Session startup and compaction completion notifications are unchanged.
+- `Session compacted N times` reports a session's history once per process instead of on every
+  transcript rebuild, and no longer shares the status line, which used to overwrite it. It appears
+  on startup, on a tab's first view, and after branch navigation; returning to a tab that was left
+  keeps it away, because switching tabs does not compact the session.
 - The TUI status, startup-input and thinking-toggle test hosts include the Home state, submit
   attachment/binding and response-model notice callbacks their host integration reads, retaining
   the original rendering and startup-input assertions. The submit-routing, prompt-history and
