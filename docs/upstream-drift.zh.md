@@ -75,6 +75,7 @@
 | 模型失败诊断 | 失败的请求只保留 provider 格式化后的 `errorMessage`，原始异常在进程结束后就没了，类型、错误码与 HTTP 状态都无迹可循 | 每个内置文本适配器接受 `StreamOptions.onProviderError`，在自己的终止 catch 里把原始异常交给它；交互模式再把观察者装到共享 `ModelRuntime` 上，向控制台历史写入一行有界的 `[provider-error]`（`provider`、`model`、`api`，以及最多五个 `{name, code, status}` 节点） | 用户能行动的是 provider 自己的那句话，而真正失败的原因以前只有挂着调试器才看得到；见[模型请求错误诊断](provider-errors.zh.md) |
 | Skill 发现 | 每个会话都会把项目根（`<workdir>/.pi/skills` 与从 workdir 到 git 根的 `.agents/skills` 目录）同用户根（`<agent dir>/skills`、`~/.agents/skills`）合并 | `MPI_PROJECT_SKILLS_ONLY` 在加载器的 `skillsOverride` 里丢弃过滤器接收时作用域为 `user` 的 skill（`<agent dir>/skills`），以及文件位于 workdir 之外的 skill，使系统提示词与 `/skill:<name>` 列表保持一致；未设置时不改动发现行为 | 共享机器、评测或每仓库一份检出时，需要能把个人 skill 挡在项目提示词之外；见 [Skill 隔离](skill-isolation.zh.md) |
 | Herdr 窗格状态 | 既没有宿主标记，也没有进程级扩展通道：想向终端复用器上报窗格状态的扩展既没东西可把守，也没东西可监听 | `main()` 把进程标记为 MixCode（`MIXCODE ??= "1"`），并把每个标签的 `EventBus` 登记起来，宿主因而能向全部实例广播 `mpi:waiting-for-input` `{count, active}`（所有已打开标签中的扩展对话框）与 `mpi:mark-done` `{reason}`（`/mark-done` 之后 5 秒） | `mpi-herdr-report` 两者都需要：看不见 `mpi` 活动的 Herdr 侧边栏会把每个窗格都显示为 `unknown`。上报器本身不由本 fork 分发；见 [Herdr 窗格上报](herdr.zh.md) |
+| 扩展缓存位置 | `jiti` 把转译后的扩展缓存到调用 `createJiti` 的那个模块旁的 `node_modules/.cache/jiti`，没有这样的 `node_modules` 时缓存到 `<os.tmpdir()>/jiti`；tmpdir 兜底目录已属于其他用户时探测失败，于是静默地不使用缓存，每次启动都重新转译全部扩展 | 扩展加载器与 batch 执行器都传 `cache: resolveJitiCacheDir()`，解析为 `<agent dir>/cache/jiti`，agent 目录存不下时返回 `false`（不落盘缓存）；从不使用共享 tmpdir，也不改 `TMPDIR`；超过 30 天未写入的条目最多每 24 小时清理一次 | `/tmp` 不是用户自己的空间，一个用户的缓存会静默地把另一个用户的缓存关掉；agent 目录已是本 fork 其他缓存的家，清理规则则避免持久缓存无限增长 |
 
 ## 已过期的上游页面与源码文案
 
@@ -133,7 +134,7 @@
 - `packages/coding-agent/src/index.ts`：为嵌入方再导出 `getDefaultSessionDirPath`
 - `packages/coding-agent/src/core/agent-session.ts`：手动压缩请求独立指定模型，在 abort 当前轮次前就标记压缩已激活的 claim，steering 与 follow-up 队列的摘除，`/reset` 用的 `resetLeafToRoot()`，以及 `syncCacheWarmingMode()`（不写设置文件的 warming 重调）
 - `packages/coding-agent/src/core/settings-manager.ts`：fork 的 fullscreen `tuiMode` 默认值，以及保留的覆盖层（`applyOverrides` 的覆盖在每次重新组合时都会保留，`clearOverrides` 释放指定字段）
-- `packages/coding-agent/src/core/extensions/loader.ts`：让 bun 发行版的扩展导入走 `virtualModules`
+- `packages/coding-agent/src/core/extensions/loader.ts`：让 bun 发行版的扩展导入走 `virtualModules`，并把 fork 自有的 `resolveJitiCacheDir()` 作为 jiti 的 `cache` 选项传进去
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调与选中选项转发给备用屏幕
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`、`theme/theme-json.ts`、
   `theme/theme-schema.json`：带框卡片填充用的 `panelBg` 背景色，由 `withThemeColorFallbacks` 默认为

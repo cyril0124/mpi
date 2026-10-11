@@ -22,6 +22,21 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- jiti's disk cache of transformed extensions moved out of the shared tmpdir and gained a trim.
+  jiti's default is a `node_modules/.cache/jiti` directory beside whichever module calls
+  `createJiti`, and `<os.tmpdir()>/jiti` when no such `node_modules` exists, which is the case for
+  every layout this package ships. On a shared host the tmpdir fallback can already exist and belong
+  to another user: its writability probe then fails, it silently sets `fsCache: false`, and every
+  boot re-transforms every extension in pure JS (measured with the Node runtime: 11.9 s of startup
+  instead of 3.3 s). The extension loader and the batch executor now pass
+  `cache: resolveJitiCacheDir()`, which resolves to `<agent dir>/cache/jiti` — beside the other
+  `<agent dir>/cache/<owner>` directories an extension already uses — or to `false` (no disk cache)
+  when that cannot hold one. The shared tmpdir is never used and `TMPDIR` is left alone. A
+  persistent cache may sit on a network filesystem and cost a few hundred milliseconds to read at
+  boot (measured: 133–476 ms for 570 entries, against 18–28 ms on local disk), and entries are keyed
+  by module path, so a deleted module would otherwise leave its file behind forever: an entry's
+  write time older than 30 days now drops it, at most once per 24 hours, best effort. Ported from
+  `mixcode-pi` `ba3ca46`, which redirects `TMPDIR` instead.
 - A queued host command that moves the tab (`/follow-up /new-session`, `/follow-up /close-session`,
   `/follow-up /tab 2`) no longer types the origin tab's composer draft into the tab the command
   opened, and no longer wipes it from the origin. `runQueued` put the displaced draft back into
