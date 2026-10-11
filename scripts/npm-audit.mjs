@@ -18,6 +18,14 @@ const acceptedAdvisories = {
 			"unpublished gondolin example extension. Gondolin only verifies leaf certificates against its own locally " +
 			"generated CA (public exponent 65537), so the low-exponent signature forgery does not apply.",
 	},
+	"GHSA-hp3w-g68c-fv3c": {
+		package: "sprintf-js",
+		reason:
+			"No fixed sprintf-js release exists: 1.1.3 is the newest published version and the advisory covers <=1.1.3. " +
+			"It is only reachable through fengari, which the batch executor loads for a `.lua` script the local user " +
+			"supplies, and the denial of service needs an unbounded precision specifier in a format string, which no " +
+			"unattended input reaches.",
+	},
 };
 
 const result = spawnSync("npm", ["audit", "--omit=dev", "--json"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });

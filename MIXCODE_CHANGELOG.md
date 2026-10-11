@@ -22,6 +22,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `package-lock.json` is in sync with `packages/coding-agent/package.json` again, so `npm ci` succeeds. The
+  upstream v1.1.0 merge took upstream's side of the lock conflict and dropped `fengari@0.1.5` and its three
+  transitive dependencies, which the `.lua` batch executor needs; every `npm ci` since failed with
+  `Missing: fengari@0.1.5 from lock file`. The sprintf-js denial-of-service advisory fengari brings in is now
+  accepted in `scripts/npm-audit.mjs`, because 1.1.3 is the newest release and the format string comes from the
+  local user's own batch script.
 - A tab opened with `/new-session --no-focus` loads its extensions in the background instead of
   staying in its loading state forever. Only the focus path bound the new session's extensions, so
   the chip kept spinning, MixCode Home listed the tab as loading, and the loading spinner asked for
