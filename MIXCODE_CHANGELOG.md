@@ -22,6 +22,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A queued host command runs on the tab that queued it even when MixCode Home is the surface in front.
+  `/follow-up <command>` dispatches the round through `FollowUpHost.runQueuedCommand`, which attached the
+  owning tab only when `activeTabIdForUi` named another tab. Home leaves that field on the tab behind it
+  while taking over the composer, so the guard skipped the attach and the shared submit path re-derived its
+  target from `homeSelectedTab(...)`: the round ran on whatever the roster had selected. A queued
+  `/rename`, `/close-session`, `/delete-session`, `/clear`, `/model` or extension command could therefore act
+  on a different tab. The guard now attaches the owning tab whenever Home owns the composer.
 - A tab behind another one pauses its own follow-up queue when its run fails. The failure marker lives in the
   focused session's turn checkpoints (`TurnController` writes `followUpRunFailed` through
   `host.followUpState`), and switching tabs unsubscribes the outgoing session, so a round queued on a tab and
