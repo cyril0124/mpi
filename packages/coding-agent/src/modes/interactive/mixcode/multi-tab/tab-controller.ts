@@ -28,6 +28,8 @@ export interface TabControllerOptions {
 	readonly onLayoutChanged: () => void;
 	readonly onTabClosed: (tabId: string, removedIndex: number) => void;
 	readonly onBackgroundCompletion: () => void;
+	/** Called when a tab the user is not looking at ends a failed turn. */
+	readonly onBackgroundRunFailed?: (tabId: string) => void;
 	readonly onCompactionEnd: (tabId: string, willRetry: boolean) => void;
 	readonly configureRuntime: (runtime: AgentSessionRuntime) => void;
 	readonly enqueueTabSwitch: (operation: () => Promise<void>) => Promise<void>;
@@ -58,6 +60,7 @@ export class TabController {
 			onLayoutChanged: options.onLayoutChanged,
 			onTabClosed: options.onTabClosed,
 			onBackgroundCompletion: options.onBackgroundCompletion,
+			onBackgroundRunFailed: options.onBackgroundRunFailed,
 			onCompactionEnd: options.onCompactionEnd,
 			configureRuntime: options.configureRuntime,
 		});

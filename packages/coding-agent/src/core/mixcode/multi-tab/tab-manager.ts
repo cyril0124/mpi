@@ -121,6 +121,8 @@ export interface TabManagerOptions {
 	configureRuntime: (runtime: AgentSessionRuntime) => void;
 	/** Called when a tab the user is not looking at finishes a turn. */
 	onBackgroundCompletion?: () => void;
+	/** Called when a tab the user is not looking at ends a failed turn, so its own queued rounds can be paused. */
+	onBackgroundRunFailed?: (tabId: string) => void;
 	/** Called when a background tab's compaction ends, with its tab id and the retry flag. */
 	onCompactionEnd?: (tabId: string, willRetry: boolean) => void;
 	/** Called after a tab was removed, with its id and the index it occupied. */
@@ -134,12 +136,15 @@ export class TabManager {
 	private readonly onLayoutChanged: (() => void) | undefined;
 	private readonly configureRuntime: (runtime: AgentSessionRuntime) => void;
 	private readonly onBackgroundCompletion: (() => void) | undefined;
+	private readonly onBackgroundRunFailed: ((tabId: string) => void) | undefined;
 	private readonly onCompactionEnd: ((tabId: string, willRetry: boolean) => void) | undefined;
 	private readonly onTabClosed: ((tabId: string, removedIndex: number) => void) | undefined;
 	private readonly tabs: AgentTab[] = [];
 	private activeId: string;
 	/** Most-recently-activated tab ids (MRU-first, capped). */
 	private readonly recentIds: string[] = [];
+	/** Tabs whose last assistant message failed, until their run settles. */
+	private readonly tabsWithFailedRun = new Set<string>();
 
 	constructor(options: TabManagerOptions) {
 		this.createRuntime = options.createRuntime;
@@ -148,6 +153,7 @@ export class TabManager {
 		this.onLayoutChanged = options.onLayoutChanged;
 		this.configureRuntime = options.configureRuntime;
 		this.onBackgroundCompletion = options.onBackgroundCompletion;
+		this.onBackgroundRunFailed = options.onBackgroundRunFailed;
 		this.onCompactionEnd = options.onCompactionEnd;
 		this.onTabClosed = options.onTabClosed;
 		const tab = this.attachTab(options.initialTitle, options.initialRuntime);
@@ -466,6 +472,7 @@ export class TabManager {
 		assertTabIdle(this.tabs[index]!, "close");
 		const [tab] = this.tabs.splice(index, 1);
 		tab!.unsubscribe();
+		this.tabsWithFailedRun.delete(id);
 		this.forgetRecent(id);
 		this.onTabClosed?.(id, index);
 		const wasActive = this.activeId === id;
@@ -753,6 +760,8 @@ export class TabManager {
 	private handleTabEvent(tab: AgentTab, event: AgentSessionEvent): void {
 		switch (event.type) {
 			case "agent_start":
+				// The marker describes the run that is running, not the one before it.
+				this.tabsWithFailedRun.delete(tab.id);
 				// A settings write or a model swap can invalidate the override between
 				// commands; the budgets matter again for the turn that starts here.
 				reconcileContextLimit(tab, tab.runtime.session);
@@ -769,15 +778,25 @@ export class TabManager {
 				break;
 			}
 			case "message_end":
-				if (event.message.role === "assistant" && event.message.stopReason === "error") {
-					setTabStatus(tab, "error");
+				if (event.message.role !== "assistant") break;
+				// Remember whether this run failed: a tab behind another one never reaches the focused
+				// session's turn checkpoints, so `agent_settled` reports the failure from here instead.
+				if (event.message.stopReason === "error" || event.message.stopReason === "aborted") {
+					this.tabsWithFailedRun.add(tab.id);
+				} else {
+					this.tabsWithFailedRun.delete(tab.id);
 				}
+				if (event.message.stopReason === "error") setTabStatus(tab, "error");
 				break;
 			case "agent_settled": {
 				const isActive = tab.id === this.activeId;
+				const runFailed = this.tabsWithFailedRun.delete(tab.id);
 				// A terminal error survives settling; only a clean finish becomes done/idle.
 				if (tab.status !== "error") setTabStatus(tab, isActive ? "idle" : "done");
-				if (!isActive) this.onBackgroundCompletion?.();
+				if (!isActive) {
+					if (runFailed) this.onBackgroundRunFailed?.(tab.id);
+					this.onBackgroundCompletion?.();
+				}
 				const wasUnread = tab.unread;
 				tab.unread = !isActive;
 				// The badge is persisted state, so report the set the way `markDone` does;

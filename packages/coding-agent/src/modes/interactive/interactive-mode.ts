@@ -1450,6 +1450,13 @@ export class InteractiveMode {
 			},
 			// Ring the bell when a tab the user is not looking at finishes.
 			onBackgroundCompletion: () => this.ui.terminal.write("\x07"),
+			onBackgroundRunFailed: (tabId) => {
+				// A tab behind another one never reaches the focused session's turn checkpoints, so its
+				// failed run pauses its own queue instead of letting the waiting rounds be dispatched
+				// into the session that just failed.
+				const state = this.followUpStates.get(tabId);
+				if (state) pauseFollowUps(state);
+			},
 			onCompactionEnd: (tabId, willRetry) => {
 				// The tab's compaction ended while another tab held the focus, so its `compaction_end`
 				// reaches this callback instead of the focused session's event handler.

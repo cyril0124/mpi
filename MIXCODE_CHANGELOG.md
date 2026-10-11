@@ -22,6 +22,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A tab behind another one pauses its own follow-up queue when its run fails. The failure marker lives in the
+  focused session's turn checkpoints (`TurnController` writes `followUpRunFailed` through
+  `host.followUpState`), and switching tabs unsubscribes the outgoing session, so a round queued on a tab and
+  then left in the background was dispatched into the session that had just failed, without the documented
+  `Paused · /follow-up to resume` step. `TabManager` already sees every tab's `message_end` and
+  `agent_settled`; it now tracks a failed assistant message per tab and reports it for the tabs that are not on
+  screen, where the interactive mode pauses that tab's queue. The marker is per run: a failed or aborted
+  message sets it, the next run's start clears it, and settling consumes it, so a later round starts unpaused.
 - `package-lock.json` is in sync with `packages/coding-agent/package.json` again, so `npm ci` succeeds. The
   upstream v1.1.0 merge took upstream's side of the lock conflict and dropped `fengari@0.1.5` and its three
   transitive dependencies, which the `.lua` batch executor needs; every `npm ci` since failed with
