@@ -62,12 +62,17 @@ export interface RuntimeCallbackHost {
  *
  * @param title Optional title for the new tab.
  * @param focus When false the tab is created but focus stays on the current tab.
+ * @returns The created tab, or undefined when no tab was created.
  */
-export async function handleNewTab(host: TabLifecycleHost, title: string | undefined, focus: boolean): Promise<void> {
+export async function handleNewTab(
+	host: TabLifecycleHost,
+	title: string | undefined,
+	focus: boolean,
+): Promise<AgentTab | undefined> {
 	const { tabManager } = host;
 	if (!tabManager) {
 		host.showWarning("Multi-tab is unavailable in this session.");
-		return;
+		return undefined;
 	}
 	const previousId = tabManager.getActive().id;
 	host.saveComposerDraft();
@@ -85,18 +90,19 @@ export async function handleNewTab(host: TabLifecycleHost, title: string | undef
 		await (host.sharedTabLayout?.transaction(create) ?? create());
 	} catch (error) {
 		host.showError(`Failed to open tab: ${error instanceof Error ? error.message : String(error)}`);
-		return;
+		return undefined;
 	}
 
 	const tab = createdTab;
-	if (!tab) return;
+	if (!tab) return undefined;
 
 	if (!focus) {
 		// Keep the current tab rendered; the new tab only joins the bar.
 		tabManager.activate(previousId);
-		return;
+		return tab;
 	}
 	await host.enqueueTabSwitch(() => host.switchActiveTab(tab));
+	return tab;
 }
 
 /** Host surface the resume-into-tab command needs on top of the tab lifecycle one. */

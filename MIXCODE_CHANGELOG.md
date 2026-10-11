@@ -22,6 +22,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A tab opened with `/new-session --no-focus` loads its extensions in the background instead of
+  staying in its loading state forever. Only the focus path bound the new session's extensions, so
+  the chip kept spinning, MixCode Home listed the tab as loading, and the loading spinner asked for
+  a repaint every 80 ms until the tab was focused. A prompt sent to that tab from Home ran on a
+  session whose extensions had never loaded. The background path now queues the bind a peer-opened
+  tab gets.
 - jiti's disk cache of transformed extensions moved out of the shared tmpdir and gained a trim.
   jiti's default is a `node_modules/.cache/jiti` directory beside whichever module calls
   `createJiti`, and `<os.tmpdir()>/jiti` when no such `node_modules` exists, which is the case for

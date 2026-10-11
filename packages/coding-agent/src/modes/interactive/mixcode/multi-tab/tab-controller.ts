@@ -41,10 +41,12 @@ export interface TabControllerOptions {
 export class TabController {
 	readonly manager: TabManager | undefined;
 	readonly sharedLayout: SharedTabLayout | undefined;
+	private readonly onTabOpened: (tab: AgentTab) => void;
 
 	constructor(options: TabControllerOptions) {
 		this.manager = undefined;
 		this.sharedLayout = undefined;
+		this.onTabOpened = options.onTabOpened;
 		if (!options.createRuntime) return;
 
 		this.manager = new TabManager({
@@ -90,7 +92,10 @@ export class TabController {
 
 	/** Run a tab lifecycle command against this controller's owned tab set. */
 	async createTab(host: TabLifecycleHost, title?: string, focus = true): Promise<void> {
-		await handleNewTab(host, title, focus);
+		const tab = await handleNewTab(host, title, focus);
+		// Locally created tabs queue the same background bind a peer-opened tab gets. A tab created
+		// without focus is never switched to, so nothing else would load its extensions.
+		if (tab) this.onTabOpened(tab);
 	}
 
 	/** Close the active tab through the shared tab-switch queue. */
