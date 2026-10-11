@@ -22,6 +22,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A batch request that empties the session of the tab on screen rebuilds that tab's transcript. `mode="clear"`
+  and a `/reset` prompt both call `resetLeafToRoot()` without the transcript rebuild the composer's `/reset`
+  does, so the model context was emptied while the screen kept the old conversation, the next round was
+  appended below it, and switching tabs did not repair it (a tab's transcript returns from the handover
+  cache). `BatchCommandHost` gained `resyncTabTranscript`, which the interactive mode applies only to the
+  tab its UI is mounted on.
 - A queued host command runs on the tab that queued it even when MixCode Home is the surface in front.
   `/follow-up <command>` dispatches the round through `FollowUpHost.runQueuedCommand`, which attached the
   owning tab only when `activeTabIdForUi` named another tab. Home leaves that field on the tab behind it

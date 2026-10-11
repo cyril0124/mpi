@@ -7328,6 +7328,7 @@ export class InteractiveMode {
 			compactionClaimed: this.compactionClaimed,
 			bindTabExtensions: (tab) => this.bindTabExtensions(tab),
 			showTab: (tab) => this.enqueueTabSwitch(() => this.switchActiveTab(tab)),
+			resyncTabTranscript: (tab) => this.resyncTabTranscript(tab),
 			withTabConsole: (tab, run) => runInTabConsole(tab, run),
 			requestRender: () => {
 				this.updatePendingMessagesDisplay();
@@ -10817,6 +10818,19 @@ export class InteractiveMode {
 		} catch (error: unknown) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
+	}
+
+	/**
+	 * Rebuild the transcript of the tab on screen after a batch request emptied its session in
+	 * place. The composer's `/reset` command rebuilds the transcript itself; the batch path
+	 * reaches the same branch change without the composer, so the stale transcript is replaced
+	 * here.
+	 */
+	private resyncTabTranscript(tab: AgentTab): void {
+		if (this.activeTabIdForUi !== tab.id || this.session !== tab.runtime.session) return;
+		this.chatContainer.clear();
+		this.renderInitialMessages();
+		this.ui.requestRender();
 	}
 
 	private handleDebugCommand(): void {

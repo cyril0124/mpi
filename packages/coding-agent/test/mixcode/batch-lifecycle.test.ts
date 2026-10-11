@@ -202,6 +202,8 @@ function createBatchHost(setup: Setup): BatchCommandHost {
 			setup.bound.add(tab.runtime.session);
 		},
 		showTab: (tab) => client.host.enqueueTabSwitch(() => client.switchActiveTab(tab)),
+		// The harness has no mounted transcript, so there is nothing to rebuild.
+		resyncTabTranscript: () => {},
 		withTabConsole: (_tab, run) => run(),
 		requestRender: () => {},
 		showError: (message) => {

@@ -69,6 +69,8 @@ export interface BatchCommandHost {
 	bindTabExtensions(tab: AgentTab): Promise<void>;
 	/** Bring a tab on screen through the host's serialized switch path. */
 	showTab(tab: AgentTab): Promise<void>;
+	/** Rebuild a tab's transcript after a batch request emptied its session in place. */
+	resyncTabTranscript(tab: AgentTab): void;
 	/** Run `run` inside the owning tab's console scope. */
 	withTabConsole<T>(tab: AgentTab | undefined, run: () => Promise<T>): Promise<T>;
 	/** Repaint the frame after a queue or status change. */
@@ -243,6 +245,7 @@ export async function runOwnerLocalCommand(host: BatchCommandHost, tab: AgentTab
 		}
 		case "reset": {
 			await session.resetLeafToRoot();
+			host.resyncTabTranscript(tab);
 			return true;
 		}
 		case "model": {
@@ -406,7 +409,11 @@ function createExecutorHost(input: {
 		},
 		configureTab: (sessionId, config) => applyTabConfig(requireTab(sessionId), config, catalog),
 		clearTab: async (sessionId) => {
-			await requireTab(sessionId).runtime.session.resetLeafToRoot();
+			const tab = requireTab(sessionId);
+			await tab.runtime.session.resetLeafToRoot();
+			// `resetLeafToRoot()` empties the session in place, so a transcript mounted on
+			// this tab is now stale.
+			host.resyncTabTranscript(tab);
 		},
 		deleteTab: async (sessionId) => {
 			const result = await manager.deleteTab(sessionId);
