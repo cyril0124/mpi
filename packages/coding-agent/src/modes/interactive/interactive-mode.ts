@@ -7469,13 +7469,19 @@ export class InteractiveMode {
 
 	/** Confirm the armed interrupt: retract a turn that produced no output, else abort the run. */
 	private async retractOrAbortTurn(): Promise<void> {
+		// The confirmed interrupt belongs to the tab that armed it. The retract awaits
+		// `session.abort()`, and a tab switch during that await moves the runtime host, so
+		// the fallback below would abort the tab now in front and pull its queue into its
+		// composer instead of aborting the run the user confirmed.
+		const owningSession = this.session;
 		try {
-			if (await this.retractCurrentTurn()) return;
+			if (await this.retractCurrentTurn(owningSession)) return;
 		} catch (error) {
 			// The retract has already settled the composer. Nothing may reject into the
 			// fire-and-forget call site, where the app exits on an unhandled rejection.
 			this.showError(`Interrupt failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
+		if (this.session !== owningSession) return;
 		this.restoreQueuedMessagesToEditor({ abort: true });
 	}
 
@@ -7484,52 +7490,57 @@ export class InteractiveMode {
 	 * stream, rewind the branch leaf to before the run's own user message, and put
 	 * that message back into an empty composer. Returns false when the run is not
 	 * retractable, so the caller aborts it normally.
+	 *
+	 * `owningSession` is the tab that armed the interrupt, captured by the caller: the
+	 * awaits below accept input, and the rest of the retract only belongs to that tab.
 	 */
-	private async retractCurrentTurn(): Promise<boolean> {
+	private async retractCurrentTurn(owningSession: AgentSession): Promise<boolean> {
+		const sessionManager = owningSession.sessionManager;
 		// Compaction owns the run until it ends, and navigateTree refuses to run under it.
-		if (this.session.isCompacting || this.compactionClaimed) return false;
+		if (owningSession.isCompacting || this.compactionClaimed) return false;
 		// A queued follow-up round is recovered by the abort path instead: retracting
 		// under it would leave that queue to fire into the retracted conversation.
 		if (this.hasQueuedMessages()) return false;
 		// A composer the user is writing in is left alone: the confirmed Esc aborts
 		// instead of rewinding a turn out from under the draft.
 		if (this.editor.getText().trim()) return false;
-		const target = retractableUserMessage(
-			this.sessionManager.getBranch(),
-			this.runStartLeafId,
-			this.runVisibleOutput,
-		);
+		const target = retractableUserMessage(sessionManager.getBranch(), this.runStartLeafId, this.runVisibleOutput);
 		if (!target) return false;
 		// Optimistic prefill: abort() waits for stream idle, which can lag behind the
 		// provider teardown, so the composer takes its text before that wait.
 		this.setEditorText(target.text);
 		this.ui.requestRender();
-		const leafBeforeRewind = this.sessionManager.getLeafId();
+		const leafBeforeRewind = sessionManager.getLeafId();
 		let cancelled = false;
 		let rewindText: string | undefined;
 		try {
-			if (this.session.isStreaming) await this.session.abort();
+			if (owningSession.isStreaming) await owningSession.abort();
+			// The tab that armed the interrupt can leave the screen while the abort settles. The
+			// rewind then belongs to no visible surface, and the composer, the queues and the
+			// transcript belong to another tab, so it is dropped: the run stays aborted.
+			if (this.session !== owningSession) return true;
 			// The await accepts input: a round queued during it has to abort instead of being
 			// rewound under, and a run or compaction that started must not be rewound into.
 			if (
 				this.hasQueuedMessages() ||
-				this.session.isStreaming ||
-				this.session.isCompacting ||
+				owningSession.isStreaming ||
+				owningSession.isCompacting ||
 				this.compactionClaimed
 			) {
 				this.setEditorText("");
 				return false;
 			}
-			const result = await this.session.navigateTree(target.id);
+			const result = await owningSession.navigateTree(target.id);
 			cancelled = result.cancelled;
 			rewindText = result.editorText;
 		} catch (error) {
 			// The rewind commits before navigateTree refreshes the context and notifies
 			// extensions, and abort() can fail before it: the composer keeps its copy unless
 			// the branch never moved.
-			if (this.sessionManager.getLeafId() === leafBeforeRewind) this.setEditorText("");
+			if (sessionManager.getLeafId() === leafBeforeRewind) this.setEditorText("");
 			throw error;
 		}
+		if (this.session !== owningSession) return true;
 		if (cancelled) {
 			// An extension vetoed the rewind, so the turn stays in the transcript and
 			// the composer must not keep a second copy of its text.

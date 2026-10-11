@@ -22,6 +22,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A confirmed interrupt stays on the tab that armed it. The retract behind the second `Escape` awaits
+  `session.abort()`, and a tab switch during that await moved the runtime host, so the retract finished
+  against the tab now in front: it read that tab's branch and queues, and the fallback
+  `restoreQueuedMessagesToEditor({ abort: true })` aborted the run the user was
+  watching and pulled that tab's queued rounds into its composer. A background tab's run could therefore
+  be cut off by an interrupt confirmed on another tab. `retractCurrentTurn` now takes the session that
+  armed the interrupt and drops the rewind once that session is no longer mounted; the interrupted run
+  stays aborted, and the tab in front is left untouched.
 - A batch request that empties the session of the tab on screen rebuilds that tab's transcript. `mode="clear"`
   and a `/reset` prompt both call `resetLeafToRoot()` without the transcript rebuild the composer's `/reset`
   does, so the model context was emptied while the screen kept the old conversation, the next round was

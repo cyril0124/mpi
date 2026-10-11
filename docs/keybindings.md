@@ -149,4 +149,6 @@ choice, so none of those can be taken from them; above every other app id.
 
 A capturing overlay consumes the key before the composer sees it. The confirm window belongs to the
 run: it is dropped when the run starts or ends, when the active tab changes, and when a compaction or
-an automatic retry takes the key. Vim mode replaces this list while it is active - `q` leaves it.
+an automatic retry takes the key. A tab switch while a confirmed interrupt is still settling drops the
+retract instead of applying it to the tab now in front: the interrupted run stays aborted, and that
+tab keeps its own run and queue. Vim mode replaces this list while it is active - `q` leaves it.
