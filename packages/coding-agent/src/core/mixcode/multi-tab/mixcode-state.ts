@@ -147,6 +147,9 @@ export function mutateOpenTabs(
 		const ids = new Set(existing.kind === "ok" ? existing.snapshot.sessionIds : []);
 		mutator(ids);
 		const sessionIds = [...ids];
+		// A missing file with nothing to store stays missing: an empty snapshot would switch
+		// readTabMeta off its `mixcode_state.json` children fallback and hide every tab.
+		if (existing.kind === "missing" && sessionIds.length === 0) return sessionIds;
 		const active = activeSessionId ?? (existing.kind === "ok" ? existing.snapshot.activeSessionId : undefined);
 		const snapshot: OpenTabsSnapshot = {
 			version: OPEN_TABS_VERSION,
@@ -157,6 +160,19 @@ export function mutateOpenTabs(
 		ensureDir(filePath);
 		atomicWrite(filePath, `${JSON.stringify(snapshot, null, 2)}\n`);
 		return sessionIds;
+	});
+}
+
+/**
+ * Drop ids from the open-tab membership whatever the local tab set says. A caller
+ * that deleted sessions uses this instead of the delta publish, whose removal list
+ * comes from the last local snapshot and misses ids the snapshot never held.
+ */
+export function forgetOpenTabs(workdir: string, sessionIds: readonly string[]): void {
+	const idsToForget = [...new Set(sessionIds.filter((id) => id.trim()))];
+	if (idsToForget.length === 0) return;
+	mutateOpenTabs(workdir, (ids) => {
+		for (const id of idsToForget) ids.delete(id);
 	});
 }
 

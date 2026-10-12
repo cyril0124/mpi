@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	forgetOpenTabs,
 	openTabsFilePath,
 	readOpenTabs,
 	readTabMeta,
@@ -84,6 +85,17 @@ describe("open_tabs.json", () => {
 		writeRaw(path, "{ not json");
 		expect(() => writeOpenTabs(workdir, ["new"])).toThrow(/open_tabs\.json/);
 		expect(readFileSync(path, "utf-8")).toBe("{ not json");
+	});
+
+	it("forgets named sessions without touching the rest of the set", () => {
+		writeOpenTabs(workdir, ["a", "b", "c"], "b");
+		forgetOpenTabs(workdir, ["b", "  ", "gone"]);
+		const result = readOpenTabs(workdir);
+		expect(result.kind).toBe("ok");
+		if (result.kind !== "ok") return;
+		expect(result.snapshot.sessionIds).toEqual(["a", "c"]);
+		// The dropped id was the active one, so the snapshot carries no active tab.
+		expect(result.snapshot.activeSessionId).toBeUndefined();
 	});
 });
 

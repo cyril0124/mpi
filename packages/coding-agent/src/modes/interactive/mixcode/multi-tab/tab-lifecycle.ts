@@ -275,6 +275,10 @@ export async function handleDeleteTabs(
 		return;
 	}
 
+	// The sessions this command removes from the shared layout. Read before the tabs close,
+	// and forgotten explicitly afterwards: the delta publish derives its removals from the
+	// last local snapshot, which misses ids a failed or interrupted publish never recorded.
+	const deletedSessionIds = targets.map((tab) => tab.runtime.session.sessionManager.getSessionId());
 	const errors: string[] = [];
 	let deleted = 0;
 	let replacementVetoed = false;
@@ -311,7 +315,15 @@ export async function handleDeleteTabs(
 		}
 	};
 
-	await (host.sharedTabLayout?.transaction(runDelete) ?? runDelete());
+	// A tab that kept its session stays in the shared set: its file outlives the command, so a
+	// vetoed replacement must not drop the id a peer would then close. A throw above leaves the
+	// tabs it already closed out of any delta the local snapshot covers, so this runs either way.
+	try {
+		await (host.sharedTabLayout?.transaction(runDelete) ?? runDelete());
+	} finally {
+		const liveSessionIds = new Set(tabManager.list().map((tab) => tab.runtime.session.sessionManager.getSessionId()));
+		host.sharedTabLayout?.forgetSessions(deletedSessionIds.filter((id) => !liveSessionIds.has(id)));
+	}
 
 	if (errors.length > 0) host.showError(`Delete failed: ${errors.join("; ")}`);
 	if (replacementVetoed) {

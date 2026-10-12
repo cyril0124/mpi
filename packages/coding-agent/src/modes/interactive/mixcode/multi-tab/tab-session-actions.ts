@@ -26,6 +26,8 @@ export interface SessionActionHost {
 	subscribeToAgent(): void;
 	runtimeHost: { newSession(options?: unknown): Promise<{ cancelled: boolean }> };
 	showExtensionConfirm(title: string, message: string): Promise<boolean>;
+	/** Ask for the typed DELETE confirmation of `/delete-all-sessions`. */
+	showDeleteAllSessionsConfirm(totalTabs: number): Promise<boolean>;
 	showError(message: string): void;
 	showWarning(message: string): void;
 	showStatus(message: string): void;
@@ -124,7 +126,12 @@ export async function handleCloseAllSessions(host: SessionActionHost): Promise<v
 	host.showStatus("Closed all other tabs.");
 }
 
-/** `/delete-all-sessions` deletes every tab's session file, after confirmation. */
+/**
+ * `/delete-all-sessions` deletes every tab's session file, after the typed
+ * DELETE confirmation. The busy preconditions are checked first, so a tab that
+ * cannot be deleted is reported instead of asking for a confirmation that
+ * could only fail.
+ */
 export async function handleDeleteAllSessions(host: SessionActionHost): Promise<void> {
 	const { tabManager } = host;
 	if (!tabManager) {
@@ -139,12 +146,7 @@ export async function handleDeleteAllSessions(host: SessionActionHost): Promise<
 		host.showError(`Cannot delete all sessions while ${blocked.join(", ")}`);
 		return;
 	}
-	const total = tabManager.size;
-	const confirmed = await host.showExtensionConfirm(
-		"Delete all sessions",
-		`Delete the session files of all ${total} tab(s) and start fresh? They move to the trash and can be restored with /resume-trash; a file already in the trash, or one whose move fails, is deleted for good.`,
-	);
-	if (!confirmed) return;
+	if (!(await host.showDeleteAllSessionsConfirm(tabManager.size))) return;
 	try {
 		await handleDeleteTabs(host, { all: true });
 	} catch (error) {

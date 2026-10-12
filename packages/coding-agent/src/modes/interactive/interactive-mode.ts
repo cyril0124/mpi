@@ -180,7 +180,8 @@ import {
 	type TabColorName,
 	type TabLoadingPhase,
 } from "../../core/mixcode/multi-tab/types.ts";
-import { listTrash, restoreFromTrash, trashDir } from "../../core/mixcode/session-trash.ts";
+import { sessionFileHasConversation } from "../../core/mixcode/session-file-conversation.ts";
+import { listTrash, moveToTrash, restoreFromTrash, trashDir } from "../../core/mixcode/session-trash.ts";
 import { persistSessionCwd, writeSessionFile } from "../../core/mixcode/session-workdir.ts";
 import { reloadSettingsAcrossTabs } from "../../core/mixcode/settings-tab-sync.ts";
 import { type EditorFlagRequest, parseEditorFlag } from "../../core/mixcode/system-inspection/editor-flag.ts";
@@ -229,6 +230,7 @@ import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import {
 	getDefaultSessionDir,
+	getDefaultSessionDirPath,
 	type SessionEntry,
 	SessionManager,
 	sessionEntryToContextMessages,
@@ -278,6 +280,11 @@ import {
 } from "./components/mixcode/command-palette/command-palette.ts";
 import { ConsoleNotice, consoleNoticeOverlayOptions } from "./components/mixcode/console/console-notice.ts";
 import { ContextLimitSelectorComponent } from "./components/mixcode/context-limit/context-limit-selector.ts";
+import {
+	DELETE_ALL_SESSIONS_CONFIRM_TITLE,
+	DELETE_ALL_SESSIONS_CONFIRM_WIDTH,
+	DeleteAllSessionsConfirmComponent,
+} from "./components/mixcode/delete-all-sessions-confirm/delete-all-sessions-confirm.ts";
 import { DockWidgetBudget } from "./components/mixcode/dock-widgets/dock-widgets.ts";
 import {
 	QueuePreviewComponent,
@@ -640,6 +647,16 @@ const QUIT_CONFIRM_WIDTH = 72;
  * the overflow counts; the bar must not push the transcript off the screen.
  */
 const TAB_BAR_MAX_ROWS_SHARE = 0.1;
+
+/** Status text for the sessions a restore dropped because they were deleted. */
+function deletedStatus(count: number): string {
+	return `skipped ${count} deleted session${count === 1 ? "" : "s"}`;
+}
+
+/** True when this session id was deleted from one of the directories the restore reads. */
+function isTrashedSession(trashedDirs: ReadonlySet<string> | undefined, dirs: readonly string[]): boolean {
+	return trashedDirs !== undefined && dirs.some((dir) => trashedDirs.has(dir));
+}
 
 // The command list the editor's autocomplete and the command palette share lives in
 // `./mixcode/command-list.ts`, next to the palette that also reads it.
@@ -3172,6 +3189,7 @@ export class InteractiveMode {
 			...this.tabLifecycleHost(),
 			session: this.session,
 			showExtensionConfirm: (title, msg) => this.showExtensionConfirm(title, msg),
+			showDeleteAllSessionsConfirm: (totalTabs) => this.showDeleteAllSessionsConfirm(totalTabs),
 		};
 	}
 
@@ -4222,6 +4240,17 @@ export class InteractiveMode {
 			// The recorded startup session is already open as this instance's first tab.
 			const entries = snapshot.sessionIds.filter((id) => id !== currentId);
 			if (entries.length === 0) return;
+			// Sessions sitting in the trash were deleted on purpose. A restore that rebuilt one of
+			// them leaves a placeholder file behind, so the id has to be checked against the trash
+			// rather than against the files on disk. The trash is shared across project directories
+			// and one session id can appear in several of them, so the directory the file came from
+			// is part of the match.
+			const trashedDirsBySessionId = new Map<string, Set<string>>();
+			for (const entry of await listTrash()) {
+				const dirs = trashedDirsBySessionId.get(entry.sessionId) ?? new Set<string>();
+				dirs.add(path.dirname(entry.originalPath));
+				trashedDirsBySessionId.set(entry.sessionId, dirs);
+			}
 
 			// List the whole persisted layout as loading chips and move to Home before the
 			// first tab is built, so the frame the user sees does not wait for the restore:
@@ -4243,6 +4272,7 @@ export class InteractiveMode {
 				currentId,
 				persistedIds: snapshot.sessionIds,
 				activeSessionId: snapshot.activeSessionId,
+				trashedDirsBySessionId,
 			});
 		} catch (error) {
 			this.restoringTabs = [];
@@ -4267,16 +4297,20 @@ export class InteractiveMode {
 		currentId: string;
 		persistedIds: readonly string[];
 		activeSessionId?: string;
+		trashedDirsBySessionId: ReadonlyMap<string, ReadonlySet<string>>;
 	}): Promise<void> {
 		const manager = this.tabManager;
 		if (!manager) return;
-		const { entries, meta, sessionDir, currentId, persistedIds, activeSessionId } = options;
+		const { entries, meta, sessionDir, currentId, persistedIds, activeSessionId, trashedDirsBySessionId } = options;
 		const initialId = manager.getActive().id;
 		const errors: string[] = [];
 		const restoredTabs: RestoredTab[] = [];
 		// Recorded ids whose session opened under a different id; each one is written to
 		// the shared set once, before peer polling starts.
 		const renamedSessionIds = new Set<string>();
+		// Recorded ids whose session was deleted. The layout drops them so the next start
+		// does not read them again.
+		const deletedSessionIds: string[] = [];
 		try {
 			for (const sessionId of entries) {
 				const restoring = this.restoringTabs.find((item) => item.id === sessionId);
@@ -4289,6 +4323,31 @@ export class InteractiveMode {
 					const sessionPath =
 						resolveSessionPath(sessionDir, sessionId) ??
 						resolveSessionPath(getDefaultSessionDir(workdir), sessionId);
+					// A deleted session does not come back as a tab, whether or not a restore already
+					// left a placeholder file under its id. The file is kept only when it holds turns of
+					// its own, so work done in a tab that came back this way is not thrown away with it.
+					if (
+						isTrashedSession(trashedDirsBySessionId.get(sessionId), [
+							sessionDir,
+							getDefaultSessionDirPath(workdir),
+						])
+					) {
+						deletedSessionIds.push(sessionId);
+						if (sessionPath && !sessionFileHasConversation(sessionPath)) {
+							// The placeholder shadowed the trashed original, because a session id resolves to
+							// its newest file. Moving it aside is what lets a `/resume-trash` restore land on
+							// the session the user meant.
+							try {
+								moveToTrash(sessionPath, { sessionId, title: title ?? sessionId });
+							} catch (error) {
+								// The tabs themselves restored; only this cleanup failed.
+								this.showWarning(
+									`Could not move a deleted session's placeholder: ${error instanceof Error ? error.message : String(error)}`,
+								);
+							}
+						}
+						continue;
+					}
 					// While the session is read, the placeholder chip names this phase.
 					if (restoring) restoring.phase = "session";
 					// The tab id is the persisted session id, so the chip already waiting for this
@@ -4349,6 +4408,13 @@ export class InteractiveMode {
 					errors.push(error instanceof Error ? error.message : String(error));
 				}
 			}
+			// Deleted ids leave the shared set by name, before anything else publishes: the
+			// delta publish reports the local layout, and these ids were never part of a
+			// published baseline. A live tab can hold one of these ids anyway, because a bind
+			// can replace a session, and a live tab stays in the set.
+			const liveSessionIds = new Set(manager.list().map((tab) => tab.runtime.session.sessionManager.getSessionId()));
+			const forgottenSessionIds = deletedSessionIds.filter((id) => !liveSessionIds.has(id));
+			if (forgottenSessionIds.length > 0) this.sharedTabLayout?.forgetSessions(forgottenSessionIds);
 			// A layout that already records the startup session keeps that session's tab;
 			// closing it would leave the id in the shared set with no tab behind it.
 			const startupInLayout = persistedIds.includes(currentId);
@@ -4366,6 +4432,7 @@ export class InteractiveMode {
 			}
 			if (restoredTabs.length === 0) {
 				if (errors.length > 0) this.showWarning(`Could not restore tabs: ${errors[0]}`);
+				else if (deletedSessionIds.length > 0) this.showStatus(deletedStatus(deletedSessionIds.length));
 				return;
 			}
 			// A startup session outside the layout is the transient tab the restore replaces.
@@ -4382,7 +4449,11 @@ export class InteractiveMode {
 			// ids, and the next start must read those instead of the old ones.
 			this.tabsRestoreAttempted = true;
 			this.persistOpenTabs();
-			this.showStatus(`Restored ${restoredTabs.length} tab(s).`);
+			this.showStatus(
+				deletedSessionIds.length > 0
+					? `Restored ${restoredTabs.length} tab(s); ${deletedStatus(deletedSessionIds.length)}.`
+					: `Restored ${restoredTabs.length} tab(s).`,
+			);
 		} catch (error) {
 			// Best-effort restore: fall back to the single fresh tab.
 			this.showWarning(`Could not restore tabs: ${error instanceof Error ? error.message : String(error)}`);
@@ -4440,6 +4511,36 @@ export class InteractiveMode {
 
 	private async handleDeleteAllSessions(): Promise<void> {
 		await this.tabs.deleteAllSessions(this.sessionActionHost());
+	}
+
+	/**
+	 * `/delete-all-sessions` confirmation panel. The deletion runs only once DELETE
+	 * has been typed in full, so no single key can confirm it. Busy tabs are
+	 * reported by the command before this panel opens, so a confirmation that could
+	 * only fail is never asked for.
+	 */
+	private showDeleteAllSessionsConfirm(totalTabs: number): Promise<boolean> {
+		return this.setExtensionDialogBlock(
+			{ kind: "permission", message: DELETE_ALL_SESSIONS_CONFIRM_TITLE },
+			new Promise<boolean>((resolve) => {
+				let handle: OverlayHandle | undefined;
+				let settled = false;
+				const finish = (confirmed: boolean) => {
+					if (settled) return;
+					settled = true;
+					handle?.hide();
+					resolve(confirmed);
+				};
+				handle = this.ui.showOverlay(
+					new DeleteAllSessionsConfirmComponent(
+						totalTabs,
+						() => finish(true),
+						() => finish(false),
+					),
+					{ anchor: "center", width: DELETE_ALL_SESSIONS_CONFIRM_WIDTH, margin: 1 },
+				);
+			}),
+		);
 	}
 
 	/** Open tabs as `/tab` argument completions; empty when multi-tab is unavailable. */

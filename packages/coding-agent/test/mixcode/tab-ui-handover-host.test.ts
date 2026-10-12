@@ -287,6 +287,7 @@ describe("InteractiveMode tab handover integration", () => {
 				currentId: string;
 				persistedIds: readonly string[];
 				activeSessionId?: string;
+				trashedDirsBySessionId: ReadonlyMap<string, ReadonlySet<string>>;
 			}) => Promise<void> = Reflect.get(host.mode, "loadRestoredTabs").bind(host.mode);
 			const ids = host.harnesses.slice(1).map((harness) => harness.sessionManager.getSessionId());
 			const currentId = a.runtime.session.sessionManager.getSessionId();
@@ -297,6 +298,7 @@ describe("InteractiveMode tab handover integration", () => {
 				currentId,
 				persistedIds: [currentId, ...ids],
 				activeSessionId: ids[1],
+				trashedDirsBySessionId: new Map(),
 			});
 			expect(host.trace.filter((step) => step.startsWith("bind:"))).toEqual(["bind:0", "bind:1", "bind:2"]);
 			expect(host.manager.list().every((tab) => !tab.loading)).toBe(true);

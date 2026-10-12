@@ -1,6 +1,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { getDefaultSessionDir } from "../../session-manager.ts";
 import {
+	forgetOpenTabs,
 	mutateOpenTabs,
 	readTabMeta,
 	replaceOpenTabSessionIds,
@@ -143,6 +144,24 @@ export class SharedTabLayout {
 		if (!this.started || this.disposed || this.suspensionDepth > 0) return;
 		try {
 			this.publishChanges(false);
+		} catch (error) {
+			this.options.onError(error);
+		}
+	}
+
+	/**
+	 * Drop sessions from the shared membership. Called for sessions that were deleted,
+	 * whose removal must not depend on the local delta snapshot.
+	 *
+	 * Call it after the transaction that closed the tabs, never inside one: that
+	 * transaction's own publish re-adds every id a local tab still holds. There is no
+	 * `started` guard because the startup restore runs before `start()`, and the write is
+	 * a read-modify-write, so it keeps the entries a peer published.
+	 */
+	forgetSessions(sessionIds: readonly string[]): void {
+		if (this.disposed) return;
+		try {
+			forgetOpenTabs(this.options.workdir, sessionIds);
 		} catch (error) {
 			this.options.onError(error);
 		}

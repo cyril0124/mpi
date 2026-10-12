@@ -34,7 +34,7 @@ start-up instructions do not name the toggle, and `/hotkeys` reports it with a n
 | `/close-session [yes]` | Close the current tab, keeping its session file. `yes` skips the confirmation. |
 | `/close-all-sessions` | Close every tab except the current one, after confirmation. |
 | `/delete-session [yes]` | Close the current tab and move its session file to the trash, where `/resume-trash` can restore it. `yes` skips the confirmation. |
-| `/delete-all-sessions` | Move every tab's session file to the trash and start fresh, after confirmation. |
+| `/delete-all-sessions` | Move every tab's session file to the trash and start fresh. Confirmation needs the word `DELETE` typed in full; a tab that is busy is refused before the panel opens. |
 | `/resume` | Open the session selector; the picked session opens in a tab of its own, or focuses the tab that already holds it. |
 | `/resume-trash` | Open the session selector over the trash: restore a deleted session to its original path and open it in a tab of its own, or remove it for good. |
 | `/rename <title>` | Rename the current tab and its session. |
@@ -50,8 +50,9 @@ start-up instructions do not name the toggle, and `/hotkeys` reports it with a n
 | `/mark-done` | Flag the current tab as finished in the tab bar. |
 | `/toggle-zen-mode` | Hide the focused tab's tab-bar chips so the transcript gets the row; the separator stays and reports the other agents. `tab` and `shift+tab` stop switching while it is on. See [Zen Mode](zen-mode.md). |
 
-The session confirmations (`/close-session`, `/delete-session` and the two all-sessions variants)
-take `y` to confirm and `n` or `esc` to cancel, in addition to the arrow-key selector.
+The session confirmations (`/close-session`, `/delete-session` and `/close-all-sessions`) take `y` to
+confirm and `n` or `esc` to cancel, in addition to the arrow-key selector. `/delete-all-sessions` is
+the exception: its panel starts the deletion only once the word `DELETE` has been typed.
 
 ## Tab Jump
 
@@ -273,9 +274,18 @@ load.
 `/delete-session`, `/delete-all-sessions`, and the session selector refuse to delete a session
 file that an open tab holds, and name that tab: it keeps appending to the path, so removing the file
 under it leaves a headerless replacement that no restart can load. A tab with a turn in progress
-reports what it is busy with instead. The two session commands also replace the session of the tab
-they keep, so an extension that cancels `session_before_switch` cancels the delete with it and the
-file stays where that tab writes.
+reports what it is busy with instead, and `/delete-all-sessions` reports that before it opens its
+panel. The two session commands also replace the session of the tab they keep, so an extension that
+cancels `session_before_switch` cancels the delete with it and the file stays where that tab writes.
+
+`/delete-all-sessions` confirms on a typed word: the run starts only once `DELETE` has been entered in
+full, so no single key confirms it, whether a stray `y`, Enter or a key sent into the terminal by another
+process. `n` or the cancel chord dismisses the panel.
+
+A deleted session stays deleted. The command removes the deleted ids from the shared layout itself, and a
+start that still reads one of them skips that entry rather than rebuilding it as an empty tab. A
+placeholder file an earlier start left under such an id moves to the trash, so it cannot shadow the
+session `/resume-trash` restores.
 
 ## Reset
 

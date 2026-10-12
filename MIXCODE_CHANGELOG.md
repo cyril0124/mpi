@@ -20,8 +20,21 @@ point `## [Unreleased]` at the new tag.
 
 ### Changed
 
+- `/delete-all-sessions` confirms on a typed word instead of a Yes/No dialog. The dialog had `Yes`
+  selected and answered to a single key, so one stray Enter or `y`, including one sent into the terminal
+  by `mpi ctl send-keys`, deleted every open tab's session file. The run now needs `DELETE` entered in
+  full, matching mixcode-pi. A tab that is busy is refused before the panel opens, so a confirmation that
+  could only fail is never asked for.
+
 ### Fixed
 
+- A deleted session no longer comes back as an empty tab. Deletions removed their ids from the shared
+  layout through the tab set's delta, which reports removals against the last locally published
+  snapshot, so a delete whose publish did not land left the ids in `open_tabs.json`. The next start
+  rebuilt each one as a header-only session: the tabs returned with empty chats while their files sat in
+  the trash. The command now drops the deleted ids by name, a start that reads a trashed id skips that
+  tab rather than rebuilding it, and a placeholder file an earlier start left under the id moves to the
+  trash so the session `/resume-trash` restores is not shadowed.
 - A confirmed interrupt stays on the tab that armed it. The retract behind the second `Escape` awaits
   `session.abort()`, and a tab switch during that await moved the runtime host, so the retract finished
   against the tab now in front: it read that tab's branch and queues, and the fallback
