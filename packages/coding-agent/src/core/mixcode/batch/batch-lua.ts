@@ -9,7 +9,8 @@ import type { BatchContext, BatchPlan, BatchReuseMode, BatchTabRequest } from ".
 /**
  * Run the Lua source under fengari and collect all `mixcode.open_tab()` calls into a
  * BatchPlan, with no side effects on the TUI: the host applies the plan afterwards.
- * Throws as `Lua error in <path>: ...` for syntax, runtime, or validation failures.
+ * Throws as `Lua error in <path>: ...` for syntax, runtime, or validation failures, with
+ * the failing line and, for a runtime failure, its Lua call chain.
  */
 export async function runLuaScript(
 	source: string,
@@ -174,13 +175,60 @@ export async function runLuaScript(
 	lua.lua_pushcfunction(L, renderFn);
 	lua.lua_setglobal(L, to_luastring("render"));
 
-	const status = lauxlib.luaL_dostring(L, to_luastring(source));
+	// Name the chunk after the script path so Lua's own position prefix and the traceback frames
+	// below read `<path>:<line>:`.
+	const chunk = to_luastring(source);
+	const loadStatus = lauxlib.luaL_loadbuffer(L, chunk, chunk.length, to_luastring(`@${scriptPath}`));
+	if (loadStatus !== 0) {
+		throw new Error(formatLuaError(scriptPath, luaErrorText(L, lua, lauxlib, to_jsstring)));
+	}
+
+	// The message handler appends the call chain a runtime error would otherwise lose.
+	lua.lua_pushcfunction(L, () => {
+		const message = luaErrorText(L, lua, lauxlib, to_jsstring);
+		lauxlib.luaL_traceback(L, L, message, 1);
+		return 1;
+	});
+	// lua_pcall takes the handler by stack index: place it under the chunk, which is on top.
+	lua.lua_insert(L, -2);
+	const status = lua.lua_pcall(L, 0, 0, lua.lua_gettop(L) - 1);
 	if (status !== 0) {
-		const errMsg = to_jsstring(lua.lua_tostring(L, -1));
-		throw new Error(`Lua error in ${scriptPath}: ${errMsg}`);
+		throw new Error(formatLuaError(scriptPath, luaErrorText(L, lua, lauxlib, to_jsstring)));
 	}
 
 	return { requests };
+}
+
+/**
+ * Text of the error value on top of the stack. A script may raise any value, while Lua can only
+ * prepend a traceback to a string, so a non-string is converted the way `tostring` would.
+ */
+function luaErrorText(L: any, lua: any, lauxlib: any, to_jsstring: (s: Uint8Array) => string): string {
+	if (lua.lua_type(L, -1) === lua.LUA_TSTRING) return to_jsstring(lua.lua_tostring(L, -1));
+	lauxlib.luaL_tolstring(L, -1);
+	const text = to_jsstring(lua.lua_tostring(L, -1));
+	lua.lua_pop(L, 1);
+	return text;
+}
+
+/** Length of the chunk id Lua keeps; `luaO_chunkid` cuts a longer file name down to this. */
+const LUA_CHUNK_ID_SIZE = 59;
+
+/**
+ * Fold Lua's position prefix into the `Lua error in <path>` line, so the path is printed once and
+ * the rest of the message starts at the line number. A file chunk id longer than
+ * `LUA_CHUNK_ID_SIZE` is printed as `...` plus its tail, so both forms are matched.
+ */
+function formatLuaError(scriptPath: string, errText: string): string {
+	const chunkId = `@${scriptPath}`;
+	const prefixes = [`${scriptPath}:`];
+	if (chunkId.length > LUA_CHUNK_ID_SIZE) {
+		const keptTail = chunkId.slice(chunkId.length - (LUA_CHUNK_ID_SIZE - 3));
+		prefixes.push(`...${keptTail}:`);
+	}
+	const prefix = prefixes.find((candidate) => errText.startsWith(candidate));
+	if (prefix === undefined) return `Lua error in ${scriptPath}: ${errText}`;
+	return `Lua error in ${scriptPath}:${errText.slice(prefix.length)}`;
 }
 
 /**

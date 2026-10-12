@@ -40,6 +40,12 @@ Prompt 可以是普通文本、skill 或 template 命令、扩展命令，或 Ta
 
 新 Tab 会先应用请求的模型、思考档位与上下文上限，再绑定扩展；请求的名称在绑定成功后写入。因此 Tab 加载的扩展在 `session_start` 看到的就是请求中的配置。
 
+## 报错
+
+脚本失败时会指出脚本路径和出错行。Lua 报错为 `Lua error in <路径>:<行号>: <信息>`，其后是 `stack traceback:` 和每个 Lua 调用帧，因此在辅助函数里出错时也能看到调用者。TypeScript/JavaScript 运行时报错为 `Batch script error in <路径>: <信息>`，其后是脚本自身的调用栈帧。
+
+`--batch` 在进入交互循环之前加载并校验脚本：此时失败会把信息打印到 stderr 并以 1 退出，坏脚本不会进入交互循环。已加载计划在应用阶段失败时，与之后的其他 batch 失败一样显示为错误提示。`--batch-dry-run` 不启动 TUI，把信息打印到 stderr 并以 1 退出。`/batch` 的失败一律显示为错误提示，因为 TUI 已经在运行。语法错误在触碰任何 Tab 之前就会终止脚本；非法请求也一样，因为计划会先完整加载并校验，再由 TUI 应用。
+
 ## 限制
 
 - `systemPrompt` 只对新会话生效。交互式 `/batch` 会拒绝该字段，CLI dry-run 接受。

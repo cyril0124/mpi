@@ -5,6 +5,7 @@
  * is `mixcode-batch.d.ts` at the repository root, and the alias, field, and method
  * names here mirror it.
  */
+import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
 import { resolveJitiCacheDir } from "../jiti-cache-dir.ts";
 import { resolveBatchScriptDir } from "./batch-lua.ts";
@@ -101,8 +102,8 @@ export async function runTsScript(
 }
 
 /**
- * Run `action`, rewrapping any thrown error with the script path. Errors this
- * module raises itself already name the path and pass through unchanged.
+ * Run `action`, rewrapping any thrown error with the script path and the failing frames of the
+ * script. Errors this module raises itself already name the path and pass through unchanged.
  */
 async function withScriptPath<T>(scriptPath: string, action: () => Promise<T> | T): Promise<T> {
 	try {
@@ -110,8 +111,45 @@ async function withScriptPath<T>(scriptPath: string, action: () => Promise<T> | 
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (message.includes(scriptPath)) throw error;
-		throw new Error(`Batch script error in ${scriptPath}: ${message}`, { cause: error });
+		const frames = scriptFrames(error);
+		throw new Error(`Batch script error in ${scriptPath}: ${message}${frames}`, { cause: error });
 	}
+}
+
+/** Frame lines kept from a script's stack: enough for the call chain, short enough for a notice. */
+const MAX_SCRIPT_FRAMES = 6;
+
+/**
+ * The script's own stack frames, each on its own line. The module loader compiles the script
+ * with source maps, so its frames already carry the script's file and line; the frames of this
+ * executor, the loader, and the runtime are dropped instead.
+ */
+function scriptFrames(error: unknown): string {
+	const stack = error instanceof Error ? error.stack : undefined;
+	if (stack === undefined) return "";
+	const executorFile = fileURLToPath(import.meta.url);
+	const frames = stack
+		.split("\n")
+		.slice(1)
+		.filter((line) => {
+			const file = frameFile(line);
+			if (file === undefined) return false;
+			// V8 reports internal frames as `node:...` and `native` pseudo-files.
+			if (file === "native" || file.startsWith("node:")) return false;
+			return !file.includes("/node_modules/") && file !== executorFile;
+		})
+		.slice(0, MAX_SCRIPT_FRAMES);
+	return frames.length === 0 ? "" : `\n${frames.join("\n")}`;
+}
+
+/** File a stack line points into, or undefined when the frame carries no source position. */
+function frameFile(line: string): string | undefined {
+	const rest = line.trim().replace(/^at\s+(?:async\s+)?/, "");
+	// A frame is either `file:line:column` or `function (file:line:column)`.
+	const position = /\((.*)\)$/.exec(rest)?.[1] ?? rest;
+	const file = /^(.*):\d+:\d+$/.exec(position)?.[1];
+	if (file === undefined) return undefined;
+	return file.startsWith("file://") ? fileURLToPath(file) : file;
 }
 
 /**

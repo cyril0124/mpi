@@ -30,12 +30,17 @@ import {
 	catalogModelToResolved,
 	resolveBatchModel,
 } from "../../../../core/mixcode/batch/batch-models.ts";
-import { applyBatchRequests, formatBatchPlan } from "../../../../core/mixcode/batch/batch-plan.ts";
+import {
+	applyBatchRequests,
+	formatBatchPlan,
+	validateBatchRequests,
+} from "../../../../core/mixcode/batch/batch-plan.ts";
 import type {
 	BatchContext,
 	BatchExecutorHost,
 	BatchResolvedModel,
 	BatchTabConfig,
+	BatchTabRequest,
 } from "../../../../core/mixcode/batch/types.ts";
 import { applyContextLimitToSession, parseContextLimitValue } from "../../../../core/mixcode/context-limit.ts";
 import type { FollowUpHost } from "../../../../core/mixcode/follow-up/runtime-follow-up.ts";
@@ -426,21 +431,47 @@ function createExecutorHost(input: {
 }
 
 /**
- * Execute one batch script against the current tab fleet. `/batch` and the CLI
- * `--batch` flag both land here, so a script never round-trips through a
- * reconstructed command string and its arguments keep their exact text.
+ * Execute one `/batch` invocation against the current tab fleet, reporting any failure as an error
+ * notice. The script's exact text never round-trips through a reconstructed command string.
  */
-export async function runBatchFile(host: BatchCommandHost, file: string, args: string[]): Promise<void> {
+async function runBatchFile(host: BatchCommandHost, file: string, args: string[]): Promise<void> {
+	try {
+		await applyLoadedBatch(host, await loadBatchInvocation(host, file, args));
+	} catch (error) {
+		host.showError(errorMessage(error));
+	}
+}
+
+/**
+ * Execute the `--batch` script this process was started with. A script that cannot load or validate
+ * throws, so the caller aborts the command before the interactive loop starts; a failure while
+ * applying the loaded plan is reported as an error notice, like any later batch failure.
+ */
+export async function runStartupBatch(host: BatchCommandHost, file: string, args: string[]): Promise<void> {
+	const invocation = await loadBatchInvocation(host, file, args);
+	try {
+		await applyLoadedBatch(host, invocation);
+	} catch (error) {
+		host.showError(errorMessage(error));
+	}
+}
+
+/** A loaded batch plan together with the host bound to the invocation it was loaded for. */
+interface BatchInvocation {
+	requests: BatchTabRequest[];
+	executorHost: BatchExecutorHost;
+}
+
+/**
+ * Resolve the invocation's anchor tab, model catalog and workdir, then load, resolve, and validate
+ * the script. Throws for a missing runtime, an unresolvable anchor model, and any load, model, or
+ * request failure, so a caller can decide whether the failure ends the command.
+ */
+async function loadBatchInvocation(host: BatchCommandHost, file: string, args: string[]): Promise<BatchInvocation> {
 	const manager = host.tabManager;
-	if (!manager) {
-		host.showError("Error: /batch requires multi-tab runtime support");
-		return;
-	}
+	if (!manager) throw new Error("Error: /batch requires multi-tab runtime support");
 	const anchor = anchorTab(manager);
-	if (!anchor) {
-		host.showError("Error: /batch requires an active model");
-		return;
-	}
+	if (!anchor) throw new Error("Error: /batch requires an active model");
 	const workdir = host.homeActive ? host.homeWorkdir : anchor.tab.runtime.cwd;
 	const catalog = anchor.tab.runtime.session.modelRuntime.getAvailableSnapshot();
 	const context = buildSnapshot({ manager, workdir, args, catalog, defaultProvider: anchor.model.provider });
@@ -451,18 +482,31 @@ export async function runBatchFile(host: BatchCommandHost, file: string, args: s
 		catalog,
 		anchorModel: anchor.model,
 	});
+	const plan = await loadBatchRequests(path.resolve(workdir, file), context);
+	// Script workdirs are relative to the invocation directory, so the tab opens where the script asked.
+	const requests = plan.requests.map((request) => ({
+		...request,
+		...(request.workdir ? { workdir: path.resolve(workdir, request.workdir) } : {}),
+	}));
+	// Resolve every request against the invocation's model catalog before any tab is touched, so a
+	// caller that fails the command on a bad request can do it here instead of midway through apply.
+	validateBatchRequests(
+		requests,
+		(query) => executorHost.resolveModel(query),
+		(request) =>
+			request.mode === "delete" ? executorHost.defaultModel : executorHost.resolveModelByTitle(request.name),
+	);
+	return { requests, executorHost };
+}
 
-	try {
-		const plan = await loadBatchRequests(path.resolve(workdir, file), context);
-		// Script workdirs are relative to the invocation directory, so the tab opens where the script asked.
-		const requests = plan.requests.map((request) => ({
-			...request,
-			...(request.workdir ? { workdir: path.resolve(workdir, request.workdir) } : {}),
-		}));
-		await applyBatchRequests(requests, executorHost);
-		host.requestRender();
-		host.showStatus(formatBatchPlan({ requests }));
-	} catch (error) {
-		host.showError(error instanceof Error ? error.message : String(error));
-	}
+/** Apply a loaded plan: tabs, prompts, and the plan summary the host shows on success. */
+async function applyLoadedBatch(host: BatchCommandHost, invocation: BatchInvocation): Promise<void> {
+	await applyBatchRequests(invocation.requests, invocation.executorHost);
+	host.requestRender();
+	host.showStatus(formatBatchPlan({ requests: invocation.requests }));
+}
+
+/** Message of a thrown value, for a host that reports strings rather than errors. */
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }

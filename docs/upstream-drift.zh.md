@@ -117,7 +117,8 @@
   反应位于 `TurnController`，在明确的事件位置调用。`TabUiHandover` 持有对话区缓存与预热、
   串行切换、绑定去重及延迟资源挂载。Home/对话区渲染、会话扩展绑定与核心状态渲染保留
   宿主接线。`ExtensionUiController` 持有每标签页的对话框、chrome、widget、自定义编辑器、
-  输入订阅与进程级 waiting-for-input 计数。
+  输入订阅与进程级 waiting-for-input 计数。`--batch` 的启动接线（`initialBatch`，以及脚本无法加载时
+  终止整条命令并恢复终端的收尾）也在本文件。
 - `packages/coding-agent/src/core/agent-session-runtime.ts`：runtime 工厂接受恢复到其他工作目录的
   标签页提供的 project trust context
 - `packages/coding-agent/src/config.ts`：`ENV_AGENT_DIR` / `ENV_SESSION_DIR` 固定为 `PI_*` 名称，不再跟随 `piConfig.name`
@@ -129,7 +130,7 @@
 - `packages/coding-agent/src/core/slash-commands.ts`
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
-- `packages/coding-agent/src/main.ts`：`MIXCODE` 宿主标记、`MIXCODE_PID` 里的宿主进程 pid，以及每标签 `EventBus` 的登记
+- `packages/coding-agent/src/main.ts`：`MIXCODE` 宿主标记、`MIXCODE_PID` 里的宿主进程 pid、每标签 `EventBus` 的登记，以及以 `initialBatch` 或以 dry-run 计划到达交互模式的 `--batch` 调用
 - `packages/coding-agent/src/core/session-manager.ts`：导出 `getDefaultSessionDirPath`
 - `packages/coding-agent/src/index.ts`：为嵌入方再导出 `getDefaultSessionDirPath`
 - `packages/coding-agent/src/core/agent-session.ts`：手动压缩请求独立指定模型，在 abort 当前轮次前就标记压缩已激活的 claim，steering 与 follow-up 队列的摘除，`/reset` 用的 `resetLeafToRoot()`，以及 `syncCacheWarmingMode()`（不写设置文件的 warming 重调）

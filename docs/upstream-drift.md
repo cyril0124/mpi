@@ -122,7 +122,9 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
   owns transcript caching/warming, serialized switching, bind deduplication and deferred resource
   mounting. Home/transcript rendering, session extension setup and core status rendering retain
   host integration. `ExtensionUiController` owns per-tab dialogs, chrome, widgets, custom editors,
-  input subscriptions, and the process-wide waiting-for-input count.
+  input subscriptions, and the process-wide waiting-for-input count. The `--batch` startup wire
+  (`initialBatch`, plus the abort that fails the command when the script cannot load) also lives
+  here.
 - `packages/coding-agent/src/core/agent-session-runtime.ts`: the runtime factory accepts the
   project trust context that a tab resumed into another workdir supplies
 - `packages/coding-agent/src/config.ts`: `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are pinned to the `PI_*` names instead of following `piConfig.name`
@@ -134,7 +136,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/src/core/slash-commands.ts`
 - `packages/coding-agent/src/core/extensions/runner.ts`
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
-- `packages/coding-agent/src/main.ts`: the `MIXCODE` host marker, the host pid in `MIXCODE_PID`, and the per-tab `EventBus` registration
+- `packages/coding-agent/src/main.ts`: the `MIXCODE` host marker, the host pid in `MIXCODE_PID`, the per-tab `EventBus` registration, and the `--batch` invocation that reaches the interactive mode as `initialBatch` or the dry-run plan
 - `packages/coding-agent/src/core/session-manager.ts`: `getDefaultSessionDirPath` is exported
 - `packages/coding-agent/src/index.ts`: re-exports `getDefaultSessionDirPath` for embedders
 - `packages/coding-agent/src/core/agent-session.ts`: request-scoped manual compaction model, the claim that marks compaction active before it aborts the running turn, the steering and follow-up queue splice, `resetLeafToRoot()` for `/reset`, and `syncCacheWarmingMode()` (the warming reconcile without the settings write)

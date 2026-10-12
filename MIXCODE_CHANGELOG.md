@@ -28,6 +28,18 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A `--batch` script that cannot load or validate now fails the command instead of starting the TUI.
+  The script path was handed to the interactive mode, which loaded it after startup and reported
+  every failure as a chat notice, so a broken script left a live TUI and a zero exit code. Loading
+  and validation now run before the interactive loop: a failure restores the terminal, writes the
+  message to stderr, and exits 1. A failure while applying an already loaded plan keeps the notice.
+- A failing batch script now points at the line that failed. The Lua executor loaded the script with
+  `luaL_dostring`, which names the chunk after the first 60 characters of the script's own source, and ran
+  it without a message handler, so an error inside a helper reported `[string "local function ..."]:12` and
+  no caller. It now loads the chunk as the script path and runs it through `lua_pcall` with
+  `luaL_traceback`, so the message reads `Lua error in <path>:12: ...` followed by the Lua call chain. The
+  TypeScript executor reported only the exception message; it now appends the script's own stack frames,
+  which the module loader already maps back to the source file.
 - A deleted session no longer comes back as an empty tab. Deletions removed their ids from the shared
   layout through the tab set's delta, which reports removals against the last locally published
   snapshot, so a delete whose publish did not land left the ids in `open_tabs.json`. The next start

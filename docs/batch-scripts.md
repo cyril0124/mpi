@@ -40,6 +40,12 @@ A prompt can be plain text, a skill or template command, an extension command, o
 
 A new tab applies its requested model, thinking level and context limit before its extensions bind, and the requested name is written after the bind succeeds. Extensions a tab loads therefore see the requested configuration at `session_start`.
 
+## Errors
+
+A failing script names the script and the failing line. A Lua error reads `Lua error in <path>:<line>: <message>`, followed by `stack traceback:` and one frame per Lua call, so a failure inside a helper names its caller. A TypeScript or JavaScript runtime error reads `Batch script error in <path>: <message>`, followed by the script's own stack frames.
+
+`--batch` loads and validates the script before the interactive loop starts: a failure there prints the message to stderr and exits 1, so a broken script never reaches the interactive loop. A failure while applying an already loaded plan, like any later batch failure, shows as an error notice. `--batch-dry-run` prints the message to stderr and exits 1 without starting the TUI. `/batch` reports every failure as an error notice, because the TUI is already running. A syntax error stops the script before any tab is touched, and so does a malformed request: the plan is loaded and validated in full before the TUI applies it.
+
 ## Limitations
 
 - `systemPrompt` applies to a new session only. The interactive `/batch` host rejects it; the CLI dry-run accepts it.

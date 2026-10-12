@@ -376,7 +376,7 @@ import { type ExternalEditorResult, editInExternalEditor } from "./external-edit
 import {
 	type BatchCommandHost,
 	handleBatchCommand as runBatchCommand,
-	runBatchFile as runBatchScript,
+	runStartupBatch as runStartupBatchScript,
 } from "./mixcode/batch/batch-command.ts";
 import { type CommandSource, collectSlashCommands, type TabArgumentOption } from "./mixcode/command-list.ts";
 import { ForkCommands } from "./mixcode/commands/fork-commands.ts";
@@ -2171,7 +2171,13 @@ export class InteractiveMode {
 
 		if (this.options.initialBatch) {
 			const batch = this.options.initialBatch;
-			await runBatchScript(this.batchCommandHost(), batch.script, batch.args);
+			// A script that cannot load or validate fails the whole command, so it must not be reported
+			// the way a failure of a running TUI is.
+			try {
+				await runStartupBatchScript(this.batchCommandHost(), batch.script, batch.args);
+			} catch (error) {
+				this.abortStartup(error);
+			}
 		}
 
 		// Process initial messages
@@ -7198,6 +7204,18 @@ export class InteractiveMode {
 		await this.tabs.dispose(this.runtimeHost);
 
 		process.exit(0);
+	}
+
+	/**
+	 * End the command on a startup failure: restore the terminal, write the message to the real
+	 * stderr (the console bridge would route it into the TUI `stop()` just tore down), and exit
+	 * nonzero. A batch script that cannot load is a command error, so it gets no crash report.
+	 */
+	private abortStartup(error: unknown): never {
+		const message = error instanceof Error ? error.message : String(error);
+		this.stop();
+		process.stderr.write(`${message.startsWith("Error:") ? message : `Error: ${message}`}\n`);
+		process.exit(1);
 	}
 
 	private emergencyTerminalExit(): never {
