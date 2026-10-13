@@ -54,11 +54,6 @@ export const THEME_TOKENS = defineThemeTokens({
 		description: "Transcript search match text and current-match background (falls back to text when omitted)",
 		fallback: "text",
 	},
-	panelBg: {
-		slot: "background",
-		description: "Panel and floating surface background (falls back to toolPendingBg when omitted)",
-		fallback: "toolPendingBg",
-	},
 	userMessageBg: { slot: "background", description: "User message background" },
 	userMessageText: { slot: "foreground", description: "User message text color" },
 	customMessageBg: { slot: "background", description: "Custom message background (hook-injected messages)" },

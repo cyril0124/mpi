@@ -14,11 +14,15 @@ point `## [Unreleased]` at the new tag.
 ### Changed
 
 - Merged upstream pi v1.2.0, retaining MixCode keybindings, startup settings, Lua batch support,
-  panel theme colors, and compaction model labels alongside upstream schema validation and editor colors.
+  panel backgrounds, and compaction model labels alongside upstream schema validation and editor colors.
 
 ### Fixed
 
 ### Removed
+
+- Removed the fork-only `panelBg` theme token. Toasts, settings, Tab Jump, and user-message
+  previews use upstream `toolPendingBg`, keeping panel backgrounds compatible with the published
+  theme schema and avoiding theme-token conflicts on upstream merges.
 
 ## base pi v1.2.0 — 2026-10-13
 

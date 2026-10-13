@@ -92,7 +92,7 @@ export class ToastCardComponent implements Component {
 		return panel("", rows, boxWidth, {
 			rounded: true,
 			borderColor: TOAST_STYLES[this.type].color,
-			backgroundColor: "panelBg",
+			backgroundColor: "toolPendingBg",
 		});
 	}
 }

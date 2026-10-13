@@ -498,7 +498,7 @@ export class SettingsPanel implements Component {
 		const rows = this.bodyRows();
 		const body = this.body.render(panelContentWidth(width, BODY_PADDING_X), rows).slice(0, rows);
 		return panel(this.title, body, width, {
-			backgroundColor: "panelBg",
+			backgroundColor: "toolPendingBg",
 			backgroundScope: "content",
 			paddingX: BODY_PADDING_X,
 		});

@@ -324,7 +324,7 @@ export class TabJumpComponent implements Component {
 			width,
 			{
 				paddingX: 0,
-				backgroundColor: "panelBg",
+				backgroundColor: "toolPendingBg",
 				backgroundScope: "content",
 			},
 		);

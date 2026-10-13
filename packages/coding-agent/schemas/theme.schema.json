@@ -159,10 +159,6 @@
           "$ref": "#/$defs/ColorValue",
           "description": "Transcript search match text and current-match background (falls back to text when omitted)"
         },
-        "panelBg": {
-          "$ref": "#/$defs/ColorValue",
-          "description": "Panel and floating surface background (falls back to toolPendingBg when omitted)"
-        },
         "userMessageBg": {
           "$ref": "#/$defs/ColorValue",
           "description": "User message background"

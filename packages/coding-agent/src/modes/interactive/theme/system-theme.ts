@@ -70,7 +70,6 @@ const TOKEN_FAMILIES: Record<ThemeToken, FamilyName> = {
 	searchMatchBg: "orange",
 	userMessageBg: "blue",
 	customMessageBg: "violet",
-	panelBg: "neutral",
 	toolPendingBg: "neutral",
 	toolSuccessBg: "green",
 	toolErrorBg: "red",

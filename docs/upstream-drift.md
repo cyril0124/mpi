@@ -145,10 +145,8 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
   `clearOverrides` releases named fields)
 - `packages/coding-agent/src/core/extensions/loader.ts`: routes bun-dist extension imports through `virtualModules`, and hands jiti the fork-owned `resolveJitiCacheDir()` as its `cache` option
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: forwards the host's copy callback and selection options to the alternate screen
-- `packages/coding-agent/src/modes/interactive/theme/theme-tokens.ts` and
-  `packages/coding-agent/schemas/theme.schema.json`: the optional `panelBg` background fills framed
-  cards and falls back to `toolPendingBg` through upstream token metadata; schema generation
-  includes the token without modifying built-in theme files
+- Fork panels use the upstream `toolPendingBg` background token; theme tokens and the generated
+  theme schema need no fork extension for panel backgrounds.
 - `packages/coding-agent/test/extensions-runner.test.ts`
 - `packages/coding-agent/test/interactive-tui.test.ts`: upstream copy assertions follow the fork's
   toast behavior; the fork-only selection-copy handover scenario lives in `test/mixcode/clipboard.test.ts`,

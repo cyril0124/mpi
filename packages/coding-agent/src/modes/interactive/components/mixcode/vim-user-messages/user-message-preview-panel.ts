@@ -30,9 +30,9 @@ export class UserMessagePreviewPanel implements Component {
 		);
 		return panel(USER_MESSAGE_PREVIEW_TITLE, [...this.lines], boxWidth, {
 			rounded: true,
-			backgroundColor: "panelBg",
+			backgroundColor: "toolPendingBg",
 			backgroundScope: "content",
-			rowBackground: (row) => (row === this.highlightedIndex ? "selectedBg" : "panelBg"),
+			rowBackground: (row) => (row === this.highlightedIndex ? "selectedBg" : "toolPendingBg"),
 		});
 	}
 }
