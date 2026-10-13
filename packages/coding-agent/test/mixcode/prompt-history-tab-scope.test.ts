@@ -180,6 +180,7 @@ async function createFixture(): Promise<HistoryFixture> {
 		endInterruptArm: () => {},
 		clearStatusIndicator: () => {},
 		showWorkingStatusIndicator: () => {},
+		showCompactionStatusIndicator: () => {},
 		updateAvailableProviderCount: () => {},
 		updateEditorBorderColor: () => {},
 		updateTerminalTitle: () => {},

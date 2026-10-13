@@ -50,6 +50,8 @@ export interface AgentTab {
 	titleLocked?: boolean;
 	color?: TabColorName;
 	status: TabStatus;
+	/** Reason for the live compaction, retained while its tab is parked. */
+	compactionReason?: Extract<AgentSessionEvent, { type: "compaction_start" }>["reason"];
 	/** True when a background tab finished a turn the user has not viewed yet. */
 	unread: boolean;
 	/**
@@ -791,6 +793,11 @@ export class TabManager {
 			case "agent_settled": {
 				const isActive = tab.id === this.activeId;
 				const runFailed = this.tabsWithFailedRun.delete(tab.id);
+				// Compaction can own the session while the interrupted run settles.
+				if (tab.runtime.session.isCompacting) {
+					setTabStatus(tab, "running");
+					break;
+				}
 				// A terminal error survives settling; only a clean finish becomes done/idle.
 				if (tab.status !== "error") setTabStatus(tab, isActive ? "idle" : "done");
 				if (!isActive) {
@@ -804,11 +811,18 @@ export class TabManager {
 				if (tab.unread !== wasUnread) this.notifyLayoutChanged();
 				break;
 			}
+			case "compaction_start":
+				tab.compactionReason = event.reason;
+				setTabStatus(tab, "running");
+				break;
 			case "compaction_end": {
+				tab.compactionReason = undefined;
+				if (tab.runtime.session.isStreaming || event.willRetry) setTabStatus(tab, "running");
+				else setTabStatus(tab, event.errorMessage ? "error" : "idle");
 				// A message parked during this compaction waits for this tab, which may not
 				// be the focused one; the focused tab flushes it from its own event handler.
 				if (tab.id !== this.activeId) this.onCompactionEnd?.(tab.id, event.willRetry);
-				return;
+				break;
 			}
 			case "session_info_changed": {
 				if (tab.titleLocked) return;

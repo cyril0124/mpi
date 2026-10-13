@@ -131,7 +131,7 @@ their glyphs:
 | Status | Glyph | Meaning |
 | --- | --- | --- |
 | `idle` | `-` | Open, not working |
-| `running` | `●` | A turn is streaming |
+| `running` | `●` | A turn is running or compaction is in progress |
 | `thinking` | `●` | Reasoning before output, same glyph as running |
 | `error` | `x` | Last turn failed |
 | `done` | `✓` | Flagged finished, or unread output |

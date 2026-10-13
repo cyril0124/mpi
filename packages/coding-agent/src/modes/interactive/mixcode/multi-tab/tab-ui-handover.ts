@@ -10,6 +10,7 @@ import type { AssistantMessageComponent } from "../../components/assistant-messa
 import type { ToolExecutionComponent } from "../../components/tool-execution.ts";
 import { setRegisteredThemes } from "../../theme/theme.ts";
 import type { ExtensionUiController } from "../extensions/extension-ui-controller.ts";
+import { chronologicalTranscriptEntries } from "./transcript-entries.ts";
 
 /** Session and subscription replacements are read through these live ports. */
 export interface TabUiRuntimePort {
@@ -59,6 +60,7 @@ export interface TabUiViewPort {
 	hiddenThinkingLabel: string | undefined;
 	leaveHome(): void;
 	showWorking(): void;
+	showCompaction(reason: "manual" | "threshold" | "overflow"): void;
 	clearWorking(): void;
 	setDraft(text: string): void;
 	updateProviderCount(): void;
@@ -150,7 +152,8 @@ export class TabUiHandover {
 		}
 
 		const session = runtime.current.session;
-		if (session.isStreaming || session.isCompacting) view.showWorking();
+		if (session.isCompacting && tab.compactionReason) view.showCompaction(tab.compactionReason);
+		else if (session.isStreaming || session.isCompacting) view.showWorking();
 		else view.clearWorking();
 		view.setDraft(tab.draftInput);
 		view.updateProviderCount();
@@ -214,7 +217,8 @@ export class TabUiHandover {
 			runtime.current = tab.runtime;
 			extensions.controller.activeTabIdForUi = tab.id;
 			view.hiddenThinkingLabel = extensions.controller.tabUi.get(tab.id)?.hiddenThinkingLabel;
-			transcript.renderEntries(runtime.current.session.sessionManager.buildContextEntries(), {
+			const manager = runtime.current.session.sessionManager;
+			transcript.renderEntries(chronologicalTranscriptEntries(manager.buildContextEntries(), manager.getBranch()), {
 				updateFooter: false,
 			});
 			const width = Math.max(1, view.ui.terminal.columns);

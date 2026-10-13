@@ -174,6 +174,119 @@ async function fixture() {
 }
 
 describe("InteractiveMode tab handover integration", () => {
+	for (const completesInBackground of [false, true]) {
+		test(`compaction survives a tab round trip (background completion: ${completesInBackground})`, async () => {
+			const host = await fixture();
+			const summaryGate = deferred();
+			const summaryStarted = deferred();
+			try {
+				const a = host.manager.getActive();
+				await host.rebind();
+				host.mode.renderInitialMessages();
+				const b = await host.manager.createTab({ title: "B" });
+				await host.bind(b);
+				await host.activate(a);
+				const harness = host.harnesses[0];
+				harness.settingsManager.applyOverrides({ compaction: { enabled: false, keepRecentTokens: 1 } });
+				harness.setResponses([fauxAssistantMessage("RETAINED-ANSWER")]);
+				await harness.session.prompt("LAST-TURN");
+				harness.setResponses([
+					async () => {
+						summaryStarted.resolve();
+						await summaryGate.promise;
+						return fauxAssistantMessage("ROUND-TRIP-SUMMARY");
+					},
+					fauxAssistantMessage("RETAINED-TURN-SUMMARY"),
+				]);
+				const compact: (args: string) => Promise<void> = Reflect.get(host.mode, "handleCompactCommand").bind(
+					host.mode,
+				);
+				const result = compact(`${harness.session.model!.provider}/${harness.session.model!.id}`);
+				await summaryStarted.promise;
+				expect(a.status).toBe("running");
+				await host.activate(b);
+				expect(await host.capture()).not.toContain("Compacting context");
+				if (!completesInBackground) {
+					await host.activate(a);
+					const during = await host.capture();
+					expect(during).toContain("Compacting context via");
+					expect(during).toContain(`${harness.session.model!.provider}/${harness.session.model!.id}`);
+				}
+				summaryGate.resolve();
+				await result;
+				if (completesInBackground) {
+					expect(await host.capture()).not.toContain("Compacted from");
+					await host.activate(a);
+				}
+				const completed = await host.capture();
+				expect(completed).not.toContain("Working");
+				expect(completed).not.toContain("Compacting context");
+				expect(completed).toContain("Compacted from");
+				expect(a.status).toBe("idle");
+				const transcript = host.chat.render(100).map(stripAnsi).join("\n");
+				expect(transcript).toContain("RETAINED-ANSWER");
+				expect(transcript.indexOf("Compacted from")).toBeGreaterThan(transcript.indexOf("RETAINED-ANSWER"));
+				await host.activate(b);
+				await host.activate(a);
+				expect(
+					(
+						host.chat
+							.render(100)
+							.join("\n")
+							.match(/Compacted from/g) ?? []
+					).length,
+				).toBe(1);
+			} finally {
+				summaryGate.resolve();
+				await host.dispose();
+			}
+		});
+	}
+
+	test("a branch summary round trip does not restore a compaction indicator", async () => {
+		const host = await fixture();
+		const summaryGate = deferred();
+		const summaryStarted = deferred();
+		try {
+			const a = host.manager.getActive();
+			await host.rebind();
+			const b = await host.manager.createTab({ title: "B" });
+			await host.bind(b);
+			await host.activate(a);
+			const harness = host.harnesses[0];
+			harness.setResponses([fauxAssistantMessage("BRANCH-ANSWER")]);
+			await harness.session.prompt("BRANCH-TURN");
+			const target = harness.sessionManager.getBranch().find((entry) => entry.type === "message");
+			if (!target) throw new Error("Branch navigation requires a target");
+			harness.setResponses([
+				async () => {
+					summaryStarted.resolve();
+					await summaryGate.promise;
+					return fauxAssistantMessage("BRANCH-SUMMARY");
+				},
+			]);
+			const result = harness.session.navigateTree(target.id, { summarize: true });
+			await summaryStarted.promise;
+			await host.activate(b);
+			await host.activate(a);
+			const during = await host.capture();
+			expect(during).toContain("Working");
+			expect(during).not.toContain("Compacting context");
+			summaryGate.resolve();
+			await result;
+			const clearSummary: (kind: "branchSummary") => void = Reflect.get(
+				host.mode,
+				"clearSummaryStatusIndicator",
+			).bind(host.mode);
+			clearSummary("branchSummary");
+			expect(await host.capture()).not.toContain("Working");
+			expect(Reflect.get(host.mode, "activeStatusIndicator")).toBeUndefined();
+		} finally {
+			summaryGate.resolve();
+			await host.dispose();
+		}
+	});
+
 	test("serialized A-B-A restores component identity, consumed queues, live runtime and turn markers", async () => {
 		const host = await fixture();
 		try {

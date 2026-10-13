@@ -18,6 +18,10 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Compaction keeps its reason and model label after switching tabs, and its tab shows the busy
+  dot until the operation ends. A summary completed in the background appears after the retained
+  conversation when the tab is reopened, matching foreground completion.
+
 ### Removed
 
 - Removed the fork-only `panelBg` theme token. Toasts, settings, Tab Jump, and user-message

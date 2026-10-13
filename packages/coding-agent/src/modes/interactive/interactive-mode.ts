@@ -399,6 +399,7 @@ import {
 } from "./mixcode/multi-tab/tab-lifecycle.ts";
 import type { SessionActionHost } from "./mixcode/multi-tab/tab-session-actions.ts";
 import { TabUiHandover, type TabUiHandoverPorts } from "./mixcode/multi-tab/tab-ui-handover.ts";
+import { chronologicalTranscriptEntries } from "./mixcode/multi-tab/transcript-entries.ts";
 import { createMouseSelectionOptions } from "./mixcode/selection/selection-surface.ts";
 import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
 import { type BlockedStatus, ProgramStatusReporter } from "./program-status-reporter.ts";
@@ -996,6 +997,7 @@ export class InteractiveMode {
 				},
 				leaveHome: () => mode.leaveHome(),
 				showWorking: () => mode.showWorkingStatusIndicator(),
+				showCompaction: (reason) => mode.showCompactionStatusIndicator(reason),
 				clearWorking: () => mode.clearStatusIndicator(),
 				setDraft: (text) => mode.setEditorText(text),
 				updateProviderCount: () => mode.updateAvailableProviderCount(),
@@ -4842,8 +4844,8 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Clear a compaction or branch-summary indicator, accepting the plain working indicator a tab
-	 * switch paints while one runs, since the switch cannot know the summary's kind. A working
+	 * Clear a compaction or branch-summary indicator, accepting the plain working fallback a tab
+	 * switch paints for a branch summary. Compaction restores its typed indicator. A working
 	 * indicator an active agent run owns is left to that run.
 	 */
 	private clearSummaryStatusIndicator(kind: "compaction" | "branchSummary"): void {
@@ -4852,6 +4854,17 @@ export class InteractiveMode {
 		if (activeIndicator.kind !== kind && activeIndicator.kind !== "working") return;
 		if (activeIndicator.kind === "working" && this.session.isStreaming) return;
 		this.clearStatusIndicator();
+	}
+
+	/** Show compaction status with the mounted session's model label and editor border color. */
+	private showCompactionStatusIndicator(reason: "manual" | "threshold" | "overflow"): void {
+		const colorFn = isEmbeddedStatus(this.editor)
+			? (text: string) =>
+					(this.editor.borderColor ?? theme.getThinkingBorderColor(this.session.thinkingLevel || "off"))(text)
+			: undefined;
+		this.showStatusIndicator(
+			new CompactionStatusIndicator(this.ui, reason, this.compactionModelRefs.get(this.session), colorFn),
+		);
 	}
 
 	private showWorkingStatusIndicator(): void {
@@ -6526,20 +6539,7 @@ export class InteractiveMode {
 				}
 				// Keep editor active; submissions are queued during compaction.
 				this.endInterruptArm();
-				const colorFn = isEmbeddedStatus(this.editor)
-					? (text: string) =>
-							(this.editor.borderColor ?? theme.getThinkingBorderColor(this.session.thinkingLevel || "off"))(
-								text,
-							)
-					: undefined;
-				this.showStatusIndicator(
-					new CompactionStatusIndicator(
-						this.ui,
-						event.reason,
-						this.compactionModelRefs.get(this.session),
-						colorFn,
-					),
-				);
+				this.showCompactionStatusIndicator(event.reason);
 				this.ui.requestRender();
 				break;
 			}
@@ -6631,20 +6631,7 @@ export class InteractiveMode {
 				if (event.source === "branchSummary") {
 					this.showStatusIndicator(new BranchSummaryStatusIndicator(this.ui));
 				} else {
-					const colorFn = isEmbeddedStatus(this.editor)
-						? (text: string) =>
-								(this.editor.borderColor ?? theme.getThinkingBorderColor(this.session.thinkingLevel || "off"))(
-									text,
-								)
-						: undefined;
-					this.showStatusIndicator(
-						new CompactionStatusIndicator(
-							this.ui,
-							event.reason,
-							this.compactionModelRefs.get(this.session),
-							colorFn,
-						),
-					);
+					this.showCompactionStatusIndicator(event.reason);
 				}
 				this.ui.requestRender();
 				break;
@@ -7080,7 +7067,9 @@ export class InteractiveMode {
 	renderInitialMessages(): void {
 		this.clearCompactionHistoryNotice();
 		const entries = this.sessionManager.buildContextEntries();
-		this.renderSessionEntries(entries, { updateFooter: true });
+		this.renderSessionEntries(chronologicalTranscriptEntries(entries, this.sessionManager.getBranch()), {
+			updateFooter: true,
+		});
 		this.syncEditorHistory();
 		this.renderProjectTrustWarningIfNeeded();
 		this.showCompactionHistoryNotice();
