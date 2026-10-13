@@ -8,94 +8,10 @@ import {
 } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { Compile } from "typebox/compile";
 import { getAgentDir } from "../config.ts";
 import { stripBom } from "../utils/text.ts";
-
-export interface AppKeybindings {
-	"app.interrupt": true;
-	"app.clear": true;
-	"app.exit": true;
-	"app.quit": true;
-	"app.palette": true;
-	"app.suspend": true;
-	"app.thinking.cycle": true;
-	"app.thinking.save": true;
-	"app.model.cycleForward": true;
-	"app.model.cycleBackward": true;
-	"app.model.select": true;
-	"app.tools.expand": true;
-	"app.thinking.toggle": true;
-	"app.session.toggleNamedFilter": true;
-	"app.editor.external": true;
-	"app.message.copy": true;
-	"app.notice.copy": true;
-	"app.notice.dismiss": true;
-	"app.message.followUp": true;
-	"app.message.dequeue": true;
-	"app.queueEdit.steer": true;
-	"app.queueEdit.followUp": true;
-	"app.queueEdit.cancel": true;
-	"app.clipboard.pasteImage": true;
-	"app.session.new": true;
-	"app.tab.next": true;
-	"app.tab.previous": true;
-	"app.tab.new": true;
-	"app.tab.close": true;
-	"app.tab.jump": true;
-	"app.tabJump.selectPrevious": true;
-	"app.tabJump.selectNext": true;
-	"app.tabJump.toggleNonIdle": true;
-	"app.home.returnHome": true;
-	"app.widgets.panel": true;
-	"app.workdir.parent": true;
-	"app.workdir.enterDir": true;
-	"app.workdir.toggleHidden": true;
-	"app.workdir.clearQuery": true;
-	"app.home.selectPrevious": true;
-	"app.home.selectNext": true;
-	"app.home.attach": true;
-	"app.home.send": true;
-	"app.home.toggleNonIdle": true;
-	"app.session.tree": true;
-	"app.session.fork": true;
-	"app.session.resume": true;
-	"app.tree.foldOrUp": true;
-	"app.tree.unfoldOrDown": true;
-	"app.tree.editLabel": true;
-	"app.tree.toggleLabelTimestamp": true;
-	"app.session.togglePath": true;
-	"app.session.toggleSort": true;
-	"app.session.rename": true;
-	"app.session.delete": true;
-	"app.session.deleteNoninvasive": true;
-	"app.models.save": true;
-	"app.models.enableAll": true;
-	"app.models.clearAll": true;
-	"app.models.toggleProvider": true;
-	"app.models.reorderUp": true;
-	"app.models.reorderDown": true;
-	"app.tree.filter.default": true;
-	"app.tree.filter.noTools": true;
-	"app.tree.filter.userOnly": true;
-	"app.tree.filter.labeledOnly": true;
-	"app.tree.filter.all": true;
-	"app.tree.filter.cycleForward": true;
-	"app.tree.filter.cycleBackward": true;
-	"app.vim.enter": true;
-	"app.vim.enterConfirm": true;
-	"app.vim.exit": true;
-	"app.vim.lineUp": true;
-	"app.vim.lineDown": true;
-	"app.vim.pageUp": true;
-	"app.vim.pageDown": true;
-	"app.vim.top": true;
-	"app.vim.topPrefix": true;
-	"app.vim.bottom": true;
-	"app.vim.nextUserMessage": true;
-	"app.vim.previousUserMessage": true;
-}
-
-export type AppKeybinding = keyof AppKeybindings;
+import { KeybindingValueSchema } from "./key-id-schema.ts";
 
 export function useWindowsKeybindings(
 	platform: NodeJS.Platform = process.platform,
@@ -104,30 +20,9 @@ export function useWindowsKeybindings(
 	return platform === "win32" || (platform === "linux" && Boolean(env.WSL_DISTRO_NAME || env.WSL_INTEROP));
 }
 
-declare module "@earendil-works/pi-tui" {
-	interface Keybindings extends AppKeybindings {}
-}
-
 const windowsKeybindings = useWindowsKeybindings();
 
-export const KEYBINDINGS = {
-	...TUI_KEYBINDINGS,
-	"tui.editor.undo": {
-		...TUI_KEYBINDINGS["tui.editor.undo"],
-		defaultKeys: process.platform === "win32" ? "ctrl+z" : windowsKeybindings ? "alt+z" : "ctrl+-",
-	},
-	"tui.altScreen.previousPrompt": {
-		...TUI_KEYBINDINGS["tui.altScreen.previousPrompt"],
-		defaultKeys: windowsKeybindings ? "ctrl+up" : ["ctrl+shift+up", "ctrl+up"],
-	},
-	"tui.altScreen.nextPrompt": {
-		...TUI_KEYBINDINGS["tui.altScreen.nextPrompt"],
-		defaultKeys: windowsKeybindings ? "ctrl+down" : ["ctrl+shift+down", "ctrl+down"],
-	},
-	"tui.altScreen.search": {
-		...TUI_KEYBINDINGS["tui.altScreen.search"],
-		defaultKeys: windowsKeybindings ? "ctrl+f" : "ctrl+shift+f",
-	},
+const APP_KEYBINDINGS = {
 	"app.interrupt": { defaultKeys: "escape", description: "Cancel or abort" },
 	"app.clear": { defaultKeys: "ctrl+c", description: "Clear editor" },
 	"app.exit": { defaultKeys: "ctrl+d", description: "Exit when editor is empty" },
@@ -377,6 +272,34 @@ export const KEYBINDINGS = {
 	},
 } as const satisfies KeybindingDefinitions;
 
+export type AppKeybinding = keyof typeof APP_KEYBINDINGS;
+export type AppKeybindings = { [K in AppKeybinding]: true };
+
+declare module "@earendil-works/pi-tui" {
+	interface Keybindings extends AppKeybindings {}
+}
+
+export const KEYBINDINGS = {
+	...TUI_KEYBINDINGS,
+	"tui.editor.undo": {
+		...TUI_KEYBINDINGS["tui.editor.undo"],
+		defaultKeys: process.platform === "win32" ? "ctrl+z" : windowsKeybindings ? "alt+z" : "ctrl+-",
+	},
+	"tui.altScreen.previousPrompt": {
+		...TUI_KEYBINDINGS["tui.altScreen.previousPrompt"],
+		defaultKeys: windowsKeybindings ? "ctrl+up" : ["ctrl+shift+up", "ctrl+up"],
+	},
+	"tui.altScreen.nextPrompt": {
+		...TUI_KEYBINDINGS["tui.altScreen.nextPrompt"],
+		defaultKeys: windowsKeybindings ? "ctrl+down" : ["ctrl+shift+down", "ctrl+down"],
+	},
+	"tui.altScreen.search": {
+		...TUI_KEYBINDINGS["tui.altScreen.search"],
+		defaultKeys: windowsKeybindings ? "ctrl+f" : "ctrl+shift+f",
+	},
+	...APP_KEYBINDINGS,
+} as const satisfies KeybindingDefinitions;
+
 const KEYBINDING_NAME_MIGRATIONS = {
 	cursorUp: "tui.editor.cursorUp",
 	cursorDown: "tui.editor.cursorDown",
@@ -443,16 +366,13 @@ function isLegacyKeybindingName(key: string): key is keyof typeof KEYBINDING_NAM
 	return key in KEYBINDING_NAME_MIGRATIONS;
 }
 
+const validateKeybindingValue = Compile(KeybindingValueSchema);
+
 function toKeybindingsConfig(value: Record<string, unknown>): KeybindingsConfig {
 	const config: KeybindingsConfig = {};
 	for (const [key, binding] of Object.entries(value)) {
-		if (typeof binding === "string") {
-			config[key] = binding as KeyId;
-			continue;
-		}
-		if (Array.isArray(binding) && binding.every((entry) => typeof entry === "string")) {
-			config[key] = binding as KeyId[];
-		}
+		if (key === "$schema") continue;
+		if (validateKeybindingValue.Check(binding)) config[key] = binding;
 	}
 	return config;
 }

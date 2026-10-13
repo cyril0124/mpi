@@ -7,7 +7,22 @@ Entries say what changed and why; the why is the part git does not keep. When me
 upstream tag, insert a boundary heading `## base pi vX.Y.Z — <date>` above the previous one and
 point `## [Unreleased]` at the new tag.
 
-## [Unreleased] — base pi v1.1.0
+## [Unreleased] — base pi v1.2.0
+
+### Added
+
+### Changed
+
+- Merged upstream pi v1.2.0, retaining MixCode keybindings, startup settings, Lua batch support,
+  panel theme colors, and compaction model labels alongside upstream schema validation and editor colors.
+
+### Fixed
+
+### Removed
+
+## base pi v1.2.0 — 2026-10-13
+
+## Fork changes on base pi v1.1.0
 
 ### Breaking Changes
 

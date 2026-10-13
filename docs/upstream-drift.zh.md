@@ -137,9 +137,9 @@
 - `packages/coding-agent/src/core/settings-manager.ts`：fork 的 fullscreen `tuiMode` 默认值，以及保留的覆盖层（`applyOverrides` 的覆盖在每次重新组合时都会保留，`clearOverrides` 释放指定字段）
 - `packages/coding-agent/src/core/extensions/loader.ts`：让 bun 发行版的扩展导入走 `virtualModules`，并把 fork 自有的 `resolveJitiCacheDir()` 作为 jiti 的 `cache` 选项传进去
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调与选中选项转发给备用屏幕
-- `packages/coding-agent/src/modes/interactive/theme/theme.ts`、`theme/theme-json.ts`、
-  `theme/theme-schema.json`：带框卡片填充用的 `panelBg` 背景色，由 `withThemeColorFallbacks` 默认为
-  `toolPendingBg`，因此内置主题文件不需要修改；JSON schema 通过共用的 `#/$defs/colorValue` 定义校验 `panelBg`
+- `packages/coding-agent/src/modes/interactive/theme/theme-tokens.ts` 与
+  `packages/coding-agent/schemas/theme.schema.json`：可选的 `panelBg` 背景色填充带框卡片，
+  通过上游 token 元数据回退到 `toolPendingBg`；schema 生成包含该 token，无需修改内置主题文件
 - `packages/coding-agent/test/extensions-runner.test.ts`
 - `packages/coding-agent/test/interactive-tui.test.ts`：上游复制断言适配 fork 的 toast 行为；
   fork 专属的选区复制交接场景位于 `test/mixcode/clipboard.test.ts`；状态间距宿主补上

@@ -39,7 +39,8 @@
 			"!!**/node_modules",
 			"!!tmp",
 			"!!.worktrees",
-			"!!.sync-feature"
+			"!!.sync-feature",
+			"!!apps"
 		]
 	},
 	"plugins": ["./scripts/biome/model-type-comparison.grit"]

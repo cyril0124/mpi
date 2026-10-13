@@ -3,7 +3,7 @@
  * refused submit. The caret is part of that lock, since an insertion point says the
  * composer takes typing.
  */
-import type { TUI } from "@earendil-works/pi-tui";
+import { renderFakeCursor, type TUI } from "@earendil-works/pi-tui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { KeybindingsManager } from "../../src/core/keybindings.ts";
 import {
@@ -14,8 +14,8 @@ import { getEditorTheme, initTheme, theme } from "../../src/modes/interactive/th
 
 /** Terminal width every composer below is rendered at. */
 const WIDTH = 80;
-/** The editor's caret: reverse video around the character under it. */
-const CARET = "\x1b[7m";
+/** Cursor markers are resolved to reverse video by the TUI renderer. */
+const EMPTY_CARET = renderFakeCursor(" ");
 
 const VIM_HINT = "Vim: → newer · Shift+→ older · j/k scroll · q exit";
 const DRAFT_HINT = "Describe your next change...";
@@ -46,20 +46,20 @@ describe("composer caret while vim mode holds the editor", () => {
 	});
 
 	it("draws no caret on the empty composer's vim hint", () => {
-		expect(bodyRow(createComposer(true), VIM_HINT)).not.toContain(CARET);
+		expect(bodyRow(createComposer(true), VIM_HINT)).not.toContain(EMPTY_CARET);
 	});
 
 	it("draws no caret on a draft the modal surface locked", () => {
 		const composer = createComposer(true);
 		composer.setText("hello draft");
-		expect(bodyRow(composer, "hello draft")).not.toContain(CARET);
+		expect(bodyRow(composer, "hello draft")).not.toContain(EMPTY_CARET);
 	});
 
 	it("keeps the caret on a composer vim mode does not own", () => {
 		const composer = createComposer(false);
-		expect(bodyRow(composer, DRAFT_HINT)).toContain(CARET);
+		expect(bodyRow(composer, DRAFT_HINT)).toContain(EMPTY_CARET);
 
 		composer.setText("hello draft");
-		expect(bodyRow(composer, "hello draft")).toContain(CARET);
+		expect(bodyRow(composer, "hello draft")).toContain(EMPTY_CARET);
 	});
 });
