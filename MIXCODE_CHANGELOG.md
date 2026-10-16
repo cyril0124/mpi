@@ -18,6 +18,9 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A background tab that starts another run before its completed answer is viewed shows the live
+  working dot instead of the previous completion check mark. The unread flag remains until the tab
+  is viewed, so another background completion still appears as done.
 - Compaction keeps its reason and model label after switching tabs, and its tab shows the busy
   dot until the operation ends. A summary completed in the background appears after the retained
   conversation when the tab is reopened, matching foreground completion.

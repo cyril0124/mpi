@@ -137,10 +137,11 @@ their glyphs:
 | `done` | `✓` | Flagged finished, or unread output |
 | *waiting* | `?` | An extension dialog on the tab waits for an answer |
 
-Glyph color comes from the theme: `error` uses the error color, an unread tab the success color,
-`running`/`thinking` the accent color, and a waiting tab the tool-title color. A finished or unread
-tab stays emphasized (bold title) until it is focused. The active chip carries a leading `▌` focus
-mark, or `▐` on a colored chip.
+Glyph color comes from the theme: `error` uses the error color, a waiting tab the tool-title color,
+`running`/`thinking` the accent color, and an unread completion the success color. An unread tab
+that starts another run shows `●` while working; its unread flag remains until focused. A tab
+showing `✓` stays emphasized (bold title) until it is focused. The active chip carries a leading
+`▌` focus mark, or `▐` on a colored chip.
 
 `?` outranks a completion badge, because the tab cannot move until the answer arrives. An error
 glyph still wins over it; on a colored chip it shows as the glyph alone, like the other status

@@ -32,14 +32,15 @@ export const TAB_WAITING_GLYPH = "?";
 
 /**
  * Glyph for a tab's status: a loading tab spins, an error outranks everything,
- * and `waiting` outranks an unread completion because the tab cannot move until
- * it is answered.
+ * `waiting` outranks an unread completion because the tab cannot move until
+ * it is answered; live work outranks an earlier unread completion.
  */
 export function tabStatusGlyph(status: TabStatus, unread: boolean, waiting = false): string {
 	// A loading tab spins: the frame comes from the clock, not from the tab.
 	if (status === "loading") return tabLoadingFrame();
 	if (status === "error") return TAB_STATUS_GLYPHS.error;
 	if (waiting) return TAB_WAITING_GLYPH;
+	if (isWorkingStatus(status)) return TAB_STATUS_GLYPHS[status];
 	if (unread) return TAB_STATUS_GLYPHS.done;
 	return TAB_STATUS_GLYPHS[status];
 }
@@ -58,8 +59,8 @@ export function tabStatusPaint(
 	// The waiting color is the theme's warm accent, the same color MixCode gives a
 	// tab parked on a dialog; a completion stays quiet until the question is answered.
 	if (waiting) return (text) => theme.fg("toolTitle", text);
-	if (unread) return (text) => theme.fg("success", text);
 	if (isWorkingStatus(status)) return (text) => theme.fg("accent", text);
+	if (unread) return (text) => theme.fg("success", text);
 	return undefined;
 }
 

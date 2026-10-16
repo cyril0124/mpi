@@ -1,7 +1,10 @@
+import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import type { AgentSessionEventListener } from "../../src/core/agent-session.ts";
 import type { AgentSessionRuntime, CreateAgentSessionRuntimeFactory } from "../../src/core/agent-session-runtime.ts";
 import { TabManager } from "../../src/core/mixcode/multi-tab/tab-manager.ts";
+import { TabBar } from "../../src/modes/interactive/components/mixcode/multi-tab/tab-bar.ts";
+import { initTheme, theme } from "../../src/modes/interactive/theme/theme.ts";
 
 /** The manager only reads the session name and directory, and subscribes when it attaches a tab. */
 function stubRuntime(name?: string): AgentSessionRuntime {
@@ -125,6 +128,58 @@ describe("tab layout persistence", () => {
 		// The peer layout sync re-adopts the badge from disk every couple of seconds, so a
 		// badge that only lives in memory is dropped again.
 		expect(counters.layoutChanges).toBe(before + 1);
+	});
+});
+
+/**
+ * A finished background tab can start another run before the user views it.
+ * Its current run must replace the check mark, without losing the unread flag.
+ */
+describe("background completion marker", () => {
+	it("shows working, then done, until the tab is viewed", async () => {
+		initTheme("dark");
+		const firstRuntime = stubRuntime();
+		let emitFirst: AgentSessionEventListener | undefined;
+		firstRuntime.session.subscribe = (listener) => {
+			emitFirst = listener;
+			return () => {};
+		};
+		const { manager } = createManager(firstRuntime, (async () => stubRuntime()) as never);
+		const first = manager.getActive();
+		await manager.createTab({ title: "Agent-02" });
+		const bar = new TabBar(
+			() => ({
+				tabs: manager.list().map((tab) => ({
+					id: tab.id,
+					title: tab.title,
+					status: tab.status,
+					unread: tab.unread,
+					recentRank: -1,
+				})),
+				activeId: manager.getActive().id,
+				rulePainter: (text) => text,
+			}),
+			() => {},
+		);
+		const renderedChip = () => bar.render(80)[0]!;
+		const plainChip = () => stripTerminalSequences(renderedChip());
+
+		expect(emitFirst).toBeDefined();
+		emitFirst!({ type: "agent_settled" } as never);
+		expect(first.unread).toBe(true);
+		expect(plainChip()).toContain("✓ Agent-01");
+
+		emitFirst!({ type: "turn_start" } as never);
+		expect(first.status).toBe("running");
+		expect(first.unread).toBe(true);
+		expect(plainChip()).toContain("● Agent-01");
+		expect(renderedChip()).toContain(theme.fg("accent", "●"));
+
+		emitFirst!({ type: "agent_settled" } as never);
+		expect(plainChip()).toContain("✓ Agent-01");
+		manager.activate(first.id);
+		expect(first.unread).toBe(false);
+		expect(plainChip()).toContain("- Agent-01");
 	});
 });
 
