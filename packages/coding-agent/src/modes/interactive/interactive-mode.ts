@@ -9706,7 +9706,9 @@ export class InteractiveMode {
 				(onProgress, signal) => SessionManager.listAll(trashRoot, onProgress, signal),
 				async (trashPath) => {
 					done();
-					await this.handleResumeIntoTab(await this.restoreTrashedSession(trashPath));
+					const restoredPath = await this.restoreTrashedSession(trashPath);
+					if (restoredPath) await this.handleResumeIntoTab(restoredPath);
+					else this.ui.requestRender();
 				},
 				() => {
 					done();
@@ -9733,14 +9735,31 @@ export class InteractiveMode {
 		});
 	}
 
-	/** Restore a trashed session and return the path to open. */
-	private async restoreTrashedSession(trashPath: string): Promise<string> {
+	/**
+	 * Restore a trashed session and return the path to open, or undefined when it cannot be opened.
+	 *
+	 * A trash file the index does not know was dropped in by hand, so it opens in place. An indexed
+	 * entry whose restore fails is reported instead of opened from the trash: the next turns would
+	 * append to a file this app treats as deleted, so a later start drops the tab and the trash cap
+	 * can evict it.
+	 */
+	private async restoreTrashedSession(trashPath: string): Promise<string | undefined> {
 		const entry = (await listTrash()).find((item) => item.trashPath === trashPath);
 		if (!entry) return trashPath;
 		try {
 			return restoreFromTrash(entry.trashPath).originalPath;
-		} catch {
-			return trashPath;
+		} catch (error) {
+			// A move that landed before the index write failed leaves the file at its original path
+			// and no trash copy behind, which is a restore. A path an unrelated file or directory
+			// holds is not.
+			const trashCopyGone = !fs.existsSync(entry.trashPath);
+			const originalStats = trashCopyGone ? fs.statSync(entry.originalPath, { throwIfNoEntry: false }) : undefined;
+			if (originalStats?.isFile()) return entry.originalPath;
+			this.showError(
+				`Could not restore the session: ${error instanceof Error ? error.message : String(error)}. ` +
+					`Its file stays in the trash at ${entry.trashPath}.`,
+			);
+			return undefined;
 		}
 	}
 

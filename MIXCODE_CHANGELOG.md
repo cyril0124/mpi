@@ -15,6 +15,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/resume-trash` reports a failed restore instead of opening the file from the trash. Picking an
+  indexed entry moved its file back to the original path and then opened it, but a move that failed
+  (a read-only project dir, a path an unrelated file or directory now holds) fell back to the trash
+  path silently: the app opened that copy as a normal session and said `Resumed session`, while the
+  trash index still listed it as deleted. The next turns were appended to the trashed file, so the
+  next start dropped the tab as a deleted session and the trash size cap could evict the file. Only
+  a file the index does not know, one dropped into the trash by hand, opens in place now; a failed
+  restore shows the reason and leaves the entry restorable.
 - `/mark-done` keeps its badge when `/new-session --no-focus` creates a tab. The command creates
   the tab focused and then restores the previous focus, and that restore went through `activate()`,
   which exists to clear a badge on a real focus change: the tab the user never left lost its `done`
