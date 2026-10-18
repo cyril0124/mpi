@@ -1185,11 +1185,9 @@ export class InteractiveMode {
 	// Track if editor is in bash mode (text starts with !)
 	private isBashMode = false;
 
-	// Track current bash execution component
-	private bashComponent: BashExecutionComponent | undefined = undefined;
-
-	// Track pending bash components (shown in pending area, moved to chat on submit)
-	private pendingBashComponents: BashExecutionComponent[] = [];
+	// Track pending bash components (shown in pending area, moved to chat on submit), one list per
+	// tab: the pending area belongs to the tab that parked the component.
+	private readonly pendingBashComponents = new Map<string, BashExecutionComponent[]>();
 
 	/** Parked compaction messages, one queue per tab. */
 	private readonly compactionQueues = new Map<string, CompactionQueuedMessage[]>();
@@ -1465,6 +1463,7 @@ export class InteractiveMode {
 				this.homeMessageCache.delete(tabId);
 				clearHomeTabCache(tabId);
 				this.followUpStates.delete(tabId);
+				this.pendingBashComponents.delete(tabId);
 				this.compactionQueues.delete(tabId);
 				this.promptHistory.delete(tabId);
 			},
@@ -8447,13 +8446,34 @@ export class InteractiveMode {
 		mode.compactionClaimed = false;
 	}
 
-	/** Move pending bash components from pending area to chat */
+	/** Tab whose pending area is on screen, the key the other per-tab state also uses. */
+	private pendingBashKey(): string {
+		return this.activeTabIdForUi ?? SINGLE_SESSION_TAB_ID;
+	}
+
+	/** Park a running bash component above the composer of the tab that started it. */
+	private parkPendingBashComponent(component: BashExecutionComponent): void {
+		const key = this.pendingBashKey();
+		const parked = this.pendingBashComponents.get(key);
+		if (parked) parked.push(component);
+		else this.pendingBashComponents.set(key, [component]);
+		this.pendingMessagesContainer.addChild(component);
+	}
+
+	/**
+	 * Move the mounted tab's parked bash components into its transcript. Another tab's component
+	 * belongs to that tab's transcript: it moves when its own tab submits, not into whichever tab is
+	 * in front now.
+	 */
 	private flushPendingBashComponents(): void {
-		for (const component of this.pendingBashComponents) {
+		const key = this.pendingBashKey();
+		const parked = this.pendingBashComponents.get(key);
+		if (!parked) return;
+		this.pendingBashComponents.delete(key);
+		for (const component of parked) {
 			this.pendingMessagesContainer.removeChild(component);
 			this.chatContainer.addChild(component);
 		}
-		this.pendingBashComponents = [];
 	}
 
 	// =========================================================================
@@ -11092,19 +11112,18 @@ export class InteractiveMode {
 			const result = eventResult.result;
 
 			// Create UI component for display
-			this.bashComponent = new BashExecutionComponent(command, this.ui, excludeFromContext, this.outputPad);
+			const component = new BashExecutionComponent(command, this.ui, excludeFromContext, this.outputPad);
 			if (this.session.isStreaming) {
-				this.pendingMessagesContainer.addChild(this.bashComponent);
-				this.pendingBashComponents.push(this.bashComponent);
+				this.parkPendingBashComponent(component);
 			} else {
-				this.chatContainer.addChild(this.bashComponent);
+				this.chatContainer.addChild(component);
 			}
 
 			// Show output and complete
 			if (result.output) {
-				this.bashComponent.appendOutput(result.output);
+				component.appendOutput(result.output);
 			}
-			this.bashComponent.setComplete(
+			component.setComplete(
 				result.exitCode,
 				result.cancelled,
 				result.truncated ? ({ truncated: true, content: result.output } as TruncationResult) : undefined,
@@ -11113,22 +11132,22 @@ export class InteractiveMode {
 
 			// Record the result in session
 			this.session.recordBashResult(command, result, { excludeFromContext });
-			this.bashComponent = undefined;
 			this.ui.requestRender();
 			return;
 		}
 
 		// Normal execution path (possibly with custom operations)
 		const isDeferred = this.session.isStreaming;
-		this.bashComponent = new BashExecutionComponent(command, this.ui, excludeFromContext, this.outputPad);
+		// Per-call component: a tab switch during the await lets another tab start its own `!` command,
+		// so the output callback and the completion below must reach the component this call created.
+		const component = new BashExecutionComponent(command, this.ui, excludeFromContext, this.outputPad);
 
 		if (isDeferred) {
 			// Show in pending area when agent is streaming
-			this.pendingMessagesContainer.addChild(this.bashComponent);
-			this.pendingBashComponents.push(this.bashComponent);
+			this.parkPendingBashComponent(component);
 		} else {
 			// Show in chat immediately when agent is idle
-			this.chatContainer.addChild(this.bashComponent);
+			this.chatContainer.addChild(component);
 		}
 		this.ui.requestRender();
 
@@ -11136,30 +11155,23 @@ export class InteractiveMode {
 			const result = await this.session.executeBash(
 				command,
 				(chunk) => {
-					if (this.bashComponent) {
-						this.bashComponent.appendOutput(chunk);
-						this.ui.requestRender();
-					}
+					component.appendOutput(chunk);
+					this.ui.requestRender();
 				},
 				{ excludeFromContext, operations: eventResult?.operations },
 			);
 
-			if (this.bashComponent) {
-				this.bashComponent.setComplete(
-					result.exitCode,
-					result.cancelled,
-					result.truncated ? ({ truncated: true, content: result.output } as TruncationResult) : undefined,
-					result.fullOutputPath,
-				);
-			}
+			component.setComplete(
+				result.exitCode,
+				result.cancelled,
+				result.truncated ? ({ truncated: true, content: result.output } as TruncationResult) : undefined,
+				result.fullOutputPath,
+			);
 		} catch (error) {
-			if (this.bashComponent) {
-				this.bashComponent.setComplete(undefined, false);
-			}
+			component.setComplete(undefined, false);
 			this.showError(`Bash command failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
 
-		this.bashComponent = undefined;
 		this.ui.requestRender();
 	}
 

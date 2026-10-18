@@ -15,6 +15,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Two tabs can run `!` bash commands at the same time without their blocks crossing over. One
+  `bashComponent` field and one pending list served every tab, and the output callback plus the
+  completion branch read that field, so a second tab's `!` command replaced the block the first one
+  was still writing to: the first command's remaining lines appeared inside the second tab's block,
+  the first command's exit status completed that block, and the second command's later output was
+  dropped without ever finishing its block. The block is now per invocation, and the pending list is
+  keyed by tab, so a bash parked above one tab's composer no longer moves into another tab's
+  transcript.
 - An extension that sets its working surface from a tab created inside the session now reaches the
   screen. Every tab except the startup one binds through the tab-scoped extension UI context, whose
   `setWorkingMessage`, `setWorkingVisible`, `setWorkingIndicator`, `setHiddenThinkingLabel` and
