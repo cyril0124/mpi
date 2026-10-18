@@ -93,8 +93,9 @@ export class SharedTabLayout {
 				// A background open binds the tab's extensions, so its chip leaves the loading
 				// state instead of spinning until a first focus.
 				this.options.onTabOpened(tab);
-				// The background open must not steal the user's editor focus.
-				if (manager.get(previous)) manager.activate(previous);
+				// The background open must not steal the user's editor focus, nor the
+				// badge the tab it returns to was showing.
+				if (manager.get(previous)) manager.restoreFocus(previous);
 			},
 			closeTab: async (sessionId) => {
 				const manager = this.options.manager;

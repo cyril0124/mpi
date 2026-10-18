@@ -97,8 +97,9 @@ export async function handleNewTab(
 	if (!tab) return undefined;
 
 	if (!focus) {
-		// Keep the current tab rendered; the new tab only joins the bar.
-		tabManager.activate(previousId);
+		// Keep the current tab rendered; the new tab only joins the bar. Focus comes
+		// back the way it was, so the tab that never left the screen keeps its badge.
+		tabManager.restoreFocus(previousId);
 		return tab;
 	}
 	await host.enqueueTabSwitch(() => host.switchActiveTab(tab));

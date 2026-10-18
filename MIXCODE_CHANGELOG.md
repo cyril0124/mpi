@@ -15,6 +15,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/mark-done` keeps its badge when `/new-session --no-focus` creates a tab. The command creates
+  the tab focused and then restores the previous focus, and that restore went through `activate()`,
+  which exists to clear a badge on a real focus change: the tab the user never left lost its `done`
+  status and its unread badge, and the layout publish persisted `unread: false`, so a restart could
+  not bring the badge back either. A background open from a peer instance restored focus the same
+  way and cleared the same badge. Focus restores now go through `restoreFocus()`, which moves focus
+  and the vim/zen mode without touching the badge.
 - Two tabs can run `!` bash commands at the same time without their blocks crossing over. One
   `bashComponent` field and one pending list served every tab, and the output callback plus the
   completion branch read that field, so a second tab's `!` command replaced the block the first one

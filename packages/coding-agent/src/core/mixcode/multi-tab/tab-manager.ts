@@ -200,16 +200,33 @@ export class TabManager {
 	activate(id: string): AgentTab {
 		const tab = this.get(id);
 		if (!tab) throw new Error(`Unknown tab: ${id}`);
-		const previous = this.get(this.activeId);
-		this.setActive(tab);
 		const wasUnread = tab.unread;
 		tab.unread = false;
 		if (tab.status === "done") tab.status = "idle";
+		const focused = this.focus(tab);
+		if (wasUnread) this.notifyLayoutChanged();
+		return focused;
+	}
+
+	/**
+	 * Put focus back on the tab a temporary activation displaced, the way a background
+	 * open or a no-focus creation restores it. The tab never left the screen, so its
+	 * `done` status and unread badge stay: only a real focus change clears them.
+	 */
+	restoreFocus(id: string): AgentTab {
+		const tab = this.get(id);
+		if (!tab) throw new Error(`Unknown tab: ${id}`);
+		return this.focus(tab);
+	}
+
+	/** Move focus to a tab and hand it the previous tab's vim/zen mode. */
+	private focus(tab: AgentTab): AgentTab {
+		const previous = this.get(this.activeId);
+		this.setActive(tab);
 		// Vim mode is a per-tab modal surface and follows focus to the tab being shown.
 		if (previous && previous !== tab) transferVimMode(previous.vim, tab.vim);
 		if (previous) this.transferZenMode(previous, tab);
-		this.noteRecent(id);
-		if (wasUnread) this.notifyLayoutChanged();
+		this.noteRecent(tab.id);
 		this.onTabsChanged();
 		return tab;
 	}
