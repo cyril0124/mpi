@@ -2930,13 +2930,26 @@ export class InteractiveMode {
 	 * background run does, instead of aborting the user's turn on the tab they are looking at.
 	 */
 	private abortTabFromExtension(session: AgentSession): void {
-		if (session === this.session) {
+		// Home is not a mounted tab: its composer belongs to the roster and `leaveHome` empties it.
+		const ownsComposer = session === this.session && !this.homeSelection.active;
+		if (ownsComposer) {
 			this.restoreQueuedMessagesToEditor({ abort: true });
 			return;
 		}
 		const ownerTab = this.tabManager?.list().find((tab) => tab.runtime.session === session);
 		const state = ownerTab ? this.followUpStates.get(ownerTab.id) : undefined;
 		if (state) pauseFollowUps(state);
+		// Without a composer of its own, the tab's queue would be dispatched as a fresh run, so its
+		// texts wait on the tab's draft and come back with the tab.
+		if (ownerTab) {
+			const parked = this.compactionQueueFor(ownerTab.id);
+			const { steering, followUp } = session.clearQueue();
+			const queuedText = [...steering, ...followUp, ...parked.map((message) => message.text)].join("\n\n");
+			parked.length = 0;
+			if (queuedText.trim() && !ownerTab.draftInput.trim()) {
+				this.tabManager?.setDraft(ownerTab.id, queuedText);
+			}
+		}
 		void session.abort();
 	}
 

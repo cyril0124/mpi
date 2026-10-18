@@ -15,6 +15,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- An extension's `ctx.abort()` no longer empties the tab MixCode Home still points at into Home's
+  composer. Home mounts no tab, so the abort kept taking the composer-restore branch for the last
+  mounted session: the queued steer/follow-up text left its tab, attaching to that tab was refused
+  while the composer held it, and Enter sent that text as a brand-new turn to whichever agent the
+  roster selected. A tab without a composer of its own now keeps its queued text as that tab's draft,
+  and the stopped session no longer dispatches its leftover queue as a fresh run.
 - An extension's `ctx.abort()` on a tab behind another one stops that tab's run instead of the run
   on the tab in front. Every bound session shares one abort handler that restored the mounted
   session's queued messages and aborted it, so a watchdog or timeout extension running in the
