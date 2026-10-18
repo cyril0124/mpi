@@ -2924,6 +2924,23 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * An extension's `ctx.abort()` for the tab whose extensions are bound to `session`. That tab is
+	 * not always the one in front: the composer and its queues belong to the mounted tab, so an
+	 * abort from a background tab stops its own run and pauses its own rounds, the way a failed
+	 * background run does, instead of aborting the user's turn on the tab they are looking at.
+	 */
+	private abortTabFromExtension(session: AgentSession): void {
+		if (session === this.session) {
+			this.restoreQueuedMessagesToEditor({ abort: true });
+			return;
+		}
+		const ownerTab = this.tabManager?.list().find((tab) => tab.runtime.session === session);
+		const state = ownerTab ? this.followUpStates.get(ownerTab.id) : undefined;
+		if (state) pauseFollowUps(state);
+		void session.abort();
+	}
+
+	/**
 	 * Initialize the extension system with TUI-based UI context.
 	 *
 	 * `runtime` is the tab being bound. With `backgroundTabId` the tab is not the
@@ -2944,9 +2961,7 @@ export class InteractiveMode {
 		await session.bindExtensions({
 			uiContext,
 			mode: "tui",
-			abortHandler: () => {
-				this.restoreQueuedMessagesToEditor({ abort: true });
-			},
+			abortHandler: () => this.abortTabFromExtension(session),
 			commandContextActions: {
 				waitForIdle: () => session.waitForIdle(),
 				newSession: async (sessionOptions) => {

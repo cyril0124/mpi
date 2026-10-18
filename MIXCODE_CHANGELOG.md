@@ -15,6 +15,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- An extension's `ctx.abort()` on a tab behind another one stops that tab's run instead of the run
+  on the tab in front. Every bound session shares one abort handler that restored the mounted
+  session's queued messages and aborted it, so a watchdog or timeout extension running in the
+  background killed the user's turn and pulled its queue into the wrong composer. The handler now
+  aborts the session its binding belongs to and pauses that tab's own rounds, as a failed
+  background run does; the mounted tab keeps the composer restore.
 - `/compact src/auth.ts tighten the summary` no longer fails with `Unknown model: src/auth.ts`. The
   leading word names the summary model only when the catalog resolves it or its provider is known;
   every other first word, a path included, stays part of the instructions. A misspelled model of a
