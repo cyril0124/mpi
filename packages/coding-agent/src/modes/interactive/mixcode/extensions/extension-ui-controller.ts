@@ -215,12 +215,15 @@ export class ExtensionUiController {
 	 * wrappers, editor component, working message, thinking label) is recorded on the
 	 * tab and mounted when the tab takes focus. A surface the tab already owns on
 	 * screen is written live instead, so a background bind does not defer it: a notice
-	 * follows the transcript, and a status replaces the one the footer shows. Any other
+	 * follows the transcript, a status replaces the one the footer shows, and the
+	 * working surface is applied to the renderer already showing the tab. Any other
 	 * tab records it for its next mount. A dialog or an editor takeover is that tab's
 	 * own surface too: it parks on the tab and shows when the tab takes focus.
 	 */
 	static createTabScopedExtensionUIContext(scope: TabScopedExtensionUiHost, tabId: string): ExtensionUIContext {
 		const live = scope.createExtensionUIContext(tabId);
+		/** True while this tab's chrome is the one mounted, so a record write must reach it too. */
+		const tabOnScreen = (): boolean => !scope.homeActive && scope.activeTabIdForUi === tabId;
 		return {
 			...live,
 			get theme() {
@@ -229,26 +232,34 @@ export class ExtensionUiController {
 			notify: (message, type) => {
 				// A tab that owns the mounted transcript paints the notice at once, like the
 				// startup session. Any other tab has nowhere to put it until its next focus.
-				if (!scope.homeActive && scope.activeTabIdForUi === tabId) {
+				if (tabOnScreen()) {
 					scope.showExtensionNotify(message, type);
 					return;
 				}
 				scope.tabExtensionUi(tabId).notices.push({ message, type });
 			},
+			// A mounted tab takes its working surface live. The record alone only lands on the next
+			// mount, which the tab in front never gets, and leaving the tab overwrites the record with
+			// the live fields, so the value would be gone for good.
 			setWorkingMessage: (message) => {
 				scope.tabExtensionUi(tabId).workingMessage = message;
+				if (tabOnScreen()) live.setWorkingMessage(message);
 			},
 			setWorkingVisible: (visible) => {
 				scope.tabExtensionUi(tabId).workingVisible = visible;
+				if (tabOnScreen()) live.setWorkingVisible(visible);
 			},
 			setWorkingIndicator: (options) => {
 				scope.tabExtensionUi(tabId).workingIndicatorOptions = options;
+				if (tabOnScreen()) live.setWorkingIndicator(options);
 			},
 			setHiddenThinkingLabel: (label) => {
 				scope.tabExtensionUi(tabId).hiddenThinkingLabel = label;
+				if (tabOnScreen()) live.setHiddenThinkingLabel(label);
 			},
 			setToolsExpanded: (expanded) => {
 				scope.tabExtensionUi(tabId).toolsExpanded = expanded;
+				if (tabOnScreen()) live.setToolsExpanded(expanded);
 			},
 			setStatus: (key: string, text: string | undefined) => {
 				const ui = scope.tabExtensionUi(tabId);
@@ -256,7 +267,7 @@ export class ExtensionUiController {
 				else ui.statuses.set(key, text);
 				// The footer keeps its own copy of the statuses and re-reads the tab's record
 				// only on mount, so write the mounted tab's footer as well.
-				if (!scope.homeActive && scope.activeTabIdForUi === tabId) live.setStatus(key, text);
+				if (tabOnScreen()) live.setStatus(key, text);
 			},
 			setWidget: (
 				key: string,

@@ -261,4 +261,40 @@ describe("extension UI controller workflows", () => {
 			host.dispose();
 		}
 	});
+
+	/**
+	 * A tab in front owns the renderer the working surface belongs to. Recording the value only
+	 * would show it on the next mount, which that tab never gets, and leaving the tab would
+	 * overwrite the record with the live fields.
+	 */
+	test("a mounted tab applies its working surface live, and a parked one keeps its value for its next mount", async () => {
+		const host = await createExtensionUiHost();
+		const controller = new ExtensionUiController(host);
+		host.bindController(controller);
+		try {
+			host.switchTab("tab-b");
+			const mountedContext = ExtensionUiController.createTabScopedExtensionUIContext(host.createTabScope(), "tab-b");
+			mountedContext.setWorkingMessage("WM-B");
+			mountedContext.setWorkingVisible(false);
+			mountedContext.setWorkingIndicator({ frames: ["X"] });
+			mountedContext.setHiddenThinkingLabel("THINK-B");
+			mountedContext.setToolsExpanded(true);
+			expect(host.workingMessage).toBe("WM-B");
+			expect(host.workingVisible).toBe(false);
+			expect(host.workingIndicatorOptions).toEqual({ frames: ["X"] });
+			expect(host.hiddenThinkingLabel).toBe("THINK-B");
+			expect(host.toolOutputExpanded).toBe(true);
+
+			// The same context while its tab is off screen: no live write, but the value waits for B.
+			host.switchTab("tab-a");
+			const parkedContext = ExtensionUiController.createTabScopedExtensionUIContext(host.createTabScope(), "tab-b");
+			parkedContext.setWorkingMessage("WM-B-LATE");
+			expect(host.workingMessage).toBeUndefined();
+
+			host.switchTab("tab-b");
+			expect(host.workingMessage).toBe("WM-B-LATE");
+		} finally {
+			host.dispose();
+		}
+	});
 });

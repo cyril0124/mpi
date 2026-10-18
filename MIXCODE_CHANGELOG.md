@@ -15,6 +15,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- An extension that sets its working surface from a tab created inside the session now reaches the
+  screen. Every tab except the startup one binds through the tab-scoped extension UI context, whose
+  `setWorkingMessage`, `setWorkingVisible`, `setWorkingIndicator`, `setHiddenThinkingLabel` and
+  `setToolsExpanded` only wrote the tab's record: the value waited for a mount that the tab in front
+  never takes, and leaving the tab overwrote the record with the live fields, so the value was lost
+  for good. Those five setters now write a mounted tab's live surface as well, the way `setStatus`
+  and `notify` already did.
 - `/clear` keeps its color reset, its discarded queue and its completion line on the tab that ran
   it. The command awaits a full session replacement before those steps, and each read the focused
   tab instead; keys keep arriving while the replacement runs, so a `/tab` or chip click landing in
