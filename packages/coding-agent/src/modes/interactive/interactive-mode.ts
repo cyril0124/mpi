@@ -10948,6 +10948,11 @@ export class InteractiveMode {
 			return;
 		}
 		this.clearStatusIndicator();
+		// The replacement rebuilds the runtime and awaits, while keys keep arriving. Read the tab
+		// that asked before awaiting, so its chip color, its queued rounds and the banner stay on it
+		// instead of landing on whichever tab is focused when the replacement settles.
+		const requestingTab = this.tabManager?.activeTab();
+		const requestingQueue = requestingTab ? this.followUpStates.get(requestingTab.id) : this.followUpState;
 		try {
 			const result = await this.runtimeHost.newSession({
 				// A cleared session keeps the outgoing header's parent, so the two stay siblings.
@@ -10956,12 +10961,24 @@ export class InteractiveMode {
 			if (result.cancelled) {
 				return;
 			}
-			// The chip color is keyed by session id, and a cleared session has none.
-			const activeTab = this.tabManager?.activeTab();
-			if (activeTab) this.tabManager?.setColor(activeTab.id, undefined);
+			// The chip color is keyed by session id, and a cleared session has none. A tab closed while
+			// the replacement ran is gone from the manager, which refuses a color for an unknown id.
+			if (requestingTab && this.tabManager?.get(requestingTab.id) === requestingTab) {
+				this.tabManager.setColor(requestingTab.id, undefined);
+			}
 			// The new conversation owns nothing from the old queue.
-			discardFollowUps(this.followUpState);
-			this.followUpState.pendingSteer = [];
+			if (requestingQueue) {
+				discardFollowUps(requestingQueue);
+				requestingQueue.pendingSteer = [];
+			}
+			// The transcript and the queue box belong to the tab on screen; a tab that is no longer
+			// mounted keeps its own surfaces for its next visit. Without a tab manager there is one
+			// session, which is the mounted one.
+			const requestingTabIsMounted =
+				this.tabManager === undefined ||
+				(requestingTab !== undefined && !this.homeSelection.active && this.activeTabIdForUi === requestingTab.id);
+			if (!requestingTabIsMounted) return;
+			this.updatePendingMessagesDisplay();
 			this.chatContainer.addChild(new Spacer(1));
 			this.chatContainer.addChild(new ThemedText(() => theme.fg("accent", "✓ New session started"), 1, 1));
 			this.ui.requestRender();

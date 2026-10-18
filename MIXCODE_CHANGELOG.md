@@ -15,6 +15,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/clear` keeps its color reset, its discarded queue and its completion line on the tab that ran
+  it. The command awaits a full session replacement before those steps, and each read the focused
+  tab instead; keys keep arriving while the replacement runs, so a `/tab` or chip click landing in
+  that window made the reset and the discard hit the tab in front: it lost its color and its queued
+  steer/follow-up rounds, and `✓ New session started` was written into its transcript, while the
+  cleared tab kept its own queue and color. The command now captures the tab that asked, and writes
+  the shared transcript only while that tab is on screen.
 - `./run.sh` no longer reinstalls the workspace on every launch. Its dependency repair probed
   `node_modules/.bin/tsgo`, which TypeScript 7 no longer ships, so the probe always reported a broken
   install and each launch ran `bun install --force` first: about 20 seconds, and it pruned packages an
