@@ -6,7 +6,9 @@ workdir="$(pwd)"
 cd "$repo_dir"
 
 # Repair partial installs as well as missing dependencies.
-if [ ! -x node_modules/.bin/tsgo ] ||
+# Probing tsgo is what TypeScript 7 retired: typescript@7 ships `tsc` only, so the probe failed
+# on every launch and reinstalled the whole workspace first.
+if [ ! -x node_modules/.bin/tsc ] ||
   [ ! -x node_modules/.bin/shx ] ||
   [ ! -f node_modules/typebox/build/index.mjs ] ||
   [ ! -f node_modules/typebox/build/index.d.mts ]; then

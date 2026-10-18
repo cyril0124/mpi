@@ -15,6 +15,10 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `./run.sh` no longer reinstalls the workspace on every launch. Its dependency repair probed
+  `node_modules/.bin/tsgo`, which TypeScript 7 no longer ships, so the probe always reported a broken
+  install and each launch ran `bun install --force` first: about 20 seconds, and it pruned packages an
+  earlier install had added. The probe now checks `node_modules/.bin/tsc`.
 - An extension's `ctx.abort()` no longer empties the tab MixCode Home still points at into Home's
   composer. Home mounts no tab, so the abort kept taking the composer-restore branch for the last
   mounted session: the queued steer/follow-up text left its tab, attaching to that tab was refused
