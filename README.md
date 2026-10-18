@@ -1,3 +1,11 @@
+> **This is MixCode, a personal fork of [pi](https://github.com/earendil-works/pi).** It is based
+> on pi v1.3.0 (`UPSTREAM.json`), installs as `mpi` rather than `pi`, and adds agent tabs, a
+> fullscreen TUI, and changed keybindings. Install from this checkout with `./install.sh`, run
+> from source with `./run.sh`.
+> Fork documentation: [docs/README.md](docs/README.md)
+> Fork changes: [MIXCODE_CHANGELOG.md](MIXCODE_CHANGELOG.md)
+> Do not report fork-only behavior upstream.
+
 <p align="center">
   <a href="https://pi.dev">
     <img alt="pi logo" src="https://pi.dev/logo-auto.svg" width="128">
