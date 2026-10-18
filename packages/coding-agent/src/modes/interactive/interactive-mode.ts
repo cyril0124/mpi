@@ -103,6 +103,7 @@ import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.t
 import type { McpHttpServerConfig } from "../../core/mcp-servers.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.ts";
 import { applyCacheMissNoticeSetting } from "../../core/mixcode/cache-miss-notice-setting.ts";
+import { splitCompactArguments } from "../../core/mixcode/compact-arguments.ts";
 import {
 	getConsoleHistory,
 	unwireConsoleSink,
@@ -11120,16 +11121,18 @@ export class InteractiveMode {
 	private async handleCompactCommand(args = ""): Promise<void> {
 		const session = this.session;
 		const tab = this.tabManager?.getActive();
-		const firstToken = args.trimStart().split(/\s/)[0] ?? "";
-		const modelRef = /^[^/\s]+\/[^/\s]+(?:\/[^/\s]+)*$/.test(firstToken) ? firstToken : undefined;
-		const customInstructions = modelRef ? args.trimStart().slice(firstToken.length).trimStart() : args;
-		const model = modelRef
-			? findExactModelReferenceMatch(modelRef, [...session.modelRuntime.getAvailableSnapshot()])
-			: undefined;
-		if (modelRef && !model) {
-			this.showError(`Unknown model: ${modelRef}`);
+		const availableModels = [...session.modelRuntime.getAvailableSnapshot()];
+		const { modelRef, unknownModelRef, instructions } = splitCompactArguments(args, {
+			hasModel: (reference) => Boolean(findExactModelReferenceMatch(reference, availableModels)),
+			// Every provider the catalog knows, whether or not this session is signed in for it, so an
+			// unavailable model is still reported instead of sliding into the instructions.
+			hasProvider: (provider) => session.modelRuntime.getProvider(provider) !== undefined,
+		});
+		if (unknownModelRef) {
+			this.showError(`Unknown model: ${unknownModelRef}`);
 			return;
 		}
+		const model = modelRef ? findExactModelReferenceMatch(modelRef, availableModels) : undefined;
 		if (modelRef) this.compactionModelRefs.set(session, modelRef);
 		this.clearStatusIndicator();
 
@@ -11137,7 +11140,7 @@ export class InteractiveMode {
 		this.compactionClaimed = true;
 		this.compactionClaimedSession = session;
 		try {
-			await runInTabConsole(tab, () => session.compact(customInstructions || undefined, model));
+			await runInTabConsole(tab, () => session.compact(instructions || undefined, model));
 		} catch {
 			// A throw before compaction starts never reaches compaction_end, so this is
 			// the only place the synchronous claim is released.

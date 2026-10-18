@@ -43,7 +43,7 @@
 | `/settings` 面板 | 上游 `SettingsList` 放在带边框的 selector 里并替换编辑器区域：`→` 光标、搜索输入框、原始的 `true`/`false` 取值、平直的分组标题 | 居中浮层面板，标题为 `Settings`：surface 背景的列表配一条暗色 `filter: type to filter  N/N` 行，每个配置文件上方是 `Pi` / `MixCode` 标题加该文件路径，`›` 行分为标签列与取值列，布尔值显示为 `On`/`Off`，选中项下方显示其说明，底部一行按键提示 | 面板因此像浮在工作内容之上的一层表面，并直接说明某项设置存在哪个文件里；打开面板时输入框保留草稿。选择 `TUI mode` 会先收起面板再切换，因为浮层打开时模式切换会被拒绝 |
 | Follow-up 输入（`alt+enter`） | 排入 SDK follow-up 队列，由 agent 在运行结束后投递 | 改为宿主侧的轮次：`/follow-up <message>` 产生独占轮次，`alt+enter` 与 `/follow-up --batch <message>` 产生合并轮次，空闲时每轮投递一次，失败时暂停直到 `/follow-up` 恢复；可排队的本地命令会先挂到它所属的标签页再执行，因为它经过共享输入框执行 | follow-up 轮次需要暂停/恢复、批量合并，以及可排队的本地命令 |
 | 跨标签页压缩 | 只有一个会话，状态提示与完成处理始终挂载 | 切换标签页后保留压缩原因与摘要模型标签，压缩期间显示忙碌圆点；持久化摘要显示在保留消息之后、后续轮次之前 | 后台完成的摘要必须在原标签页可见 |
-| 手动压缩模型 | `/compact` 只接受自定义指令并使用当前模型 | `/compact [provider/modelId] [instructions]` 仅为摘要请求使用指定模型，会话模型与 thinking 等级保持不变，并在工作状态中显示指定模型；压缩原因分别使用 accent/warning/error 颜色 | 手动摘要有时需要使用另一个模型，临时状态需要区分手动、阈值和溢出压缩 |
+| 手动压缩模型 | `/compact` 只接受自定义指令并使用当前模型 | `/compact [provider/modelId] [instructions]` 仅为摘要请求使用指定模型，会话模型与 thinking 等级保持不变，并在工作状态中显示指定模型；只有模型目录能解析、或其 provider 已知时，首个词才算模型引用，因此 `src/auth.ts` 这类路径仍留在指令里；压缩原因分别使用 accent/warning/error 颜色 | 手动摘要有时需要使用另一个模型，临时状态需要区分手动、阈值和溢出压缩 |
 | 排队消息显示 | 对话区下方的平铺 `Steering:`/`Follow-up:` 行 | 带边框的 `Steer (n)`/`Follow-up (n)` 预览，含轮次编号（`Round k · next/command ·`）、`SDK ·` 伴随标记、只显示最近五条、暂停提示，以及 `Esc->send now`/编辑提示 | 队列现在是有序轮次列表，而不是文本堆 |
 | Esc 时有排队的 steer 文本 | 把每一条排队消息还原到输入框并中止 | 中止，然后把 steer 队列作为一次立即轮次发送；follow-up 轮次保持排队（暂停） | `Esc->send now` 不应把 follow-up 轮次一并发出 |
 | settle 时残留的 steer 文本 | 留在 SDK steering 队列里，直到下一次提交启动一次运行 | 在没有 compaction 或 resume 接管会话时，于 `agent_settled` 把它作为一个轮次发出（`scheduleSteerSettleFlush`）；settle 之后的交接留给接管方 | 上一轮结束时入队的文本此前没有任何东西会把它发出去（`flushCompactionQueue` 的剩余 steer 文本就是这样入队的） |
@@ -98,8 +98,8 @@
 | `packages/coding-agent/docs/models.md:33` | "`Ctrl+P` cycles through available models" | `ctrl+p` 打开命令面板；只有 `shift+ctrl+p` 仍可循环，且只能回到上一个模型 |
 | `packages/coding-agent/src/cli/args.ts:303`（源码文案） | `--models` 帮助说是 "patterns for Ctrl+P cycling" | `ctrl+p` 打开命令面板；循环键是 `shift+ctrl+p`（Windows 与 WSL 为 `alt+p`） |
 | `packages/coding-agent/docs/custom-provider.md:102-105` | 自定义 provider 的请求仪表清单只列了 `options.onPayload`、`options.onResponse` 与 abort signal | 会捕获请求失败的 provider 还必须调用 `options.onProviderError(error, model)`；见[模型请求错误诊断](provider-errors.zh.md) |
-| `packages/coding-agent/docs/slash-commands.md:30` | `/compact [instructions]` | 本 fork 还接受前置的 `provider/modelId`，让摘要只用该模型执行 |
-| `packages/coding-agent/docs/compaction.md:41` | "trigger manually with `/compact [instructions]`" | 同上：可在指令前指定摘要模型 |
+| `packages/coding-agent/docs/slash-commands.md:30` | `/compact [instructions]` | 本 fork 还接受前置的 `provider/modelId`，让摘要只用该模型执行；首个词不是已知 provider 或模型时按指令文本处理 |
+| `packages/coding-agent/docs/compaction.md:41` | "trigger manually with `/compact [instructions]`" | 同上：可在指令前指定摘要模型，开头的路径仍属于指令 |
 | `packages/coding-agent/docs/environment-variables.md:85` | `PI_SKIP_VERSION_CHECK` 关闭 `pi.dev` 最新版本请求 | 该变量与读取它的启动检查已删除 |
 | `packages/coding-agent/src/utils/version-check.ts`（源码文案） | 导出 `checkForNewPiVersion`，即读取 `PI_SKIP_VERSION_CHECK` 的启动检查 | 已删除；`getLatestPiRelease` 与 `isNewerPackageVersion` 保留供 `pi update --self` 使用 |
 | `packages/coding-agent/docs/usage.md:23` | "Press `Ctrl+T` to show or hide thinking blocks" | `ctrl+t` 打开 Tab Jump；`app.thinking.toggle` 默认键不变，但 composer 在跳转处理器之后不再响应它 |

@@ -15,6 +15,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/compact src/auth.ts tighten the summary` no longer fails with `Unknown model: src/auth.ts`. The
+  leading word names the summary model only when the catalog resolves it or its provider is known;
+  every other first word, a path included, stays part of the instructions. A misspelled model of a
+  known provider still reports the unknown model.
+
 ### Removed
 
 ## [Unreleased] — base pi v1.2.0
