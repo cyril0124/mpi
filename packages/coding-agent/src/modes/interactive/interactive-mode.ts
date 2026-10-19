@@ -3224,7 +3224,10 @@ export class InteractiveMode {
 		return {
 			...this.tabLifecycleHost(),
 			session: this.session,
-			showExtensionConfirm: (title, msg) => this.showExtensionConfirm(title, msg),
+			// A session command runs on the mounted tab, so its confirmation carries that tab. An
+			// interaction without a tab is not parked when the tab goes behind: the next attach clears
+			// the editor slot it waits in, which drops the dialog and leaves its promise unsettled.
+			showExtensionConfirm: (title, msg) => this.showExtensionConfirm(title, msg, undefined, this.activeTabIdForUi),
 			showDeleteAllSessionsConfirm: (totalTabs) => this.showDeleteAllSessionsConfirm(totalTabs),
 		};
 	}

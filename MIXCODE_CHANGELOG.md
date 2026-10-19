@@ -15,6 +15,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/delete-session`, `/close-session` and `/close-all-sessions` keep their confirmation when the user
+  switches tabs. The app's own confirmation went through the extension dialog slot without naming a
+  tab, so it was tracked with none: mounting another tab clears that slot, which takes the dialog off
+  the screen for good while its promise stays unsettled, and the command never runs. The tab chip
+  reports the wait and the dialog comes back with the tab, the same way an extension dialog does, so
+  the answer is given on the tab that ran the command.
 - A `!` shell command runs on the tab that submitted it, not on the tab in front. `handleBashCommand`
   awaits the extension `user_bash` handlers, and a tab switch during that await moved the runtime
   host: the command then executed in the other tab's working directory, its result was recorded in

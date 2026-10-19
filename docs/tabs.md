@@ -54,6 +54,10 @@ The session confirmations (`/close-session`, `/delete-session` and `/close-all-s
 confirm and `n` or `esc` to cancel, in addition to the arrow-key selector. `/delete-all-sessions` is
 the exception: its panel starts the deletion only once the word `DELETE` has been typed.
 
+A session confirmation is that tab's dialog: switching away parks it and the chip paints `?`, and
+switching back puts it on the editor slot again, so a delete or a close is answered on the tab the
+command was typed in instead of being lost with the switch.
+
 ## Tab Jump
 
 `ctrl+t`, or `/jump`, opens a searchable overlay over the composer: one row for MixCode Home and
