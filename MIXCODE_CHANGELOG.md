@@ -15,6 +15,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/workdir` no longer writes a `--no-session` conversation to disk when an extension refuses the
+  move. A session started without a file has nothing to reopen, so the command wrote its branch into
+  the target directory's session store first and then asked the runtime to switch to that file; an
+  extension that cancels `session_before_switch` left the file behind. The tab stayed ephemeral while
+  its whole conversation sat in a session file under the refused directory, and the command reported
+  nothing at all, where the persisted branch reports `Workdir change cancelled`. A refused switch now
+  removes the copy it just wrote and reports the same notice.
 - `/resume-trash` reports a failed restore instead of opening the file from the trash. Picking an
   indexed entry moved its file back to the original path and then opened it, but a move that failed
   (a read-only project dir, a path an unrelated file or directory now holds) fell back to the trash

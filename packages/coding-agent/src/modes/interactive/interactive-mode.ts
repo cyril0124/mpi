@@ -4220,14 +4220,23 @@ export class InteractiveMode {
 				return;
 			}
 			// A session started without a file (`--no-session`) has nothing to reopen: write what
-			// it holds into the new directory and continue there.
+			// it holds into the new directory and continue there. The file exists only so the
+			// switch can open it, so a refused switch has to remove it again: the tab keeps
+			// running without a file, and an ephemeral conversation must not reach the disk.
 			const movedFile = await writeSessionFile({
 				cwd: resolved,
 				agentDir: this.runtimeHost.services.agentDir,
 				header: this.sessionManager.getHeader(),
 				entries: this.sessionManager.getBranch(),
 			});
-			await this.runtimeHost.switchSession(movedFile, { cwdOverride: resolved, ...trustContext });
+			const result = await this.runtimeHost.switchSession(movedFile, { cwdOverride: resolved, ...trustContext });
+			// `switchSession` returns before adopting the file when it cancels, so this call is the only
+			// writer of that path and the copy can go: the tab stays ephemeral, and the refusal reports
+			// the same notice the persisted branch reports.
+			if (result.cancelled) {
+				fs.rmSync(movedFile, { force: true });
+				this.showStatus("Workdir change cancelled");
+			}
 		} catch (error) {
 			this.showError(`Failed to change workdir: ${error instanceof Error ? error.message : String(error)}`);
 		}
