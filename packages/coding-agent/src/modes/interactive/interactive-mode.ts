@@ -11119,7 +11119,12 @@ export class InteractiveMode {
 	}
 
 	private async handleBashCommand(command: string, excludeFromContext = false): Promise<void> {
-		const extensionRunner = this.session.extensionRunner;
+		// A `user_bash` handler can await, and a tab switch during that await moves the runtime host,
+		// the session and the transcript to the tab in front. The command, its working directory and
+		// its recorded result stay with the tab that submitted it.
+		const owningBashSession = this.session;
+		const owningBashTabId = this.activeTabIdForUi;
+		const extensionRunner = owningBashSession.extensionRunner;
 
 		// Emit user_bash event to let extensions intercept
 		let eventResult: UserBashEventResult | undefined;
@@ -11128,75 +11133,75 @@ export class InteractiveMode {
 				type: "user_bash",
 				command,
 				excludeFromContext,
-				cwd: this.sessionManager.getCwd(),
+				cwd: owningBashSession.sessionManager.getCwd(),
 			});
 		} catch {
 			// The extension runner already reported the error. Do not fall back to local execution.
 			return;
 		}
 
+		// The await above accepts input: paint the block only while the submitting tab is still the one
+		// on screen, because a tab behind another one rebuilds it from the recorded result. Per-call
+		// component: the await also lets another tab start its own `!` command, so the output callback
+		// and the completion below must reach the component this call created.
+		const ownsSurface = this.activeTabIdForUi === owningBashTabId;
+		const component = ownsSurface
+			? new BashExecutionComponent(command, this.ui, excludeFromContext, this.outputPad)
+			: undefined;
+		// Park the block above the composer while the owning tab is streaming, else put it in chat.
+		const attachComponent = (): void => {
+			if (!component) return;
+			if (owningBashSession.isStreaming) this.parkPendingBashComponent(component);
+			else this.chatContainer.addChild(component);
+		};
+
 		// If extension returned a full result, use it directly
 		if (eventResult?.result) {
 			const result = eventResult.result;
 
-			// Create UI component for display
-			const component = new BashExecutionComponent(command, this.ui, excludeFromContext, this.outputPad);
-			if (this.session.isStreaming) {
-				this.parkPendingBashComponent(component);
-			} else {
-				this.chatContainer.addChild(component);
+			if (component) {
+				attachComponent();
+				// Show output and complete
+				if (result.output) {
+					component.appendOutput(result.output);
+				}
+				component.setComplete(
+					result.exitCode,
+					result.cancelled,
+					result.truncated ? ({ truncated: true, content: result.output } as TruncationResult) : undefined,
+					result.fullOutputPath,
+				);
 			}
-
-			// Show output and complete
-			if (result.output) {
-				component.appendOutput(result.output);
-			}
-			component.setComplete(
-				result.exitCode,
-				result.cancelled,
-				result.truncated ? ({ truncated: true, content: result.output } as TruncationResult) : undefined,
-				result.fullOutputPath,
-			);
 
 			// Record the result in session
-			this.session.recordBashResult(command, result, { excludeFromContext });
+			owningBashSession.recordBashResult(command, result, { excludeFromContext });
 			this.ui.requestRender();
 			return;
 		}
 
 		// Normal execution path (possibly with custom operations)
-		const isDeferred = this.session.isStreaming;
-		// Per-call component: a tab switch during the await lets another tab start its own `!` command,
-		// so the output callback and the completion below must reach the component this call created.
-		const component = new BashExecutionComponent(command, this.ui, excludeFromContext, this.outputPad);
-
-		if (isDeferred) {
-			// Show in pending area when agent is streaming
-			this.parkPendingBashComponent(component);
-		} else {
-			// Show in chat immediately when agent is idle
-			this.chatContainer.addChild(component);
-		}
+		attachComponent();
 		this.ui.requestRender();
 
 		try {
-			const result = await this.session.executeBash(
+			const result = await owningBashSession.executeBash(
 				command,
 				(chunk) => {
+					if (!component) return;
 					component.appendOutput(chunk);
 					this.ui.requestRender();
 				},
 				{ excludeFromContext, operations: eventResult?.operations },
 			);
 
-			component.setComplete(
+			component?.setComplete(
 				result.exitCode,
 				result.cancelled,
 				result.truncated ? ({ truncated: true, content: result.output } as TruncationResult) : undefined,
 				result.fullOutputPath,
 			);
 		} catch (error) {
-			component.setComplete(undefined, false);
+			component?.setComplete(undefined, false);
 			this.showError(`Bash command failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
 

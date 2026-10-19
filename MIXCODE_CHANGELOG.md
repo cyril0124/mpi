@@ -15,6 +15,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A `!` shell command runs on the tab that submitted it, not on the tab in front. `handleBashCommand`
+  awaits the extension `user_bash` handlers, and a tab switch during that await moved the runtime
+  host: the command then executed in the other tab's working directory, its result was recorded in
+  that tab's session (so it also reached that conversation's model context), and its block was
+  painted into that transcript. The submit captures its session and tab before the emit, runs and
+  records the command there, and paints the block only while that tab is still the one on screen; a
+  tab that is behind another one rebuilds the block from the recorded result when it is shown again.
 - `/workdir` no longer writes a `--no-session` conversation to disk when an extension refuses the
   move. A session started without a file has nothing to reopen, so the command wrote its branch into
   the target directory's session store first and then asked the runtime to switch to that file; an
