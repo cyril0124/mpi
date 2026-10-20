@@ -5398,6 +5398,8 @@ export class InteractiveMode {
 		const confirmed = await this.showExtensionConfirm(
 			"Session cwd not found",
 			formatMissingSessionCwdPrompt(error.issue),
+			undefined,
+			this.activeTabIdForUi,
 		);
 		return confirmed ? error.issue.fallbackCwd : undefined;
 	}
@@ -9524,11 +9526,14 @@ export class InteractiveMode {
 					// Check if we should skip the prompt (user preference to always default to no summary)
 					if (!this.settingsManager.getBranchSummarySkipPrompt()) {
 						while (true) {
-							const summaryChoice = await this.showExtensionSelector("Summarize branch?", [
-								"No summary",
-								"Summarize",
-								"Summarize with custom prompt",
-							]);
+							// The question belongs to the tab that opened the tree, so a switch parks it with
+							// that tab instead of clearing the editor slot it waits in.
+							const summaryChoice = await this.showExtensionSelector(
+								"Summarize branch?",
+								["No summary", "Summarize", "Summarize with custom prompt"],
+								undefined,
+								this.activeTabIdForUi,
+							);
 
 							if (summaryChoice === undefined) {
 								// User pressed escape - re-show tree selector with same selection
@@ -9539,7 +9544,11 @@ export class InteractiveMode {
 							wantsSummary = summaryChoice !== "No summary";
 
 							if (summaryChoice === "Summarize with custom prompt") {
-								customInstructions = await this.showExtensionEditor("Custom summarization instructions");
+								customInstructions = await this.showExtensionEditor(
+									"Custom summarization instructions",
+									undefined,
+									this.activeTabIdForUi,
+								);
 								if (customInstructions === undefined) {
 									// User cancelled - loop back to summary selector
 									continue;
@@ -10628,7 +10637,12 @@ export class InteractiveMode {
 			return;
 		}
 
-		const confirmed = await this.showExtensionConfirm("Import session", `Replace current session with ${inputPath}?`);
+		const confirmed = await this.showExtensionConfirm(
+			"Import session",
+			`Replace current session with ${inputPath}?`,
+			undefined,
+			this.activeTabIdForUi,
+		);
 		if (!confirmed) {
 			this.showStatus("Import cancelled");
 			return;

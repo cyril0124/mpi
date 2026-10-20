@@ -15,6 +15,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/import`, the `/tree` branch-summary question and the `/resume` prompt for a missing session `cwd`
+  keep their dialog when the user switches tabs. Those three host dialogs still opened without a tab,
+  the same way the session commands' confirmations did: an interaction without a tab is not parked
+  when its tab goes behind, and mounting the next tab clears the editor slot it waits in, so the
+  dialog left the screen for good while its promise stayed unsettled. `/import` reported nothing and
+  replaced nothing, `/tree` dropped the question after closing the tree selector, and `/resume` never
+  opened the session. Each dialog now carries the mounted tab, so the chip reports the wait and the
+  answer arrives on the tab that ran the command.
 - `/delete-session`, `/close-session` and `/close-all-sessions` keep their confirmation when the user
   switches tabs. The app's own confirmation went through the extension dialog slot without naming a
   tab, so it was tracked with none: mounting another tab clears that slot, which takes the dialog off

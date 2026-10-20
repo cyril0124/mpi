@@ -3,6 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vi
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import type { ExtensionUIContext } from "../../src/core/extensions/types.ts";
 import { KeybindingsManager } from "../../src/core/keybindings.ts";
+import { MissingSessionCwdError } from "../../src/core/session-cwd.ts";
 import { ExtensionEditorComponent } from "../../src/modes/interactive/components/extension-editor.ts";
 import { ExtensionInputComponent } from "../../src/modes/interactive/components/extension-input.ts";
 import { ExtensionSelectorComponent } from "../../src/modes/interactive/components/extension-selector.ts";
@@ -40,6 +41,11 @@ interface TestHost {
 	activeTabIdForUi: string | undefined;
 	homeSelection: { active: boolean };
 	programStatus: { setBlocked(source: string, status: unknown): void };
+	runtimeHost: { importFromJsonl(path: string, cwd?: string): Promise<{ cancelled: boolean }> };
+	clearStatusIndicator(): void;
+	showStatus(message: string): void;
+	handleImportCommand(text: string): Promise<void>;
+	promptForMissingSessionCwd(error: MissingSessionCwdError): Promise<string | undefined>;
 	extensionContextFor(tabId: string): ExtensionUIContext;
 }
 
@@ -64,6 +70,10 @@ function createHost(activeTabIdForUi: string): TestHost {
 		keybindings: new KeybindingsManager(),
 		// A dialog reports the block it puts on the process, which `blockedCalls` reads back.
 		programStatus: { setBlocked: vi.fn() },
+		// `/import` asks first and then hands the file to the runtime; both are stubbed here.
+		runtimeHost: { importFromJsonl: vi.fn(async () => ({ cancelled: false })) },
+		clearStatusIndicator: vi.fn(),
+		showStatus: vi.fn(),
 	});
 	// The extension editor reads the external-editor command from the settings manager, which
 	// belongs to the running session. Its class getter has no setter, so the field is defined here.
@@ -383,5 +393,52 @@ describe("tab-scoped extension dialogs", () => {
 
 		expect(slotted(host)).toBe(host.editor);
 		expect(waiting(host, "tab-a")).toBe(false);
+	});
+});
+
+/**
+ * The app's own dialogs carry the mounted tab, like an extension's. Asked for without a tab,
+ * the dialog is not parked when its tab goes behind: attaching the next tab clears the editor
+ * slot it waits in, so the question disappears and its promise never settles.
+ */
+describe("app dialogs belong to the mounted tab", () => {
+	test("the /import confirmation parks with its tab and answers there", async () => {
+		const host = createHost("tab-a");
+		const pending = host.handleImportCommand("/import /tmp/session.jsonl");
+
+		expect(waiting(host, "tab-a")).toBe(true);
+		const selector = slotted(host);
+		expect(selector).toBeInstanceOf(ExtensionSelectorComponent);
+
+		// Switching away parks the question instead of dropping it.
+		parkTab(host, "tab-a");
+		host.activeTabIdForUi = "tab-b";
+		expect(slotted(host)).toBe(host.editor);
+		expect(waiting(host, "tab-a")).toBe(true);
+
+		// Coming back puts it on the slot again, and the answer runs the import.
+		focusTab(host, "tab-a");
+		expect(slotted(host)).toBe(selector);
+		(selector as ExtensionSelectorComponent).handleInput("\r");
+		await pending;
+		expect(host.runtimeHost.importFromJsonl).toHaveBeenCalledWith("/tmp/session.jsonl");
+	});
+
+	test("the missing-cwd prompt of /resume parks with its tab", async () => {
+		const host = createHost("tab-a");
+		const pending = host.promptForMissingSessionCwd(
+			new MissingSessionCwdError({ sessionCwd: "/gone", fallbackCwd: "/here" }),
+		);
+
+		expect(waiting(host, "tab-a")).toBe(true);
+		parkTab(host, "tab-a");
+		host.activeTabIdForUi = "tab-b";
+		expect(waiting(host, "tab-a")).toBe(true);
+
+		focusTab(host, "tab-a");
+		const selector = slotted(host);
+		expect(selector).toBeInstanceOf(ExtensionSelectorComponent);
+		(selector as ExtensionSelectorComponent).handleInput("\r");
+		expect(await pending).toBe("/here");
 	});
 });
