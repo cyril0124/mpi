@@ -31,6 +31,30 @@ export interface SharedTabLayoutOptions {
 	onError: (error: unknown) => void;
 }
 
+/**
+ * Put a tab this instance opened at the position it was created in instead of at the end of
+ * the record. A fork or a clone is created right after its source, so the nearest local tab
+ * that follows it in the record marks where it belongs; a new tab with none after it (the last
+ * one locally) keeps the record's end, which is where a peer's own tabs stay put.
+ */
+function keepLocalPlacementOfAddedTabs(
+	ordered: string[],
+	added: readonly TabSnapshot[],
+	localOrder: readonly TabSnapshot[],
+): void {
+	for (const tab of added) {
+		const id = tab.meta.sessionId;
+		if (ordered.includes(id)) continue;
+
+		const localIndex = localOrder.findIndex((entry) => entry.id === tab.id);
+		const followingLocalTabs = localOrder.slice(localIndex + 1);
+		const followingPosition = followingLocalTabs
+			.map((sibling) => ordered.indexOf(sibling.meta.sessionId))
+			.find((position) => position >= 0);
+		ordered.splice(followingPosition ?? ordered.length, 0, id);
+	}
+}
+
 /** Publish local layout changes and reconcile remote changes through the same tab queue. */
 export class SharedTabLayout {
 	private readonly options: SharedTabLayoutOptions;
@@ -260,10 +284,7 @@ export class SharedTabLayout {
 						if (index >= 0) ordered.splice(index, 1, tab.meta.sessionId);
 						else ordered.push(tab.meta.sessionId);
 					}
-					for (const tab of added) {
-						if (ordered.includes(tab.meta.sessionId)) continue;
-						ordered.push(tab.meta.sessionId);
-					}
+					keepLocalPlacementOfAddedTabs(ordered, added, next);
 					if (reordered) {
 						const localOrder = next.map((tab) => tab.meta.sessionId);
 						ordered = [

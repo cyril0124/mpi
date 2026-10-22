@@ -207,6 +207,29 @@ describe("shared tab runtime integration", () => {
 		expect(readTabMeta(workdir).get(sessionId)?.unread).toBe(true);
 	});
 
+	it("records a cloned tab right after its source instead of at the end", async () => {
+		const client = await createClient();
+		const source = client.manager.getActive();
+		const sourceId = ids(client.manager)[0]!;
+		harness.setResponses([fauxAssistantMessage("Persisted after publication")]);
+		await source.runtime.session.prompt("First turn after publishing an empty session");
+		const beta = await client.manager.createTab({ title: "Beta" });
+		const betaId = beta.runtime.session.sessionManager.getSessionId();
+		client.manager.activate(source.id);
+		expect(storedIds()).toEqual([sourceId, betaId]);
+
+		// A clone lands right after its source in the manager, so the record has to keep that
+		// position: the peer poll reads the record and reorders the bar to match it.
+		const cloned = await client.manager.cloneTab(source.id);
+		const clonedTab = cloned.tab;
+		if (!clonedTab) throw new Error("The clone must open");
+		const clonedId = clonedTab.runtime.session.sessionManager.getSessionId();
+		expect(ids(client.manager)).toEqual([sourceId, clonedId, betaId]);
+		expect(storedIds()).toEqual([sourceId, clonedId, betaId]);
+		await client.shared.reconcileNow();
+		expect(ids(client.manager)).toEqual([sourceId, clonedId, betaId]);
+	});
+
 	it("does not erase a peer rename or unread badge when an unchanged local layout publishes", async () => {
 		const a = await createClient();
 		const sharedId = ids(a.manager)[0]!;

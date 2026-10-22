@@ -15,6 +15,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A tab opened by `/clone` or `/fork` keeps the place it was created in instead of jumping to the
+  end of the bar. Both commands open the new tab right after its source, but the shared layout
+  reported a tab it had not recorded before by appending it to `open_tabs.json`, and the two-second
+  peer poll then reorders the local tabs to that recorded order: the new chip slid to the end within
+  a second of appearing and the next start restored it there. A tab this instance has not recorded
+  before is now placed where its own tab list puts it, and the record's end is used only when no
+  local tab follows it, so a peer's tabs that this instance does not hold are not pushed around.
 - `/reset` keeps its transcript rebuild and notice on the tab that ran it. The command awaits the
   `session_tree` handlers, and a tab switch during that await moved `this.session` and the transcript
   to the tab now in front: that tab's conversation was rebuilt underneath it (dropping the response
