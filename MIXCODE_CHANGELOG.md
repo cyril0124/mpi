@@ -15,6 +15,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/reset` keeps its transcript rebuild and notice on the tab that ran it. The command awaits the
+  `session_tree` handlers, and a tab switch during that await moved `this.session` and the transcript
+  to the tab now in front: that tab's conversation was rebuilt underneath it (dropping the response
+  it was still streaming) and its status line read `Reset to session root`, while the tab that ran
+  the command was never told. The command captures the requesting tab and its session before
+  awaiting, rebuilds and reports only while that tab is still on screen, and flushes that tab's
+  parked compaction messages instead of the tab in front's. A tab that went behind rebuilds from the
+  new branch when it is shown again, the way any other branch change does.
 - `/import`, the `/tree` branch-summary question and the `/resume` prompt for a missing session `cwd`
   keep their dialog when the user switches tabs. Those three host dialogs still opened without a tab,
   the same way the session commands' confirmations did: an interaction without a tab is not parked

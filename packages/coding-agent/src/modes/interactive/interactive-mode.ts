@@ -11061,16 +11061,33 @@ export class InteractiveMode {
 			this.showWarning("A bash command is already running. Press Esc to cancel it first.");
 			return;
 		}
+		// `/reset` awaits the `session_tree` handlers while keys keep arriving, so the mounted tab can
+		// change under it. The transcript rebuild and the notice belong to the tab that asked; a tab
+		// behind another one rebuilds from the new branch when it is shown again.
+		const requestingTab = this.tabManager?.activeTab();
+		const requestingSession = this.session;
+		const requestingTabIsMounted = () =>
+			this.tabManager === undefined ||
+			(requestingTab !== undefined && !this.homeSelection.active && this.activeTabIdForUi === requestingTab.id);
 		try {
-			const result = await this.session.resetLeafToRoot();
+			const result = await requestingSession.resetLeafToRoot();
 			if (result.noop) {
-				this.showStatus("Already at session root (nothing to reset).");
+				if (requestingTabIsMounted()) this.showStatus("Already at session root (nothing to reset).");
 				return;
 			}
-			this.chatContainer.clear();
-			this.renderInitialMessages();
-			this.showStatus("Reset to session root. Earlier branches are in /tree.");
-			void this.flushCompactionQueue({ willRetry: false });
+			if (requestingTabIsMounted()) {
+				this.chatContainer.clear();
+				this.renderInitialMessages();
+				this.showStatus("Reset to session root. Earlier branches are in /tree.");
+			}
+			// Parked messages belong to the tab that reset, even when it is no longer the one in front.
+			const resetTabStillOpen =
+				requestingTab !== undefined && this.tabManager?.get(requestingTab.id) === requestingTab;
+			if (this.tabManager === undefined) {
+				void this.flushCompactionQueue({ willRetry: false });
+			} else if (resetTabStillOpen) {
+				void this.flushCompactionQueue({ willRetry: false, tabId: requestingTab.id });
+			}
 		} catch (error: unknown) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
