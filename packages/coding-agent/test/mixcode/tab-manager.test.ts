@@ -129,6 +129,34 @@ describe("tab layout persistence", () => {
 		// badge that only lives in memory is dropped again.
 		expect(counters.layoutChanges).toBe(before + 1);
 	});
+
+	it("keeps a completion behind MixCode Home unread until the tab is attached", () => {
+		const firstRuntime = stubRuntime();
+		let listener: AgentSessionEventListener | undefined;
+		firstRuntime.session.subscribe = (next) => {
+			listener = next;
+			return () => {};
+		};
+		const { manager } = createManager(firstRuntime);
+		const tab = manager.getActive();
+		manager.markLoaded(tab.id);
+		// Home covers every tab, so a run settling here is one the user has not seen.
+		manager.setHomeInFront(true);
+
+		listener?.({ type: "agent_settled" } as never);
+
+		expect(tab.status).toBe("done");
+		expect(tab.unread).toBe(true);
+
+		// Leaving Home puts the focused tab back in front and attaching clears the badge, so
+		// the next completion is one the user watched.
+		manager.setHomeInFront(false);
+		manager.activate(tab.id);
+		expect(tab.unread).toBe(false);
+		listener?.({ type: "agent_settled" } as never);
+		expect(tab.status).toBe("idle");
+		expect(tab.unread).toBe(false);
+	});
 });
 
 /**

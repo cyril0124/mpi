@@ -143,6 +143,11 @@ export class TabManager {
 	private readonly onTabClosed: ((tabId: string, removedIndex: number) => void) | undefined;
 	private readonly tabs: AgentTab[] = [];
 	private activeId: string;
+	/**
+	 * Set while MixCode Home is the surface in front. Home covers every tab, so the focused tab is
+	 * not one the user is watching and a run finishing behind it is a completion nobody has seen yet.
+	 */
+	private homeInFront = false;
 	/** Most-recently-activated tab ids (MRU-first, capped). */
 	private readonly recentIds: string[] = [];
 	/** Tabs whose last assistant message failed, until their run settles. */
@@ -217,6 +222,14 @@ export class TabManager {
 		const tab = this.get(id);
 		if (!tab) throw new Error(`Unknown tab: ${id}`);
 		return this.focus(tab);
+	}
+
+	/**
+	 * Report whether MixCode Home is the surface in front. It covers every tab, so the focused tab
+	 * does not pass for one the user is watching while it is open.
+	 */
+	setHomeInFront(homeInFront: boolean): void {
+		this.homeInFront = homeInFront;
 	}
 
 	/** Move focus to a tab and hand it the previous tab's vim/zen mode. */
@@ -808,7 +821,8 @@ export class TabManager {
 				if (event.message.stopReason === "error") setTabStatus(tab, "error");
 				break;
 			case "agent_settled": {
-				const isActive = tab.id === this.activeId;
+				// Home covers every tab, so a run settling behind it is a completion nobody watched.
+				const isWatched = !this.homeInFront && tab.id === this.activeId;
 				const runFailed = this.tabsWithFailedRun.delete(tab.id);
 				// Compaction can own the session while the interrupted run settles.
 				if (tab.runtime.session.isCompacting) {
@@ -816,13 +830,13 @@ export class TabManager {
 					break;
 				}
 				// A terminal error survives settling; only a clean finish becomes done/idle.
-				if (tab.status !== "error") setTabStatus(tab, isActive ? "idle" : "done");
-				if (!isActive) {
+				if (tab.status !== "error") setTabStatus(tab, isWatched ? "idle" : "done");
+				if (!isWatched) {
 					if (runFailed) this.onBackgroundRunFailed?.(tab.id);
 					this.onBackgroundCompletion?.();
 				}
 				const wasUnread = tab.unread;
-				tab.unread = !isActive;
+				tab.unread = !isWatched;
 				// The badge is persisted state, so report the set the way `markDone` does;
 				// otherwise the peer layout sync adopts the stale disk value and drops it.
 				if (tab.unread !== wasUnread) this.notifyLayoutChanged();

@@ -3495,6 +3495,9 @@ export class InteractiveMode {
 				this.detachExtensionTerminalInputListeners(this.activeTabIdForUi);
 			}
 			this.homeSelection.active = true;
+			// Home covers every tab: the tab behind it is not the one being watched, so a run that
+			// finishes here becomes the unread completion the roster and the chip can report.
+			manager.setHomeInFront(true);
 			this.applyFullscreenScrollbarSetting();
 			// Vim is a modal surface over an agent transcript; Home is a different
 			// surface, so the composer must not stay locked behind it.
@@ -3518,6 +3521,8 @@ export class InteractiveMode {
 	private leaveHome(): void {
 		if (!this.homeSelection.active) return;
 		this.homeSelection.active = false;
+		// An agent transcript is back in front, so the focused tab is the watched one again.
+		this.tabManager?.setHomeInFront(false);
 		this.applyFullscreenScrollbarSetting();
 		this.homeView?.resetCapture();
 		this.setEditorText("");

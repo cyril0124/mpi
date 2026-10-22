@@ -18,6 +18,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A run that finishes while MixCode Home covers its tab now reports as an unread completion: the
+  card reads `[done]`, the chip keeps `✓`, and `ctrl+f` keeps the tab listed. Home owns the screen
+  but not the focus, so the tab manager compared the settling tab with its focus and took the
+  completion for one the user watched. It now knows while Home covers the tabs, and only a focused
+  tab that is not covered counts as watched.
 - Closing or aborting a hidden extension dialog no longer steals focus from a newer dialog.
   Dialog status follows the remaining interaction, and a failed custom component restores the
   previous dialog without moving it between tabs.
