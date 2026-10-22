@@ -18,6 +18,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A manual `/compact` on one tab no longer takes `Escape` away from every other tab. The claim
+  that keeps queued rounds out of a starting compaction is process-wide, and the steer flush, the
+  turn retract and the per-tab follow-up host read it for whatever session was in front, so a
+  compaction running behind another tab refused to flush that tab's steer texts and to retract its
+  unanswered turn; `docs/keybindings.md` says such a compaction is left alone. The claim is now read
+  per session, and only the tab that started the compaction still defers to it.
 - Vim mode's `pageUp` / `pageDown` now scroll the documented 10 rows: the fullscreen viewport no
   longer claims the page keys while a modal surface owns input, so they reach the vim action like
   `ctrl+u` / `ctrl+d`. Before, the viewport paged by its height minus four rows, so one action moved

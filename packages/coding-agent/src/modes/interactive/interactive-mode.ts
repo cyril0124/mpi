@@ -7464,10 +7464,20 @@ export class InteractiveMode {
 		}
 	}
 
+	/**
+	 * True while a compaction this session started still owns its own queue.
+	 *
+	 * The claim is process-wide: reading it directly makes the focused tab defer to a
+	 * compaction running behind another one, which takes that tab's interrupt keys away.
+	 */
+	private compactionClaimedFor(session: AgentSession): boolean {
+		return this.compactionClaimed && this.compactionClaimedSession === session;
+	}
+
 	/** Esc with queued steer texts: abort, then send the steer queue as one turn now. */
 	private tryFlushSteerQueue(): boolean {
 		// Compaction owns the queue until compaction_end; Esc falls through.
-		if (this.session.isCompacting || this.compactionClaimed) return false;
+		if (this.session.isCompacting || this.compactionClaimedFor(this.session)) return false;
 		if (this.followUpState.pendingSteer.length === 0) return false;
 		if (this.session.isStreaming) {
 			pauseFollowUps(this.followUpState);
@@ -7666,7 +7676,7 @@ export class InteractiveMode {
 	private async retractCurrentTurn(owningSession: AgentSession): Promise<boolean> {
 		const sessionManager = owningSession.sessionManager;
 		// Compaction owns the run until it ends, and navigateTree refuses to run under it.
-		if (owningSession.isCompacting || this.compactionClaimed) return false;
+		if (owningSession.isCompacting || this.compactionClaimedFor(owningSession)) return false;
 		// A queued follow-up round is recovered by the abort path instead: retracting
 		// under it would leave that queue to fire into the retracted conversation.
 		if (this.hasQueuedMessages()) return false;
@@ -7694,7 +7704,7 @@ export class InteractiveMode {
 				this.hasQueuedMessages() ||
 				owningSession.isStreaming ||
 				owningSession.isCompacting ||
-				this.compactionClaimed
+				this.compactionClaimedFor(owningSession)
 			) {
 				this.setEditorText("");
 				return false;
@@ -8146,7 +8156,7 @@ export class InteractiveMode {
 				await this.runQueuedCommandRound(text);
 			},
 			isQueuedCommandText: (text) => this.isQueuedFollowUpCommand(text),
-			isCompactionClaimed: () => this.compactionClaimed,
+			isCompactionClaimed: () => this.compactionClaimedFor(owningSession()),
 			onQueueChanged: () => {
 				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
