@@ -17,6 +17,7 @@ export interface InteractiveTuiOptions {
 	/** Report a clipboard result instead of letting the alternate screen flash its own confirmation. */
 	readonly onCopyResult?: (result: ClipboardResult) => void;
 	readonly fullscreenWheelScrollLines?: WheelScrollLines;
+	readonly shouldDeferPageKeys?: () => boolean;
 }
 
 /** Composition root shared by coding-agent presentations. */
@@ -52,6 +53,7 @@ export function createInteractiveTui(options: InteractiveTuiOptions): TuiMainScr
 			},
 			onCopyResult: options.onCopyResult,
 			selection: options.selection,
+			shouldDeferPageKeys: options.shouldDeferPageKeys,
 		});
 	}
 	return new TuiMainScreen(terminal, options.showHardwareCursor, options.logDirectory);

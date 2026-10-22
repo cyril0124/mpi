@@ -227,6 +227,11 @@ export interface TuiAltScreenOptions {
 	 * selection screen-wide, reverse-video, and copied verbatim.
 	 */
 	selection?: TuiSelectionOptions;
+	/**
+	 * Report whether a modal surface owns the page keys. While it returns true, `pageUp` /
+	 * `pageDown` reach the focused component instead of paging the viewport.
+	 */
+	shouldDeferPageKeys?: () => boolean;
 }
 
 /** What a clipboard write reported to the host. */
@@ -305,6 +310,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private readonly copySelection?: (text: string) => Promise<boolean | string>;
 	private readonly onCopyResult?: (result: ClipboardResult) => void;
 	private readonly selection?: TuiSelectionOptions;
+	private readonly shouldDeferPageKeys?: () => boolean;
 
 	constructor(
 		terminal: Terminal,
@@ -334,6 +340,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.copySelection = options.copySelection;
 		this.onCopyResult = options.onCopyResult;
 		this.selection = options.selection;
+		this.shouldDeferPageKeys = options.shouldDeferPageKeys;
 		this.addInputListener((data) => this.handleViewportInput(data));
 	}
 
@@ -855,7 +862,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 				return { consume: true };
 			}
 		}
-		if (this.shouldDeferViewportInputToOverlay()) return undefined;
+		if (this.shouldDeferViewportInputToOverlay() || this.shouldDeferPageKeys?.() === true) return undefined;
 		if (keybindings.matches(data, "tui.altScreen.pageUp")) {
 			if (!isRelease) {
 				this.scrollBy(-Math.max(1, this.getPrimaryScrollView().viewportHeight - PAGE_SCROLL_OVERLAP));

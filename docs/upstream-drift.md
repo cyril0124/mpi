@@ -33,7 +33,7 @@ commit that causes it.
 | Quit | `ctrl+d` exits, no confirmation | `ctrl+q` (`ctrl+shift+q` on Windows and WSL) asks first; `ctrl+d` unchanged | [Command Palette and Quit Confirmation](command-palette.md) |
 | Transcript resize anchor | keeps the numeric scroll row when width changes, so wrapped messages can move the reader to another conversation block | the windowed fullscreen transcript reanchors the first visible message block and its within-block progress after reflow | a reader who is already scrolled up should keep reading the same conversation while the terminal is resized |
 | Fullscreen transcript rendering | renders every message component each frame, then clips to the viewport | renders only the visible window (20 rows of overscan) and estimates unmeasured blocks at 4 rows; an `HStack` measures no intrinsic height for a stretched child that already has one, so the side panel column cannot render the transcript whole | frame cost otherwise grows with the whole conversation, and a width change would otherwise re-lay-out every message |
-| Transcript scrolling keys | `tui.altScreen.*` only | plus a modal surface (`/vim`, `j`/`k`/`gg`/`G`, prompt jumps with a `User Messages` preview panel) in fullscreen mode, whose Vim mode reaches the transcript ends with `app.vim.top`/`app.vim.bottom`; plain `home`/`end` stay with the composer, and upstream's `ctrl+home`/`ctrl+end` scroll the transcript | mouse-free reading of long conversations |
+| Transcript scrolling keys | `tui.altScreen.*` only | plus a modal surface (`/vim`, `j`/`k`/`gg`/`G`, prompt jumps with a `User Messages` preview panel) in fullscreen mode, whose Vim mode reaches the transcript ends with `app.vim.top`/`app.vim.bottom`; plain `home`/`end` stay with the composer, and upstream's `ctrl+home`/`ctrl+end` scroll the transcript; while vim mode owns input, `pageUp`/`pageDown` scroll `app.vim.pageUp`/`pageDown` instead of the viewport's full page | mouse-free reading of long conversations |
 | Transcript follow on send | new output follows the end only while the viewport is already at the end, and a submit leaves a scrolled-up viewport where it is | a user message scrolls the fullscreen transcript to the end and resumes follow-end | the message just sent and the answer below it must be visible without scrolling; the send is the user's own action, where streamed output still may not take the viewport from a reader |
 | Default TUI mode | `regular` | `fullscreen`; an explicit `tuiMode: "regular"` in `settings.json` still selects the plain transcript | the fork's reading features (windowed transcript, vim, mouse selection) only exist on the alternate screen, and upstream's `packages/coding-agent/docs/settings.md` still lists `"regular"` as the default |
 | Editor frame while modal | thinking/bash border color | accent border, no caret, input and submit locked | vim mode owns input |
@@ -151,7 +151,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
   retained override layer (`applyOverrides` keeps its overrides across scope recompositions, and
   `clearOverrides` releases named fields)
 - `packages/coding-agent/src/core/extensions/loader.ts`: routes bun-dist extension imports through `virtualModules`, and hands jiti the fork-owned `resolveJitiCacheDir()` as its `cache` option
-- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: forwards the host's copy callback and selection options to the alternate screen
+- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`: forwards the host's copy callback and selection options to the alternate screen, and the page-key predicate vim mode uses to keep `pageUp`/`pageDown` for its own 10-row scroll
 - Fork panels use the upstream `toolPendingBg` background token; theme tokens and the generated
   theme schema need no fork extension for panel backgrounds.
 - `packages/coding-agent/test/extensions-runner.test.ts`
@@ -201,7 +201,9 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
   and reports the copied text as a grapheme count; tracks the hovered component so the next move
   elsewhere, an overlay, or a pointer capture can send it a leave event; `scrollToEndIndicator`
   receives whether the pointer is over the label; a `selection` option scopes the drag to host surfaces
-  and takes the host's text cleanup, style and release clearing
+  and takes the host's text cleanup, style and release clearing; a `shouldDeferPageKeys` predicate hands
+  `pageUp`/`pageDown` to the focused component while a modal surface owns input, so the vim page action
+  scrolls its 10 rows instead of a viewport page
 - `packages/tui/src/mixcode/text-metrics.ts`: `countGraphemes`, so the coding-agent toast can report
   a copy in the same unit
 - `packages/tui/src/index.ts`: exports for the windowed node, mouse dispatch, the grapheme counter and

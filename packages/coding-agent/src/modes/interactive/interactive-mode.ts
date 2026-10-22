@@ -1519,6 +1519,7 @@ export class InteractiveMode {
 			onCopyResult: (result) => this.notifyCopyResult(result),
 			selection: this.mouseSelectionOptions(),
 			fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
+			shouldDeferPageKeys: () => this.vimTabState().active,
 		});
 		this.ui = createInteractiveTuiReference(() => this.renderer);
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
@@ -1781,6 +1782,7 @@ export class InteractiveMode {
 			onCopyResult: (result) => this.notifyCopyResult(result),
 			selection: this.mouseSelectionOptions(),
 			fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
+			shouldDeferPageKeys: () => this.vimTabState().active,
 		});
 		nextUi.setClearOnShrink(clearOnShrink);
 		nextUi.onDebug = onDebug;

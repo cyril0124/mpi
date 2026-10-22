@@ -32,7 +32,7 @@
 | 退出 | `ctrl+d` 直接退出，不询问 | `ctrl+q`（Windows 与 WSL 为 `ctrl+shift+q`）先询问；`ctrl+d` 不变 | [命令面板与退出确认](command-palette.zh.md) |
 | 对话区 resize 锚点 | 改变宽度时保留数字滚动行，因此消息换行后读者可能跳到另一个对话块 | 全屏窗口化对话区在重新排版后重新锚定第一条可见消息及其块内进度 | 已经向上滚动的读者在调整终端大小时应继续阅读同一段对话 |
 | 全屏对话区渲染 | 每帧渲染全部消息组件再裁剪到视口 | 只渲染可见窗口（上下各 20 行余量），未测块按 4 行估算；`HStack` 不再为已有高度的拉伸子项测量其固有高度，因此侧边面板列不会把对话区整体渲染一遍 | 否则帧开销随整段对话增长，改变终端宽度时还会把每条消息重新排版 |
-| 对话区滚动键 | 仅 `tui.altScreen.*` | 全屏模式下另有模态界面（`/vim`、`j`/`k`/`gg`/`G`、提问跳转），其 Vim 模式用 `app.vim.top`/`app.vim.bottom` 跳到对话区两端；平凡的 `home`/`end` 留给输入框，上游的 `ctrl+home`/`ctrl+end` 用于滚动对话区 | 长对话免鼠标阅读 |
+| 对话区滚动键 | 仅 `tui.altScreen.*` | 全屏模式下另有模态界面（`/vim`、`j`/`k`/`gg`/`G`、提问跳转），其 Vim 模式用 `app.vim.top`/`app.vim.bottom` 跳到对话区两端；平凡的 `home`/`end` 留给输入框，上游的 `ctrl+home`/`ctrl+end` 用于滚动对话区；vim 模式接管输入时，`pageUp`/`pageDown` 走 `app.vim.pageUp`/`pageDown` 的 10 行，而不是视口的整页 | 长对话免鼠标阅读 |
 | 提交后是否跟随末尾 | 新输出仅在视口已经在末尾时跟随末尾，滚上去后提交不会移动视口 | 用户消息会把全屏对话区滚到末尾并恢复跟随 | 刚发出的消息与下面的回答必须无需滚动即可看到；提交是用户自己的动作，而流式输出仍不能把视口从正在阅读的人手里抢走 |
 | 默认 TUI 模式 | `regular` | `fullscreen`；`settings.json` 里显式写 `tuiMode: "regular"` 仍会回到普通对话区 | 本 fork 的阅读功能（窗口化对话区、Vim、鼠标选中）只存在于备选屏幕；上游 `packages/coding-agent/docs/settings.md` 的默认值仍写作 `"regular"` |
 | 模态下的输入框边框 | thinking/bash 边框色 | 强调色边框，不画光标，输入与提交被锁定 | Vim 模式独占输入 |
@@ -142,7 +142,7 @@
 - `packages/coding-agent/src/core/agent-session.ts`：手动压缩请求独立指定模型，在 abort 当前轮次前就标记压缩已激活的 claim，steering 与 follow-up 队列的摘除，`/reset` 用的 `resetLeafToRoot()`，以及 `syncCacheWarmingMode()`（不写设置文件的 warming 重调）
 - `packages/coding-agent/src/core/settings-manager.ts`：fork 的 fullscreen `tuiMode` 默认值，以及保留的覆盖层（`applyOverrides` 的覆盖在每次重新组合时都会保留，`clearOverrides` 释放指定字段）
 - `packages/coding-agent/src/core/extensions/loader.ts`：让 bun 发行版的扩展导入走 `virtualModules`，并把 fork 自有的 `resolveJitiCacheDir()` 作为 jiti 的 `cache` 选项传进去
-- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调与选中选项转发给备用屏幕
+- `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调与选中选项转发给备用屏幕，并把区分 vim 页键的谓词传给备用屏幕，让 `pageUp`/`pageDown` 留在 vim 自己的 10 行滚动里
 - fork 面板使用上游的 `toolPendingBg` 背景色；主题 token 与生成的主题 schema
   无需为面板背景增加 fork 扩展。
 - `packages/coding-agent/test/extensions-runner.test.ts`
@@ -174,7 +174,8 @@
 - `packages/tui/src/tui-alt-screen.ts`：经提供者读取内容行；选中操作只读取所需行，避免测量屏幕外历史时使指针的行坐标失效；`scrollToPrompt` 改为公开；
   `onCopyResult` 选项让宿主自行确认复制结果，替代该屏幕自带的一行 flash，并按 grapheme 数报告复制长度；
   跟踪被 hover 的组件，以便后续移动到别处、打开浮层或指针被捕获时向其发送 leave 事件；
-  `scrollToEndIndicator` 会收到指针是否在标签上；`selection` 选项把拖拽限定到宿主公布的区域，并交给宿主做文本清洗、着色，以及在复制那次松手时清除高亮
+  `scrollToEndIndicator` 会收到指针是否在标签上；`selection` 选项把拖拽限定到宿主公布的区域，并交给宿主做文本清洗、着色，以及在复制那次松手时清除高亮；
+  `shouldDeferPageKeys` 谓词说明模态界面已接管输入，此时 `pageUp`/`pageDown` 交给焦点组件，让 vim 的翻页动作滚 10 行而不是整页
 - `packages/tui/src/mixcode/text-metrics.ts`：`countGraphemes`，让 coding-agent 的 toast 能用同一单位报告复制长度
 - `packages/tui/src/index.ts`：导出窗口化节点、鼠标派发、grapheme 计数器与图片行判定，以及选中选项
 - `packages/coding-agent/src/cli/args.ts`：`--tui-mode` 帮助行写出 fork 的默认值

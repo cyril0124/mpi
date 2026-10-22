@@ -18,6 +18,10 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Vim mode's `pageUp` / `pageDown` now scroll the documented 10 rows: the fullscreen viewport no
+  longer claims the page keys while a modal surface owns input, so they reach the vim action like
+  `ctrl+u` / `ctrl+d`. Before, the viewport paged by its height minus four rows, so one action moved
+  two different distances on the same terminal.
 - A run that finishes while MixCode Home covers its tab now reports as an unread completion: the
   card reads `[done]`, the chip keeps `✓`, and `ctrl+f` keeps the tab listed. Home owns the screen
   but not the focus, so the tab manager compared the settling tab with its focus and took the
