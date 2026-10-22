@@ -7,7 +7,26 @@ Entries say what changed and why; the why is the part git does not keep. When me
 upstream tag, insert a boundary heading `## base pi vX.Y.Z — <date>` above the previous one and
 point `## [Unreleased]` at the new tag.
 
-## [Unreleased] — base pi v1.3.0
+## [Unreleased] — base pi v1.4.0
+
+### Added
+
+### Changed
+
+- Merged upstream pi v1.4.0, retaining per-tab extension dialogs, provider error diagnostics,
+  response-model notices, and Lua batch dependencies alongside the new client identity API.
+
+### Fixed
+
+- Closing or aborting a hidden extension dialog no longer steals focus from a newer dialog.
+  Dialog status follows the remaining interaction, and a failed custom component restores the
+  previous dialog without moving it between tabs.
+- Package-command test fixtures use the configured application name for simulated executables
+  and output, including the upstream managed-install BOM regression.
+
+### Removed
+
+## base pi v1.3.0 — 2026-10-22
 
 ### Added
 

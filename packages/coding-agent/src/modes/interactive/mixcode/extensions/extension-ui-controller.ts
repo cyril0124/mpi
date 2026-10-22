@@ -62,6 +62,8 @@ export interface TabExtensionUi {
  * surface it takes (the editor slot, or an overlay) is that tab's.
  */
 export interface TabInteraction {
+	/** Status reported while this interaction waits for an answer. */
+	blocked?: { kind: "question" | "permission"; message: string };
 	/** Which surface the interaction took, which decides how it is parked. */
 	kind: "selector" | "input" | "editor" | "custom" | "overlay";
 	/** The tab that owns it, so a close can hand the slot back to what it parked. */
@@ -111,6 +113,7 @@ export interface ExtensionUiHost {
 	toolOutputExpanded: boolean;
 	readonly settingsManager: Pick<SettingsManager, "getExternalEditorCommand" | "getTheme" | "setTheme">;
 	readonly themeController: Pick<InteractiveThemeController, "setThemeInstance" | "setThemeName">;
+	setDialogBlocked?(blocked: TabInteraction["blocked"]): void;
 	shownTabId(): string | undefined;
 	isHomeActive(): boolean;
 	getLoadingTab(tabId: string): { loading: boolean; loadingPhase?: TabLoadingPhase } | undefined;
@@ -862,9 +865,18 @@ export class ExtensionUiController {
 			if (index >= 0) list.splice(index, 1);
 			if (list.length === 0) this.tabInteractions.delete(tabId);
 			this.syncWaitingInputCount();
+			this.syncDialogBlocked();
 			this.host.ui.requestRender();
 		};
 		this.syncWaitingInputCount();
+		this.syncDialogBlocked();
+	}
+
+	/** Report the newest pending dialog without duplicating the per-tab interaction stacks. */
+	private syncDialogBlocked(): void {
+		const visible = this.host.isHomeActive() ? undefined : this.tabInteractionsFor(this.host.shownTabId()).at(-1);
+		const pending = visible ?? [...this.tabInteractions.values()].flat().at(-1);
+		this.host.setDialogBlocked?.(pending?.blocked);
 	}
 
 	/** Broadcast the process-wide count of extension dialogs waiting on a human. */
@@ -907,9 +919,9 @@ export class ExtensionUiController {
 		// A parked dialog returns only while its own tab is the one on screen: an extension
 		// that closes its dialog from the background must not paint over the tab in front.
 		if (tabId === undefined || !this.tabShowsOnScreen(tabId)) return;
-		const previous = this.tabInteractionsFor(tabId)
-			.filter((interaction) => !interaction.mounted)
-			.at(-1);
+		const pending = this.tabInteractionsFor(tabId);
+		if (pending.some((interaction) => interaction.mounted)) return;
+		const previous = pending.filter((interaction) => interaction.kind !== "overlay" && interaction.component).at(-1);
 		if (previous) this.mountTabInteraction(tabId, previous);
 	}
 
@@ -956,6 +968,7 @@ export class ExtensionUiController {
 		for (const interaction of pending) this.mountTabInteraction(tabId, interaction);
 		const overlay = pending.filter((interaction) => interaction.overlay).at(-1);
 		if (overlay?.overlay?.capturing) overlay.overlay.handle.focus();
+		this.syncDialogBlocked();
 	}
 
 	/** Park a tab's dialogs when it loses focus. Overlays gate on focus instead of unmounting. */
@@ -972,6 +985,7 @@ export class ExtensionUiController {
 		}
 		this.tabInteractions.delete(tabId);
 		this.syncWaitingInputCount();
+		this.syncDialogBlocked();
 	}
 
 	/**
@@ -997,8 +1011,10 @@ export class ExtensionUiController {
 		options: string[],
 		opts?: ExtensionUIDialogOptions & ExtensionSelectorOptions,
 		tabId?: string,
+		blocked: TabInteraction["blocked"] = { kind: "question", message: title },
 	): Promise<string | undefined> {
-		const interaction: TabInteraction = { kind: "selector", mounted: false };
+		tabId ??= this.host.shownTabId();
+		const interaction: TabInteraction = { kind: "selector", mounted: false, blocked };
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
 				resolve(undefined);
@@ -1044,6 +1060,7 @@ export class ExtensionUiController {
 				keyShortcuts: { y: "Yes", n: "No" },
 			},
 			tabId,
+			{ kind: "permission", message: title },
 		);
 		return result === "Yes";
 	}
@@ -1054,7 +1071,12 @@ export class ExtensionUiController {
 		opts?: ExtensionUIDialogOptions,
 		tabId?: string,
 	): Promise<string | undefined> {
-		const interaction: TabInteraction = { kind: "input", mounted: false };
+		tabId ??= this.host.shownTabId();
+		const interaction: TabInteraction = {
+			kind: "input",
+			mounted: false,
+			blocked: { kind: "question", message: title },
+		};
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
 				resolve(undefined);
@@ -1082,7 +1104,12 @@ export class ExtensionUiController {
 	}
 
 	showExtensionEditor(title: string, prefill?: string, tabId?: string): Promise<string | undefined> {
-		const interaction: TabInteraction = { kind: "editor", mounted: false };
+		tabId ??= this.host.shownTabId();
+		const interaction: TabInteraction = {
+			kind: "editor",
+			mounted: false,
+			blocked: { kind: "question", message: title },
+		};
 		return new Promise((resolve) => {
 			interaction.component = new ExtensionEditorComponent(
 				this.host.ui,
@@ -1215,6 +1242,7 @@ export class ExtensionUiController {
 		},
 		tabId?: string,
 	): Promise<T> {
+		tabId ??= this.host.shownTabId();
 		const isOverlay = options?.overlay ?? false;
 		const interaction: TabInteraction = { kind: isOverlay ? "overlay" : "custom", mounted: false };
 		this.trackTabInteraction(tabId, interaction);
@@ -1285,6 +1313,7 @@ export class ExtensionUiController {
 					restoreDraft();
 					this.unmountTabInteraction(interaction);
 					interaction.untrack?.();
+					this.remountParkedTabInteraction(interaction.tabId);
 					reject(err);
 				});
 		});

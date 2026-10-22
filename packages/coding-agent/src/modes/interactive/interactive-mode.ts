@@ -856,6 +856,7 @@ export class InteractiveMode {
 			get themeController() {
 				return mode.themeController;
 			},
+			setDialogBlocked: (blocked) => mode.programStatus?.setBlocked("extension-dialog", blocked),
 			shownTabId: (...args) => mode.shownTabId(...args),
 			isHomeActive: () => mode.homeSelection.active,
 			getLoadingTab: (id) => mode.tabManager?.get(id),
@@ -5360,11 +5361,9 @@ export class InteractiveMode {
 		options: string[],
 		opts?: ExtensionUIDialogOptions,
 		tabId?: string,
+		blocked?: TabInteraction["blocked"],
 	): Promise<string | undefined> {
-		return this.setExtensionDialogBlock(
-			{ kind: "question", message: title },
-			InteractiveMode.extensionUiFor(this).showExtensionSelector(title, options, opts, tabId),
-		);
+		return InteractiveMode.extensionUiFor(this).showExtensionSelector(title, options, opts, tabId, blocked);
 	}
 
 	/**
@@ -5388,10 +5387,7 @@ export class InteractiveMode {
 		opts?: ExtensionUIDialogOptions,
 		tabId?: string,
 	): Promise<boolean> {
-		return this.setExtensionDialogBlock(
-			{ kind: "permission", message: title },
-			InteractiveMode.extensionUiFor(this).showExtensionConfirm(title, message, opts, tabId),
-		);
+		return InteractiveMode.extensionUiFor(this).showExtensionConfirm(title, message, opts, tabId);
 	}
 
 	private async promptForMissingSessionCwd(error: MissingSessionCwdError): Promise<string | undefined> {
@@ -5409,20 +5405,14 @@ export class InteractiveMode {
 		opts?: ExtensionUIDialogOptions,
 		tabId?: string,
 	): Promise<string | undefined> {
-		return this.setExtensionDialogBlock(
-			{ kind: "question", message: title },
-			InteractiveMode.extensionUiFor(this).showExtensionInput(title, placeholder, opts, tabId),
-		);
+		return InteractiveMode.extensionUiFor(this).showExtensionInput(title, placeholder, opts, tabId);
 	}
 
 	/**
 	 * Show a multi-line editor for extensions (with Ctrl+G support).
 	 */
 	private showExtensionEditor(title: string, prefill?: string, tabId?: string): Promise<string | undefined> {
-		return this.setExtensionDialogBlock(
-			{ kind: "question", message: title },
-			InteractiveMode.extensionUiFor(this).showExtensionEditor(title, prefill, tabId),
-		);
+		return InteractiveMode.extensionUiFor(this).showExtensionEditor(title, prefill, tabId);
 	}
 
 	/**

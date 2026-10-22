@@ -80,6 +80,12 @@ commit that causes it.
 | Herdr pane state | no host marker and no process-wide extension channels: an extension that reports its pane to a terminal multiplexer has nothing to gate on and nothing to listen to | `main()` marks the process as MixCode (`MIXCODE ??= "1"`), and every tab's `EventBus` is registered so the host can broadcast `mpi:waiting-for-input` `{count, active}` (extension dialogs across every open tab) and `mpi:mark-done` `{reason}` (5 s after `/mark-done`) to all of them | the `mpi-herdr-report` extension needs both: a Herdr sidebar that cannot see `mpi` activity shows every pane as `unknown`. The reporter itself is not shipped by this fork; see [Herdr Pane Reporting](herdr.md) |
 | Extension cache location | jiti caches transformed extensions in a `node_modules/.cache/jiti` directory beside whichever module calls `createJiti`, and under `<os.tmpdir()>/jiti` when no such `node_modules` exists; when the tmpdir fallback already belongs to another user its probe fails and it silently runs without a cache, re-transforming every extension on each boot | the extension loader and the batch executor pass `cache: resolveJitiCacheDir()`, which resolves to `<agent dir>/cache/jiti` and to `false` (no disk cache) when the agent dir cannot hold one; the shared tmpdir is never used and `TMPDIR` is left alone, and entries not written for 30 days are trimmed at most once per 24 hours | `/tmp` is not the user's own space and one user's cache can silently disable another's; the agent dir already holds this fork's other caches, and the trim keeps a persistent cache from growing forever |
 
+Extension dialogs use the existing per-tab interaction stacks rather than upstream's single
+editor-slot stack. Closing or aborting a hidden dialog leaves the visible dialog focused, and
+returning to a tab restores its pending dialogs and blocked status. Cross-tab coverage lives in
+`packages/coding-agent/test/mixcode/extension-dialog-stack.test.ts`; the upstream dialog tests
+use a host backed by the fork controller.
+
 ## Outdated upstream pages and source copy
 
 Deliberately left unpatched:
@@ -210,7 +216,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `scripts/build-coding-agent-bundle.mjs`: `fengari` remains external in the bundle and is allowed
   as a runtime package for Lua batch scripts
 - `scripts/profile-coding-agent-node.mjs`: `--offline` no longer sets the removed `PI_SKIP_VERSION_CHECK`
-- `packages/coding-agent/test/version-check.test.ts`, `packages/coding-agent/test/package-command-paths.test.ts`: the removed check and its env var dropped from the cases
+- `packages/coding-agent/test/version-check.test.ts`, `packages/coding-agent/test/package-command-paths.test.ts`: the removed check and its env var dropped from the cases; package-command fixtures and output assertions use `APP_NAME` for the fork executable
 - `packages/coding-agent/test/interactive-mode-startup-input.test.ts`: the hand-built submit host
   supplies the Home attachment and session-binding gates required before input dispatch
 - `packages/coding-agent/test/suite/regressions/4167-thinking-toggle-pending-tool-render.test.ts`:

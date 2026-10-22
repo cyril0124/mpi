@@ -234,6 +234,8 @@ describe("InteractiveMode.showExtensionCustom", () => {
 		initTheme("dark");
 	});
 
+	const extensionDialogState = () => ({ homeSelection: { active: false } });
+
 	test("overlay custom UI reclaims input after non-overlay custom UI closes", async () => {
 		const terminal = new VirtualTerminal(80, 24);
 		const ui: TUI = new TuiMainScreen(terminal);
@@ -254,6 +256,7 @@ describe("InteractiveMode.showExtensionCustom", () => {
 			keybindings: {},
 			ui,
 			disposeActiveSelector: vi.fn(),
+			homeSelection: { active: false },
 		});
 		const showExtensionCustom = <T>(
 			factory: (tui: TUI, theme: unknown, keybindings: unknown, done: (result: T) => void) => Component,
@@ -320,13 +323,14 @@ describe("InteractiveMode.showExtensionCustom", () => {
 			let closeUpper: (value: string) => void = () => {
 				throw new Error("closeUpper was not initialized");
 			};
-			const fakeThis = {
+			const fakeThis = Object.assign(Object.create(InteractiveMode.prototype), {
 				editor,
 				editorContainer,
 				keybindings: {},
 				ui,
 				disposeActiveSelector: vi.fn(),
-			};
+				...extensionDialogState(),
+			});
 			const showExtensionCustom = <T>(
 				factory: (tui: TUI, theme: unknown, keybindings: unknown, done: (result: T) => void) => Component,
 				options?: { overlay?: boolean; overlayOptions?: { nonCapturing?: boolean } },

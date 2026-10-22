@@ -78,6 +78,11 @@
 | Herdr 窗格状态 | 既没有宿主标记，也没有进程级扩展通道：想向终端复用器上报窗格状态的扩展既没东西可把守，也没东西可监听 | `main()` 把进程标记为 MixCode（`MIXCODE ??= "1"`），并把每个标签的 `EventBus` 登记起来，宿主因而能向全部实例广播 `mpi:waiting-for-input` `{count, active}`（所有已打开标签中的扩展对话框）与 `mpi:mark-done` `{reason}`（`/mark-done` 之后 5 秒） | `mpi-herdr-report` 两者都需要：看不见 `mpi` 活动的 Herdr 侧边栏会把每个窗格都显示为 `unknown`。上报器本身不由本 fork 分发；见 [Herdr 窗格上报](herdr.zh.md) |
 | 扩展缓存位置 | `jiti` 把转译后的扩展缓存到调用 `createJiti` 的那个模块旁的 `node_modules/.cache/jiti`，没有这样的 `node_modules` 时缓存到 `<os.tmpdir()>/jiti`；tmpdir 兜底目录已属于其他用户时探测失败，于是静默地不使用缓存，每次启动都重新转译全部扩展 | 扩展加载器与 batch 执行器都传 `cache: resolveJitiCacheDir()`，解析为 `<agent dir>/cache/jiti`，agent 目录存不下时返回 `false`（不落盘缓存）；从不使用共享 tmpdir，也不改 `TMPDIR`；超过 30 天未写入的条目最多每 24 小时清理一次 | `/tmp` 不是用户自己的空间，一个用户的缓存会静默地把另一个用户的缓存关掉；agent 目录已是本 fork 其他缓存的家，清理规则则避免持久缓存无限增长 |
 
+扩展对话框复用现有的每标签页交互栈，而不是上游单一的编辑器槽位栈。关闭或中止隐藏的
+对话框不会抢走可见对话框的焦点；返回标签页时恢复其待处理对话框和阻塞状态。跨标签页
+覆盖位于 `packages/coding-agent/test/mixcode/extension-dialog-stack.test.ts`；上游对话框
+测试使用接入 fork 控制器的宿主。
+
 ## 已过期的上游页面与源码文案
 
 有意不打补丁：
@@ -180,7 +185,7 @@
 - `scripts/build-coding-agent-bundle.mjs`：`fengari` 保持为 bundle 的外部依赖，并作为 Lua batch
   脚本所需的运行时包加入允许清单
 - `scripts/profile-coding-agent-node.mjs`：`--offline` 不再设置已删除的 `PI_SKIP_VERSION_CHECK`
-- `packages/coding-agent/test/version-check.test.ts`、`packages/coding-agent/test/package-command-paths.test.ts`：用例中去掉已删除的检查与对应环境变量
+- `packages/coding-agent/test/version-check.test.ts`、`packages/coding-agent/test/package-command-paths.test.ts`：用例中去掉已删除的检查与对应环境变量；包管理夹具与输出断言通过 `APP_NAME` 使用 fork 的可执行文件名
 - `packages/coding-agent/test/interactive-mode-startup-input.test.ts`：手工搭建的提交宿主补上输入分发前所需的 Home 挂载与 session 绑定
 - `packages/coding-agent/test/suite/regressions/4167-thinking-toggle-pending-tool-render.test.ts`：测试宿主补上对话区渲染会调用的 response-model notice 回调
 - `packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts`：随提示一并删掉恢复提示用例，保留它原本要覆盖的退出顺序
