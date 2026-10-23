@@ -33,8 +33,9 @@ truncating.
 
 ## Keys and switching
 
-`tab` and `shift+tab` are swallowed while zen is on. Hiding the bar means losing the surface that
-shows where focus went, so switching stays a deliberate act:
+`tab` and `shift+tab` are swallowed while zen is on: nothing switches, and the composer receives no
+tab character. Hiding the bar means losing the surface that shows where focus went, so switching
+stays a deliberate act:
 
 | Action | How |
 | --- | --- |
@@ -42,8 +43,9 @@ shows where focus went, so switching stays a deliberate act:
 | Leave zen | `/toggle-zen-mode` |
 | Reach Home | `left` with an empty composer still opens Home; Home shows the full bar again |
 
-While the completion popup is open `tab` still completes, and an extension dialog owns the key
-before zen sees it.
+While the completion popup is open `tab` still completes. A focused extension dialog keeps `tab` and
+`shift+tab` for its own navigation: zen hides the bar, so the tab cycle would answer nothing, and the
+dialog gets the keys instead.
 
 ## Migration
 

@@ -18,6 +18,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- An extension dialog focused in zen mode now receives `tab` and `shift+tab`. The app answers those
+  keys before the dialog while the dialog owns the keyboard, and zen's tab cycle consumes them
+  without switching anything, so the key disappeared on its way to the dialog and a view that wanted
+  tab for its own navigation never saw it. Zen hides the bar, so the cycle now declines those two
+  keys while a dialog is focused; off zen the dialog still leaves them to tab switching.
 - Switching to another agent tab no longer inherits the scroll offset of the tab it replaced. One
   scroll view serves every tab, so leaving a transcript scrolled up and focusing another one showed
   that tab at the same offset, in the middle of unrelated output. Each tab now keeps the block its

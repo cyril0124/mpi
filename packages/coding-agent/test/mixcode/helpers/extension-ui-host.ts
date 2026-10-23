@@ -242,6 +242,10 @@ export class ExtensionUiTestHost implements ExtensionUiHost {
 		this.actions.push(`tab-cycle:${delta}`);
 		return true;
 	}
+	/** This host never hides the bar; the zen routing is pinned in `extension-dialog-shortcuts.test.ts`. */
+	tabBarHidden(): boolean {
+		return false;
+	}
 	handleTabJumpShortcut(): void {
 		this.actions.push("tab-jump");
 	}

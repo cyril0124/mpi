@@ -879,6 +879,7 @@ export class InteractiveMode {
 			showWarning: (...args) => mode.showWarning(...args),
 			showStatus: (...args) => mode.showStatus(...args),
 			handleTabCycle: (...args) => mode.handleTabCycle(...args),
+			tabBarHidden: () => mode.zenHidesTabBar(),
 			handleTabJumpShortcut: (...args) => mode.handleTabJumpShortcut(...args),
 			handleNewTab: (...args) => mode.handleNewTab(...args),
 			handleCloseTab: (...args) => mode.handleCloseTab(...args),

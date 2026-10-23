@@ -32,6 +32,9 @@ afterEach(() => {
 	setKeybindings(previousKeybindings);
 });
 
+/** The slice of `TabManager` the routing reads; `get` answers the loading-tab lookup. */
+type TabManagerSlice = { activeTab(): { zenMode?: boolean } | undefined; get(id: string): undefined };
+
 interface ShortcutHost {
 	ui: TuiMainScreen;
 	editorContainer: Container;
@@ -39,6 +42,7 @@ interface ShortcutHost {
 	tabInteractions: Map<string, unknown>;
 	activeTabIdForUi: string | undefined;
 	homeSelection: { active: boolean };
+	tabManager: TabManagerSlice | undefined;
 	extensionContextFor(tabId: string): ExtensionUIContext;
 	handleExtensionDialogShortcut(data: string): { consume: boolean } | undefined;
 }
@@ -163,5 +167,33 @@ describe("app chrome shortcuts over an extension dialog", () => {
 		expect(host.handleExtensionDialogShortcut("\x1b[D")).toBeUndefined();
 		expect(host.handleExtensionDialogShortcut("\r")).toBeUndefined();
 		expect(calls).toEqual([]);
+	});
+
+	/** Zen hides the tab bar, and `zenMode` on the focused tab is the only state it reads. */
+	function enterZen(host: ShortcutHost): void {
+		Object.assign(host, { tabManager: { activeTab: () => ({ zenMode: true }), get: () => undefined } });
+	}
+
+	test("zen leaves tab and shift+tab to the dialog on the editor slot", async () => {
+		const host = createHost();
+		enterZen(host);
+		await openSlottedDialog(host);
+		const calls = stubHandlers(host);
+
+		expect(host.handleExtensionDialogShortcut("\t")).toBeUndefined();
+		expect(host.handleExtensionDialogShortcut("\x1b[Z")).toBeUndefined();
+		// The rest of the chrome keys answer nothing else, so they stay with the app.
+		expect(host.handleExtensionDialogShortcut("t")).toEqual({ consume: true });
+		expect(calls).toEqual(["jump"]);
+	});
+
+	test("zen leaves tab and shift+tab to a focused overlay too", async () => {
+		const host = createHost();
+		enterZen(host);
+		await openDialog(host);
+		stubHandlers(host);
+
+		expect(host.handleExtensionDialogShortcut("\t")).toBeUndefined();
+		expect(host.handleExtensionDialogShortcut("\x1b[Z")).toBeUndefined();
 	});
 });

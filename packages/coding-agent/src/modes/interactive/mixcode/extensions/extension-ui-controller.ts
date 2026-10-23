@@ -137,6 +137,8 @@ export interface ExtensionUiHost {
 	showWarning(message: string): void;
 	showStatus(message: string): void;
 	handleTabCycle(delta: number): boolean;
+	/** True while the focused surface hides the tab bar, so a tab cycle answers nothing. */
+	tabBarHidden(): boolean;
 	handleTabJumpShortcut(): void;
 	handleNewTab(): Promise<void>;
 	handleCloseTab(): Promise<void>;
@@ -372,11 +374,17 @@ export class ExtensionUiController {
 	 * bound with `defaultEditor.onAction` goes dead until it closes. Tab is answered here even
 	 * though a dialog may want it: Tab switches agent tabs on every surface in this fork, and a
 	 * dialog keeps its arrow keys for its own navigation.
+	 *
+	 * Zen is the exception: the bar is hidden there, so the cycle would consume tab and answer
+	 * nothing on its way to the dialog. The dialog keeps tab and shift+tab instead.
 	 */
 	handleExtensionDialogShortcut(data: string): { consume: boolean } | undefined {
 		if (!this.hasFocusedExtensionDialog()) return undefined;
-		if (this.host.keybindings.matches(data, "app.tab.next")) this.host.handleTabCycle(1);
-		else if (this.host.keybindings.matches(data, "app.tab.previous")) this.host.handleTabCycle(-1);
+		const isTabNext = this.host.keybindings.matches(data, "app.tab.next");
+		const isTabPrevious = this.host.keybindings.matches(data, "app.tab.previous");
+		if ((isTabNext || isTabPrevious) && this.host.tabBarHidden()) return undefined;
+		if (isTabNext) this.host.handleTabCycle(1);
+		else if (isTabPrevious) this.host.handleTabCycle(-1);
 		else if (this.host.keybindings.matches(data, "app.tab.jump")) this.host.handleTabJumpShortcut();
 		else if (this.host.keybindings.matches(data, "app.tab.new")) void this.host.handleNewTab();
 		else if (this.host.keybindings.matches(data, "app.tab.close")) void this.host.handleCloseTab();
