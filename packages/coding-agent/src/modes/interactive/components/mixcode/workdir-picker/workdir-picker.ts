@@ -9,7 +9,7 @@
  * badge in the dock is what answers the pointer.
  */
 import { basename, sep } from "node:path";
-import { type Component, getKeybindings, truncateToWidth } from "@earendil-works/pi-tui";
+import { type Component, getKeybindings, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { theme } from "../../../theme/theme.ts";
 import { primaryKeyGlyphText } from "../key-hints.ts";
 import { padLine, windowStart } from "../layout-text.ts";
@@ -30,6 +30,12 @@ export const WORKDIR_PICKER_WIDTH_PERCENT = 78;
 
 /** Share of the terminal height the picker may take, its frame included. */
 export const WORKDIR_PICKER_HEIGHT_PERCENT = 80;
+
+/** Columns a hint row spends on the separator between two actions. */
+const HINT_SEPARATOR = " \u00b7 ";
+
+/** Hint rows the height budget already accounts for: one for the actions, one for the state. */
+const RESERVED_HINT_ROWS = 2;
 
 /**
  * Listing rows one window holds: at most half the terminal, never fewer than 5. The
@@ -84,10 +90,15 @@ export class WorkdirPickerComponent implements Component {
 	render(width: number): string[] {
 		const contentWidth = panelContentWidth(width);
 		const rows = this.rows();
+		const hints = this.renderHints(rows.filter((row) => row.kind === "dir").length, contentWidth);
+		// The hints are chrome, so a row they take beyond the 2 this layout reserves comes out of the
+		// list window: the overlay clips a panel that grows past its height budget, and the hints sit
+		// on the last rows it would lose.
+		const extraHintRows = Math.max(0, hints.length - RESERVED_HINT_ROWS);
 		// Read per render, so a resize while the picker is open re-windows it.
-		const maxVisibleRows = workdirWindowRows(this.terminalRows());
-		const start = windowStart(this.selectedIndex, rows.length, maxVisibleRows);
-		const end = Math.min(start + maxVisibleRows, rows.length);
+		const listRowBudget = Math.max(1, workdirWindowRows(this.terminalRows()) - extraHintRows);
+		const start = windowStart(this.selectedIndex, rows.length, listRowBudget);
+		const end = Math.min(start + listRowBudget, rows.length);
 
 		const body: string[] = [this.renderBreadcrumb(), this.renderFilterLine(), ""];
 		if (rows.length === 0) {
@@ -100,7 +111,7 @@ export class WorkdirPickerComponent implements Component {
 			}
 			if (end < rows.length) body.push(theme.fg("dim", `  ... (${rows.length - end} more below)`));
 		}
-		body.push("", ...this.renderHints(rows.filter((row) => row.kind === "dir").length));
+		body.push("", ...hints);
 		return panel("Change Workdir", body, width);
 	}
 
@@ -268,25 +279,52 @@ export class WorkdirPickerComponent implements Component {
 	}
 
 	/**
-	 * The key hints, in two rows: the panel is too narrow for one row naming all six
-	 * actions, and a clipped hint silently drops one. Keys are read from the bindings, so a
-	 * rebound key keeps the row accurate, and one key per action keeps both rows short.
+	 * The key hints, split into an actions row and a state row: the panel is too narrow for one row
+	 * naming all six actions, and a clipped hint silently drops one. Keys are read from the bindings,
+	 * so a rebound key keeps the rows accurate, and one key per action keeps them short.
+	 *
+	 * `panel` truncates its body at the content width without an ellipsis, so a row that still
+	 * outgrows the panel is packed onto another line rather than losing its tail mid-word.
 	 */
-	private renderHints(dirCount: number): string[] {
+	private renderHints(dirCount: number, contentWidth: number): string[] {
 		const hidden = this.showHidden ? "on" : "off";
 		const actions = [
+			`${dirCount} ${dirCount === 1 ? "dir" : "dirs"}`,
 			`${primaryKeyGlyphText("app.workdir.parent")} parent`,
 			`${primaryKeyGlyphText("app.workdir.enterDir")} enter`,
 			`${primaryKeyGlyphText("tui.select.confirm")} set`,
-		].join(" \u00b7 ");
+		];
 		const state = [
 			`${primaryKeyGlyphText("app.workdir.toggleHidden")} hidden(${hidden})`,
 			`${primaryKeyGlyphText("app.workdir.clearQuery")} clear`,
 			`${primaryKeyGlyphText("tui.select.cancel")} cancel`,
-		].join(" \u00b7 ");
-		return [
-			theme.fg("dim", `${dirCount} ${dirCount === 1 ? "dir" : "dirs"} \u00b7 ${actions}`),
-			theme.fg("dim", state),
 		];
+		const rows = [...packHintGroups(actions, contentWidth), ...packHintGroups(state, contentWidth)];
+		return rows.map((row) => theme.fg("dim", row));
 	}
+}
+
+/**
+ * Pack whole action hints into rows of at most `contentWidth` columns. A group that does not fit the
+ * current row opens the next one, so no row ends inside an action's label; a single group wider than
+ * the panel keeps its own row and is the only thing the box can still cut.
+ */
+function packHintGroups(groups: readonly string[], contentWidth: number): string[] {
+	const rows: string[] = [];
+	let row = "";
+	for (const group of groups) {
+		if (row === "") {
+			row = group;
+			continue;
+		}
+		const candidate = `${row}${HINT_SEPARATOR}${group}`;
+		if (visibleWidth(candidate) <= contentWidth) {
+			row = candidate;
+			continue;
+		}
+		rows.push(row);
+		row = group;
+	}
+	if (row !== "") rows.push(row);
+	return rows;
 }

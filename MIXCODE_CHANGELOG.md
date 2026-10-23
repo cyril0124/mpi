@@ -18,6 +18,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The `/workdir` picker's key hints wrap instead of being cut. The panel truncates every body row
+  at its content width without an ellipsis, so the second hint row ended inside a label on a narrow
+  terminal - 64 columns drew `... · escape ca` and lost the cancel key. The hints are now packed
+  from whole actions, so a wide terminal keeps its two rows and a narrow one gains a third; the
+  list window gives up a row for each extra hint row, so the wrapped hints cannot push the panel
+  past the overlay's height budget.
 - A manual `/compact` on one tab no longer takes `Escape` away from every other tab. The claim
   that keeps queued rounds out of a starting compaction is process-wide, and the steer flush, the
   turn retract and the per-tab follow-up host read it for whatever session was in front, so a
