@@ -79,8 +79,12 @@
 | 扩展缓存位置 | `jiti` 把转译后的扩展缓存到调用 `createJiti` 的那个模块旁的 `node_modules/.cache/jiti`，没有这样的 `node_modules` 时缓存到 `<os.tmpdir()>/jiti`；tmpdir 兜底目录已属于其他用户时探测失败，于是静默地不使用缓存，每次启动都重新转译全部扩展 | 扩展加载器与 batch 执行器都传 `cache: resolveJitiCacheDir()`，解析为 `<agent dir>/cache/jiti`，agent 目录存不下时返回 `false`（不落盘缓存）；从不使用共享 tmpdir，也不改 `TMPDIR`；超过 30 天未写入的条目最多每 24 小时清理一次 | `/tmp` 不是用户自己的空间，一个用户的缓存会静默地把另一个用户的缓存关掉；agent 目录已是本 fork 其他缓存的家，清理规则则避免持久缓存无限增长 |
 
 扩展对话框复用现有的每标签页交互栈，而不是上游单一的编辑器槽位栈。关闭或中止隐藏的
-对话框不会抢走可见对话框的焦点；返回标签页时恢复其待处理对话框和阻塞状态。跨标签页
-覆盖位于 `packages/coding-agent/test/mixcode/extension-dialog-stack.test.ts`；上游对话框
+对话框不会抢走可见对话框的焦点；返回标签页时恢复其待处理对话框和阻塞状态。应用自身的
+界面快捷键（标签页切换与跳转、新建/关闭标签页、命令面板、退出）在两种对话框表面之上仍然
+生效：持有焦点的捕获型 overlay，以及当前屏上标签页编辑器槽位中的对话框，除非其上还叠有
+另一个捕获型 overlay。跨标签页覆盖位于
+`packages/coding-agent/test/mixcode/extension-dialog-stack.test.ts`，快捷键路由位于
+`packages/coding-agent/test/mixcode/extension-dialog-shortcuts.test.ts`；上游对话框
 测试使用接入 fork 控制器的宿主。
 
 ## 已过期的上游页面与源码文案

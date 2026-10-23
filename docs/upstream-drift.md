@@ -82,8 +82,12 @@ commit that causes it.
 
 Extension dialogs use the existing per-tab interaction stacks rather than upstream's single
 editor-slot stack. Closing or aborting a hidden dialog leaves the visible dialog focused, and
-returning to a tab restores its pending dialogs and blocked status. Cross-tab coverage lives in
-`packages/coding-agent/test/mixcode/extension-dialog-stack.test.ts`; the upstream dialog tests
+returning to a tab restores its pending dialogs and blocked status. The app's chrome shortcuts
+(tab cycling and jump, tab open/close, palette, quit) answer above a dialog on either surface: a
+capturing overlay that holds focus, and a dialog in the editor slot of the tab on screen, unless
+another capturing overlay is stacked above it. Cross-tab coverage lives in
+`packages/coding-agent/test/mixcode/extension-dialog-stack.test.ts`, the shortcut routing in
+`packages/coding-agent/test/mixcode/extension-dialog-shortcuts.test.ts`; the upstream dialog tests
 use a host backed by the fork controller.
 
 ## Outdated upstream pages and source copy

@@ -367,13 +367,14 @@ export class ExtensionUiController {
 
 	/**
 	 * Answer the app's chrome shortcuts while an extension dialog owns the keyboard. A dialog
-	 * an extension opens as a capturing overlay takes focus from the composer, so every action
+	 * an extension opens takes the keyboard from the composer, either as a capturing overlay or
+	 * in the editor slot (`select`, `confirm`, `input`, `editor`, `custom`), so every action
 	 * bound with `defaultEditor.onAction` goes dead until it closes. Tab is answered here even
 	 * though a dialog may want it: Tab switches agent tabs on every surface in this fork, and a
 	 * dialog keeps its arrow keys for its own navigation.
 	 */
 	handleExtensionDialogShortcut(data: string): { consume: boolean } | undefined {
-		if (!this.hasFocusedExtensionOverlay()) return undefined;
+		if (!this.hasFocusedExtensionDialog()) return undefined;
 		if (this.host.keybindings.matches(data, "app.tab.next")) this.host.handleTabCycle(1);
 		else if (this.host.keybindings.matches(data, "app.tab.previous")) this.host.handleTabCycle(-1);
 		else if (this.host.keybindings.matches(data, "app.tab.jump")) this.host.handleTabJumpShortcut();
@@ -385,11 +386,26 @@ export class ExtensionUiController {
 		return { consume: true };
 	}
 
-	/** Whether an extension dialog opened as an overlay currently owns the keyboard. */
-	hasFocusedExtensionOverlay(): boolean {
-		for (const interactions of this.tabInteractions.values()) {
+	/**
+	 * Whether an extension dialog currently owns the keyboard: an overlay that holds focus, or a
+	 * dialog in the editor slot of the tab on screen.
+	 *
+	 * A slotted dialog takes focus like an overlay does but is not in the overlay stack, so checking
+	 * the overlays alone leaves its keys unanswered and the chrome shortcuts dead. The fork's own
+	 * slotted selectors (tree, model, resume) are not extension interactions and stay out of this
+	 * test; their components own their keys on purpose. A capturing overlay stacked above a slotted
+	 * dialog keeps the keyboard for itself.
+	 */
+	hasFocusedExtensionDialog(): boolean {
+		const anotherOverlayHoldsKeyboard = this.host.ui.hasCapturingOverlay();
+		for (const [tabId, interactions] of this.tabInteractions) {
 			for (const interaction of interactions) {
-				if (interaction.overlay?.handle.isFocused()) return true;
+				if (interaction.overlay !== undefined) {
+					if (interaction.overlay.handle.isFocused()) return true;
+					continue;
+				}
+				const slottedDialogOnScreen = interaction.mounted && this.tabShowsOnScreen(tabId);
+				if (slottedDialogOnScreen && !anotherOverlayHoldsKeyboard) return true;
 			}
 		}
 		return false;

@@ -3382,8 +3382,8 @@ export class InteractiveMode {
 	private handleExtensionDialogShortcut(data: string): { consume: boolean } | undefined {
 		return InteractiveMode.extensionUiFor(this).handleExtensionDialogShortcut(data);
 	}
-	private hasFocusedExtensionOverlay(): boolean {
-		return InteractiveMode.extensionUiFor(this).hasFocusedExtensionOverlay();
+	private hasFocusedExtensionDialog(): boolean {
+		return InteractiveMode.extensionUiFor(this).hasFocusedExtensionDialog();
 	}
 
 	/**
@@ -8588,9 +8588,9 @@ export class InteractiveMode {
 		// A selector in the editor slot (tree, model, resume) or an overlay of this fork already
 		// owns the keyboard, and opening over either would leave its close path unrun. An
 		// extension dialog is different: the overlay stack hands it back its focus when Tab Jump
-		// closes.
+		// closes, and a dialog in the editor slot is parked with its tab.
 		if (!this.tabManager || this.activeSelectorToken !== undefined) return;
-		if (this.ui.hasCapturingOverlay() && !this.hasFocusedExtensionOverlay()) return;
+		if (this.ui.hasCapturingOverlay() && !this.hasFocusedExtensionDialog()) return;
 		const model = this.getTabBarModel();
 
 		const maxVisibleRows = Math.max(

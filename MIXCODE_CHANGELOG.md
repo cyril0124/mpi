@@ -18,6 +18,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Tab, Shift+Tab, `ctrl+t`, `ctrl+p` and `ctrl+q` now answer while an extension dialog sits on the
+  editor slot (`select`, `confirm`, `input`, `editor`, `custom`, and the app's own session
+  confirmations). The chrome shortcuts were routed only above a focused extension *overlay*, so a
+  slotted dialog left them dead: `/close-session` kept the keyboard on its tab, the chip showed `?`,
+  and none of the keys that `docs/tabs.md` says park a confirmation on its tab reached the app. The
+  keyboard now follows the same rule for both dialog surfaces.
 - The `/workdir` picker's key hints wrap instead of being cut. The panel truncates every body row
   at its content width without an ellipsis, so the second hint row ended inside a label on a narrow
   terminal - 64 columns drew `... · escape ca` and lost the cancel key. The hints are now packed

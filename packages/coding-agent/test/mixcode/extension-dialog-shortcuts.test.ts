@@ -3,6 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vi
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import type { ExtensionUIContext } from "../../src/core/extensions/types.ts";
 import { KeybindingsManager } from "../../src/core/keybindings.ts";
+import { ExtensionSelectorComponent } from "../../src/modes/interactive/components/extension-selector.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { getEditorTheme, initTheme } from "../../src/modes/interactive/theme/theme.ts";
 
@@ -95,6 +96,15 @@ function stubHandlers(host: ShortcutHost): string[] {
 	return calls;
 }
 
+/**
+ * Open a real extension dialog on the editor slot (the shape `ctx.ui.select`, `confirm`,
+ * `input` and the app's own session confirmations take) and hand it the keyboard.
+ */
+async function openSlottedDialog(host: ShortcutHost): Promise<void> {
+	void host.extensionContextFor("tab-a").select("Pick one", ["one", "two"]);
+	await vi.waitFor(() => expect(host.ui.getFocusedComponent()).toBeInstanceOf(ExtensionSelectorComponent));
+}
+
 /** Open a real extension overlay on tab-a and hand it the keyboard. */
 async function openDialog(host: ShortcutHost): Promise<void> {
 	host.extensionContextFor("tab-a").custom(() => ({ render: () => ["DIALOG"], invalidate: () => {} }), {
@@ -128,6 +138,19 @@ describe("app chrome shortcuts over an extension dialog", () => {
 		expect(host.handleExtensionDialogShortcut("p")).toEqual({ consume: true });
 		expect(host.handleExtensionDialogShortcut("q")).toEqual({ consume: true });
 		expect(calls).toEqual(["tab:1", "tab:-1", "jump", "new", "close", "palette", "quit"]);
+	});
+
+	test("a dialog on the editor slot leaves the chrome keys to the app too", async () => {
+		const host = createHost();
+		await openSlottedDialog(host);
+		const calls = stubHandlers(host);
+
+		// Tab is how a session confirmation parks on its tab and comes back with it, so the frame
+		// the dialog holds must reach the app's tab cycling and Tab Jump.
+		expect(host.handleExtensionDialogShortcut("\t")).toEqual({ consume: true });
+		expect(host.handleExtensionDialogShortcut("\x1b[Z")).toEqual({ consume: true });
+		expect(host.handleExtensionDialogShortcut("t")).toEqual({ consume: true });
+		expect(calls).toEqual(["tab:1", "tab:-1", "jump"]);
 	});
 
 	test("keys the dialog owns, its cancel and arrows included, still reach it", async () => {
