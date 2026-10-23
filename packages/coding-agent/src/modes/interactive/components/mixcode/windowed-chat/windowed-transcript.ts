@@ -73,10 +73,10 @@ export class WindowedTranscript extends Container {
 	private readonly passLines = new Map<Component, string[]>();
 	/** Set when measuring the current pass changes the virtual total. */
 	private measuredThisPass = false;
-	/** The first visible row's stable block, retained across width reflow. */
+	/** The first visible row's stable block, retained across a width reflow or a height-table reset. */
 	private scrollAnchor?: ScrollAnchor;
-	/** Anchor captured before a width change, waiting for the new layout. */
-	private pendingResizeAnchor?: ScrollAnchor;
+	/** Anchor captured before a width change or a dropped height table, waiting for the next frame. */
+	private pendingAnchor?: ScrollAnchor;
 
 	constructor(options: WindowedTranscriptOptions) {
 		super();
@@ -111,6 +111,10 @@ export class WindowedTranscript extends Container {
 	 * first visit to a tab re-render its whole window from scratch.
 	 */
 	resetMeasurements(): void {
+		// Every unmeasured block falls back to the estimate, so the total collapses and the scroll
+		// view clamps the reader's offset towards the end. The remembered block is identity-based
+		// and survives the dropped table, so hand it to the next frame the way a width change does.
+		if (this.scrollAnchor) this.pendingAnchor = this.scrollAnchor;
 		this.passLines.clear();
 		this.measuredHeights = new WeakMap<Component, number>();
 		this.measuredSum = 0;
@@ -253,14 +257,14 @@ export class WindowedTranscript extends Container {
 		this.ensureWidth(safeWidth);
 		let top = Math.max(0, Math.floor(scrollTop));
 		if (viewportHeight === 0) {
-			this.pendingResizeAnchor = undefined;
+			this.pendingAnchor = undefined;
 			return { lines: [], start: top, scrollTop: top, total: this.totalHeight() };
 		}
 
 		this.measuredThisPass = false;
-		const resizeAnchor = this.pendingResizeAnchor;
-		if (resizeAnchor) {
-			top = this.resolveScrollAnchor(safeWidth, viewportHeight, resizeAnchor) ?? top;
+		const restoreAnchor = this.pendingAnchor;
+		if (restoreAnchor) {
+			top = this.resolveScrollAnchor(safeWidth, viewportHeight, restoreAnchor) ?? top;
 		}
 		const atContentEnd = !honorOffset && top + viewportHeight >= this.totalHeight();
 		let window = this.collectWindow(safeWidth, top, viewportHeight, margin, atContentEnd);
@@ -269,12 +273,12 @@ export class WindowedTranscript extends Container {
 		// prefix estimate cannot move the anchored block.
 		for (let attempt = 0; attempt < WINDOW_RECOLLECT_ATTEMPTS && this.measuredThisPass; attempt += 1) {
 			this.measuredThisPass = false;
-			if (resizeAnchor) {
-				top = this.resolveScrollAnchor(safeWidth, viewportHeight, resizeAnchor) ?? top;
+			if (restoreAnchor) {
+				top = this.resolveScrollAnchor(safeWidth, viewportHeight, restoreAnchor) ?? top;
 			}
 			window = this.collectWindow(safeWidth, top, viewportHeight, margin, atContentEnd);
 		}
-		this.pendingResizeAnchor = undefined;
+		this.pendingAnchor = undefined;
 
 		const total = this.totalHeight();
 		const maxScrollTop = Math.max(0, total - viewportHeight);
@@ -520,7 +524,7 @@ export class WindowedTranscript extends Container {
 	private ensureWidth(width: number): void {
 		if (width === this.measuredWidth) return;
 		if (this.measuredWidth >= 0 && this.scrollAnchor) {
-			this.pendingResizeAnchor = this.scrollAnchor;
+			this.pendingAnchor = this.scrollAnchor;
 		}
 		this.measuredWidth = width;
 		this.passLines.clear();

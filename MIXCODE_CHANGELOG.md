@@ -18,6 +18,15 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The fullscreen transcript keeps the reader's rows when a frame drops the windowed transcript's
+  measured heights. A content change that invalidates the container (an expanded card, a block that
+  re-renders) wiped the height table, so every block outside the window fell back to the 4-row
+  estimate, the total collapsed and the scroll view clamped the offset towards the newest output:
+  reading back through the conversation with vim's `ctrl+u` or the wheel jumped by the height of
+  whatever had been measured above the viewport. The remembered top block now survives the reset and
+  is re-applied on the next frame, the way a width change already resolved it. See
+  [Windowed Transcript](docs/windowed-transcript.md).
+- The vim-entry prompt card ends with the one-second arm window it describes.
 - Tab, Shift+Tab, `ctrl+t`, `ctrl+p` and `ctrl+q` now answer while an extension dialog sits on the
   editor slot (`select`, `confirm`, `input`, `editor`, `custom`, and the app's own session
   confirmations). The chrome shortcuts were routed only above a focused extension *overlay*, so a

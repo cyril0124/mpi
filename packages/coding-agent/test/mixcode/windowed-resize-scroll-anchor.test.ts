@@ -43,3 +43,25 @@ describe("windowed transcript resize anchoring", () => {
 		expect(after[anchorRow]).toContain("anchor-10 opening line");
 	});
 });
+
+describe("windowed transcript measurement-reset anchoring", () => {
+	it("keeps the same message row when the height table is dropped", () => {
+		const blocks = buildBlocks();
+		const transcript = new WindowedTranscript({ blocks: () => blocks });
+		const scroll = new ScrollView(transcript, { follow: "end", primary: true });
+		const root = new VStack([{ component: scroll, basis: 0, grow: 1, minSize: 1 }]);
+
+		renderLayoutFrame(root, 80, 10, () => {});
+		const target = transcript.matchingBlocks((block) => block === blocks[10])[0];
+		expect(target).toBeDefined();
+		scroll.scrollTo(target!.row);
+		const before = visible(renderLayoutFrame(root, 80, 10, () => {}).lines);
+		const anchorRow = before.findIndex((line) => line.includes("anchor-10 opening line"));
+		expect(anchorRow).toBeGreaterThanOrEqual(0);
+
+		// A content change invalidates the container, which drops every measured height.
+		transcript.invalidate();
+		const after = visible(renderLayoutFrame(root, 80, 10, () => {}).lines);
+		expect(after[anchorRow]).toContain("anchor-10 opening line");
+	});
+});
