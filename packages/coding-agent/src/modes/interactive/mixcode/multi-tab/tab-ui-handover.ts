@@ -7,6 +7,7 @@ import type { AgentTab, TabManager } from "../../../../core/mixcode/multi-tab/ta
 import { applySessionCopiedSettings } from "../../../../core/mixcode/settings-tab-sync.ts";
 import type { SessionEntry } from "../../../../core/session-manager.ts";
 import type { AssistantMessageComponent } from "../../components/assistant-message.ts";
+import type { ScrollAnchor } from "../../components/mixcode/windowed-chat/windowed-transcript.ts";
 import type { ToolExecutionComponent } from "../../components/tool-execution.ts";
 import { setRegisteredThemes } from "../../theme/theme.ts";
 import type { ExtensionUiController } from "../extensions/extension-ui-controller.ts";
@@ -34,6 +35,10 @@ export interface TabUiTranscriptPort {
 	renderEntries(entries: SessionEntry[], options: { updateFooter: false }): void;
 	resyncQueues(): void;
 	updatePending(): void;
+	/** The row the mounted transcript's viewport top sits on, or undefined at its end. */
+	scrollAnchor(): ScrollAnchor | undefined;
+	/** Put the mounted transcript's viewport back on a remembered row. */
+	restoreScrollAnchor(anchor: ScrollAnchor | undefined): void;
 }
 
 /** A switch drops the previous session's interrupt window and visible-run markers. */
@@ -91,6 +96,8 @@ interface CachedTranscript {
 export class TabUiHandover {
 	private readonly ports: TabUiHandoverPorts;
 	private readonly transcripts = new Map<string, CachedTranscript>();
+	/** The row each parked tab was showing, so its next visit resumes there instead of inheriting. */
+	private readonly scrollAnchors = new Map<string, ScrollAnchor>();
 	readonly boundSessions = new WeakSet<AgentSession>();
 	private readonly bindingSessions = new Map<AgentSession, Promise<void>>();
 	private readonly pendingTabBinds = new Map<AgentSession, AgentTab>();
@@ -115,13 +122,17 @@ export class TabUiHandover {
 	}
 
 	/** Swap a tab's UI in the host's existing queue, painting before any first bind begins. */
-	async switchActiveTab(tab: AgentTab): Promise<void> {
+	async switchActiveTab(tab: AgentTab, homeBehind = false): Promise<void> {
 		const { runtime, transcript, turn, extensions, view } = this.ports;
 		const controller = extensions.controller;
+		// A surface change from Home does not read the outgoing tab's rows: Home took the scroll
+		// view after the tab behind it had already parked its own anchor.
+		const leftHome = homeBehind || view.homeActive;
 		view.leaveHome();
 		const outgoingId = controller.activeTabIdForUi;
 		if (outgoingId && outgoingId !== tab.id) {
 			this.departedSessions.add(runtime.current.session.sessionManager.getSessionId());
+			if (!leftHome) this.captureScroll(outgoingId);
 			this.captureTranscript(outgoingId);
 			controller.detachTabUi(outgoingId);
 		}
@@ -138,6 +149,8 @@ export class TabUiHandover {
 		if (!this.restoreTranscript(tab.id)) {
 			transcript.rebuild();
 		}
+		// The transcript now holds the incoming tab's blocks, so its remembered row resolves.
+		this.restoreScroll(tab.id);
 		// A tab's first view reports its compaction history; coming back to one does not.
 		if (!this.departedSessions.has(tab.runtime.session.sessionManager.getSessionId())) {
 			transcript.showCompactionHistory();
@@ -336,9 +349,25 @@ export class TabUiHandover {
 		view.ui.requestRender();
 	}
 
+	/** Remember the row the mounted tab is showing so its next visit resumes there. */
+	captureScroll(tabId: string): void {
+		const anchor = this.ports.transcript.scrollAnchor();
+		if (anchor) this.scrollAnchors.set(tabId, anchor);
+		else this.scrollAnchors.delete(tabId);
+	}
+
+	/**
+	 * Put the mounted tab back on its remembered row. A tab that was at its newest output, or was
+	 * never visited, lands at the end, which is also where a rebuilt transcript starts.
+	 */
+	restoreScroll(tabId: string): void {
+		this.ports.transcript.restoreScrollAnchor(this.scrollAnchors.get(tabId));
+	}
+
 	/** Drop parked transcripts after settings change; their next focus rebuilds them. */
 	clearTranscripts(): void {
 		this.transcripts.clear();
+		this.scrollAnchors.clear();
 	}
 
 	/** Invalidate live and parked descendants after deferred syntax grammars become available. */
@@ -359,6 +388,7 @@ export class TabUiHandover {
 	/** Forget a closed tab's parked transcript and its owed resources block; a bind already in flight still runs. */
 	disposeTabUi(tabId: string): void {
 		this.transcripts.delete(tabId);
+		this.scrollAnchors.delete(tabId);
 		this.pendingResourceBlocks.delete(tabId);
 	}
 }

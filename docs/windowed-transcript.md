@@ -32,6 +32,10 @@ renders only the rows near the viewport. Long conversations scroll at a bounded 
    transcript's measured height changes, so an idle frame stays O(window). Vim's user-message jumps
    read the matched blocks and their exact rows through `matchingBlocks`, since the preview panel
    lists every match; one jump measures the whole document once.
+8. A surface swap keeps the row the reader was on. Each tab remembers the block at its viewport top,
+   and the incoming tab resolves its own anchor on the next frame instead of reusing the outgoing
+   offset; a tab that was at its newest output, or whose transcript was rebuilt while parked, opens
+   at the end. See [Agent Tabs](tabs.md).
 
 ## What stays the same
 

@@ -39,7 +39,12 @@ interface BlockAtRow {
 	height: number;
 }
 
-interface ScrollAnchor {
+/**
+ * The first visible row, pinned to a block rather than to a row number, so the same
+ * spot can be found again after the prefix above it changed height. A tab switch keeps
+ * these per tab; a reflow keeps one for the mounted surface.
+ */
+export interface ScrollAnchor {
 	block: Component;
 	rowInBlock: number;
 	blockProgress: number;
@@ -77,6 +82,8 @@ export class WindowedTranscript extends Container {
 	private scrollAnchor?: ScrollAnchor;
 	/** Anchor captured before a width change or a dropped height table, waiting for the next frame. */
 	private pendingAnchor?: ScrollAnchor;
+	/** Anchor of the surface being mounted; unlike a reflow anchor it falls back to the newest rows. */
+	private pendingScrollRestore: { readonly anchor: ScrollAnchor | undefined } | undefined;
 
 	constructor(options: WindowedTranscriptOptions) {
 		super();
@@ -121,6 +128,25 @@ export class WindowedTranscript extends Container {
 		this.measuredCount = 0;
 		this.syncedList = undefined;
 		this.syncedLength = -1;
+	}
+
+	/** The block the first visible row sits on, or undefined while the content end is in view. */
+	scrollAnchorSnapshot(): ScrollAnchor | undefined {
+		return this.scrollAnchor;
+	}
+
+	/**
+	 * Put the viewport back on a row remembered for the surface that is being painted now.
+	 *
+	 * A switch between tabs changes which blocks are on screen but not where the reader was
+	 * in each of them, so the incoming tab resolves its own anchor on the next frame instead
+	 * of keeping the outgoing tab's offset. An anchor this surface no longer paints, which is
+	 * what a rebuilt transcript leaves behind, falls back to the newest rows rather than an
+	 * unrelated row number.
+	 */
+	restoreScrollAnchor(anchor: ScrollAnchor | undefined): void {
+		this.scrollAnchor = undefined;
+		this.pendingScrollRestore = { anchor };
 	}
 
 	/**
@@ -262,10 +288,21 @@ export class WindowedTranscript extends Container {
 		}
 
 		this.measuredThisPass = false;
-		const restoreAnchor = this.pendingAnchor;
-		if (restoreAnchor) {
-			top = this.resolveScrollAnchor(safeWidth, viewportHeight, restoreAnchor) ?? top;
-		}
+		// A tab switch carries the incoming surface's remembered row; a width change carries the
+		// mounted surface's own anchor. A remembered row this surface cannot paint any more falls
+		// back to the newest rows, so the offset of the surface that was just unmounted never shows.
+		const restoreAnchor = this.pendingScrollRestore ? this.pendingScrollRestore.anchor : this.pendingAnchor;
+		const restoreFallsBackToEnd = this.pendingScrollRestore !== undefined;
+		const placeAnchor = (): number | undefined => {
+			const resolved = restoreAnchor
+				? this.resolveScrollAnchor(safeWidth, viewportHeight, restoreAnchor)
+				: undefined;
+			if (resolved !== undefined) return resolved;
+			if (!restoreFallsBackToEnd) return undefined;
+			return Math.max(0, this.totalHeight() - viewportHeight);
+		};
+		const anchoredTop = placeAnchor();
+		if (anchoredTop !== undefined) top = anchoredTop;
 		const atContentEnd = !honorOffset && top + viewportHeight >= this.totalHeight();
 		let window = this.collectWindow(safeWidth, top, viewportHeight, margin, atContentEnd);
 		// Each walk measures the blocks it paints, which moves the total and the row the
@@ -273,12 +310,12 @@ export class WindowedTranscript extends Container {
 		// prefix estimate cannot move the anchored block.
 		for (let attempt = 0; attempt < WINDOW_RECOLLECT_ATTEMPTS && this.measuredThisPass; attempt += 1) {
 			this.measuredThisPass = false;
-			if (restoreAnchor) {
-				top = this.resolveScrollAnchor(safeWidth, viewportHeight, restoreAnchor) ?? top;
-			}
+			const nextTop = placeAnchor();
+			if (nextTop !== undefined) top = nextTop;
 			window = this.collectWindow(safeWidth, top, viewportHeight, margin, atContentEnd);
 		}
 		this.pendingAnchor = undefined;
+		this.pendingScrollRestore = undefined;
 
 		const total = this.totalHeight();
 		const maxScrollTop = Math.max(0, total - viewportHeight);

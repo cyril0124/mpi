@@ -971,6 +971,8 @@ export class InteractiveMode {
 				renderEntries: (entries, options) => mode.renderSessionEntries(entries, options),
 				resyncQueues: () => mode.resyncQueuedMessageMirrors(),
 				updatePending: () => mode.updatePendingMessagesDisplay(),
+				scrollAnchor: () => mode.windowedTranscript?.scrollAnchorSnapshot(),
+				restoreScrollAnchor: (anchor) => mode.windowedTranscript?.restoreScrollAnchor(anchor),
 			},
 			turn: {
 				endInterruptArm: () => mode.endInterruptArm(),
@@ -3453,6 +3455,8 @@ export class InteractiveMode {
 			// The bound tab is already the one to focus, so nothing is rebuilt and the
 			// render path that seeds the composer history does not run; seed it here.
 			this.syncEditorHistory();
+			// Home's surface left the scroll view at its start, so the tab resumes its own row.
+			if (leavingHome) InteractiveMode.handoverFor(this).restoreScroll(tab.id);
 			// Its surfaces are back on screen, so a dialog parked for it returns too.
 			this.focusTabInteractions(tab.id);
 			this.ui.requestRender();
@@ -3466,7 +3470,7 @@ export class InteractiveMode {
 			manager.setDraft(current.id, this.editorText());
 		}
 		const active = manager.activate(tab.id);
-		await this.enqueueTabSwitch(() => this.switchActiveTab(active));
+		await this.enqueueTabSwitch(() => this.switchActiveTab(active, leavingHome));
 	}
 
 	/**
@@ -3509,6 +3513,8 @@ export class InteractiveMode {
 			this.parkFooterForHome();
 			this.hideStatusForHome();
 			this.requestWidgetRender();
+			// Home owns the scroll view now, so the tab behind it keeps its own row for its return.
+			if (this.activeTabIdForUi) InteractiveMode.handoverFor(this).captureScroll(this.activeTabIdForUi);
 			this.documentContainer.clear();
 			if (this.homeView) this.documentContainer.addChild(this.homeView);
 			// The transcript's blocks are a different set now; drop the windowed height table.
@@ -4038,8 +4044,8 @@ export class InteractiveMode {
 	}
 
 	/** Swap the mounted session through the handover's serialized surface lifecycle. */
-	private switchActiveTab(tab: AgentTab): Promise<void> {
-		return InteractiveMode.handoverFor(this).switchActiveTab(tab);
+	private switchActiveTab(tab: AgentTab, homeBehind = false): Promise<void> {
+		return InteractiveMode.handoverFor(this).switchActiveTab(tab, homeBehind);
 	}
 
 	/** Prepare a restored tab's transcript while Home owns the rendered surface. */

@@ -18,6 +18,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Switching to another agent tab no longer inherits the scroll offset of the tab it replaced. One
+  scroll view serves every tab, so leaving a transcript scrolled up and focusing another one showed
+  that tab at the same offset, in the middle of unrelated output. Each tab now keeps the block its
+  viewport top sat on, and the incoming tab resolves its own anchor on the next frame; a tab that was
+  at its newest output, or whose transcript was rebuilt while parked, lands at the end instead. Home
+  captures the tab behind it before taking the scroll view, so going through Home keeps the position
+  too. See [Windowed Transcript](docs/windowed-transcript.md).
 - `/delete-session` and `/delete-all-sessions` now refuse while a `!` command still runs in one of
   the tabs they would delete. The delete commands move the session file to the trash and keep the
   tab's session running, so a bash command that finished afterwards recreated the file at the old

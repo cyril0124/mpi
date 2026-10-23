@@ -191,6 +191,64 @@ describe("windowed transcript window", () => {
 		}
 	});
 
+	it("gives each tab back its own rows instead of the offset of the tab it replaced", () => {
+		// Two tabs share one transcript container, the way a switch swaps the block list while
+		// the scroll view keeps a single offset.
+		const tabA = makeBlocks(120, 4);
+		const tabB = makeBlocks(90, 4);
+		let mounted: readonly Block[] = tabA;
+		const transcript = new WindowedTranscript({ blocks: () => mounted });
+		const scrollView = new ScrollView(transcript, { follow: "end", primary: true });
+		const root = new VStack([{ component: scrollView, basis: 0, grow: 1, shrink: 1, minSize: 1 }]);
+		const rows = (): string[] =>
+			renderLayoutFrame(root, 24, 12, () => {})
+				.lines.map((line) => line.trimEnd())
+				.filter((line) => line !== "");
+
+		// Tab A starts on its newest rows; the reader then pages up 160 rows.
+		rows();
+		scrollView.scrollBy(-160);
+		const aRows = rows();
+		const anchorA = transcript.scrollAnchorSnapshot();
+		expect(aRows[0]).toBe("b77-0");
+		expect(anchorA).toBeDefined();
+
+		// Switching to a tab that is still at its end paints that tab's newest rows, not A's offset.
+		mounted = tabB;
+		transcript.restoreScrollAnchor(undefined);
+		const bRows = rows();
+		expect(bRows[0]).toBe("b87-0");
+		expect(bRows.at(-1)).toBe("b89-3");
+
+		// Coming back resumes the row A was left on.
+		mounted = tabA;
+		transcript.restoreScrollAnchor(anchorA);
+		expect(rows().slice(0, aRows.length)).toEqual(aRows);
+	});
+
+	it("opens a rebuilt tab at its newest rows when its remembered block is gone", () => {
+		let mounted: readonly Block[] = makeBlocks(120, 4);
+		const transcript = new WindowedTranscript({ blocks: () => mounted });
+		const scrollView = new ScrollView(transcript, { follow: "end", primary: true });
+		const root = new VStack([{ component: scrollView, basis: 0, grow: 1, shrink: 1, minSize: 1 }]);
+		const rows = (): string[] =>
+			renderLayoutFrame(root, 24, 12, () => {})
+				.lines.map((line) => line.trimEnd())
+				.filter((line) => line !== "");
+
+		rows();
+		scrollView.scrollBy(-160);
+		const anchor = transcript.scrollAnchorSnapshot();
+
+		// A visited tab that streamed or reloaded in the background rebuilds its components, so
+		// the remembered block has no rows on the surface that comes back.
+		mounted = makeBlocks(120, 4);
+		transcript.restoreScrollAnchor(anchor);
+		const rebuilt = rows();
+		expect(rebuilt[0]).toBe("b117-0");
+		expect(rebuilt.at(-1)).toBe("b119-3");
+	});
+
 	it("places the window at the requested offset when it changes", () => {
 		const blocks = makeBlocks(200, 4);
 		const transcript = new WindowedTranscript({ blocks: () => blocks });
