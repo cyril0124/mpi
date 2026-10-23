@@ -9,7 +9,7 @@
 import type { AgentSession } from "../../../../core/agent-session.ts";
 import type { SharedTabLayout } from "../../../../core/mixcode/multi-tab/shared-tab-layout.ts";
 import type { AgentTab } from "../../../../core/mixcode/multi-tab/tab-manager.ts";
-import { type TabManager, tabBusyReason } from "../../../../core/mixcode/multi-tab/tab-manager.ts";
+import { type TabManager, tabDeletionReason } from "../../../../core/mixcode/multi-tab/tab-manager.ts";
 import { isInTrash } from "../../../../core/mixcode/session-trash.ts";
 import { handleCloseTab, handleDeleteTabs } from "./tab-lifecycle.ts";
 
@@ -140,7 +140,7 @@ export async function handleDeleteAllSessions(host: SessionActionHost): Promise<
 	}
 	const blocked = tabManager
 		.list()
-		.map((tab) => tabBusyReason(tab))
+		.map((tab) => tabDeletionReason(tab))
 		.filter((reason): reason is string => reason !== undefined);
 	if (blocked.length > 0) {
 		host.showError(`Cannot delete all sessions while ${blocked.join(", ")}`);

@@ -12,8 +12,8 @@ import type { SharedTabLayout } from "../../../../core/mixcode/multi-tab/shared-
 import {
 	type AgentTab,
 	type TabManager,
-	tabBusyPhrase,
-	tabBusyReason,
+	tabDeletionPhrase,
+	tabDeletionReason,
 } from "../../../../core/mixcode/multi-tab/tab-manager.ts";
 import { deleteSessionFile } from "../../../../core/mixcode/session-delete.ts";
 import { MissingSessionCwdError } from "../../../../core/session-cwd.ts";
@@ -260,9 +260,11 @@ export async function handleDeleteTabs(
 		return;
 	}
 	const targets = options.all ? [...tabManager.list()] : [tabManager.getActive()];
-	const blocked = targets.map((tab) => tabBusyReason(tab)).filter((reason): reason is string => reason !== undefined);
+	const blocked = targets
+		.map((tab) => tabDeletionReason(tab))
+		.filter((reason): reason is string => reason !== undefined);
 	if (blocked.length > 0) {
-		const phrase = tabBusyPhrase(targets[0]!);
+		const phrase = tabDeletionPhrase(targets[0]!);
 		host.showError(
 			options.all
 				? `Cannot delete all sessions while ${blocked.join(", ")}`

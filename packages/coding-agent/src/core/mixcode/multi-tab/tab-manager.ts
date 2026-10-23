@@ -87,9 +87,8 @@ export interface AgentTab {
 }
 
 /**
- * Why a tab must not be closed or deleted right now, or undefined when it can
- * be: its session file is still being written and its runtime would be torn
- * down mid-turn.
+ * Why a tab must not be torn down while a turn runs, or undefined when it may be: its session file
+ * is still being written and its runtime would be torn down mid-turn.
  */
 export function tabBusyPhrase(tab: AgentTab): string | undefined {
 	const session = tab.runtime.session;
@@ -98,15 +97,35 @@ export function tabBusyPhrase(tab: AgentTab): string | undefined {
 	return undefined;
 }
 
-/** `<title> (<why>)` for a notice that names the tab, or undefined when the tab is idle. */
+/** `<title> (<why>)` for a tab with a running turn, or undefined when no turn runs. */
 export function tabBusyReason(tab: AgentTab): string | undefined {
 	const phrase = tabBusyPhrase(tab);
 	return phrase ? `${tab.title} (${phrase})` : undefined;
 }
 
-/** Refuse a close or delete while the tab is busy: its runtime would be torn down mid-turn. */
+/**
+ * Why a tab's session file must not be moved away right now, or undefined when it can be.
+ *
+ * A deletion moves the file to the trash while the tab keeps its session, and a running `!`
+ * command still appends its result to the old path, which recreates the file without its session
+ * header. That is why `/clear` and `/reset` refuse a running bash command too.
+ */
+export function tabDeletionPhrase(tab: AgentTab): string | undefined {
+	const busy = tabBusyPhrase(tab);
+	if (busy) return busy;
+	if (tab.runtime.session.isBashRunning) return "a bash command is still running";
+	return undefined;
+}
+
+/** `<title> (<why>)` for a refused deletion, or undefined when the file can move. */
+export function tabDeletionReason(tab: AgentTab): string | undefined {
+	const phrase = tabDeletionPhrase(tab);
+	return phrase ? `${tab.title} (${phrase})` : undefined;
+}
+
+/** Refuse a close or delete while the tab is busy: its runtime would be torn down mid-work. */
 function assertTabIdle(tab: AgentTab, action: "close" | "delete"): void {
-	const phrase = tabBusyPhrase(tab);
+	const phrase = action === "delete" ? tabDeletionPhrase(tab) : tabBusyPhrase(tab);
 	if (phrase) throw new Error(`Cannot ${action} a session while ${phrase}`);
 }
 

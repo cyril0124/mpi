@@ -18,6 +18,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- `/delete-session` and `/delete-all-sessions` now refuse while a `!` command still runs in one of
+  the tabs they would delete. The delete commands move the session file to the trash and keep the
+  tab's session running, so a bash command that finished afterwards recreated the file at the old
+  path with only its result and no session header - `docs/tabs.md` names exactly that replacement as
+  the reason these commands check a tab's state first. `/clear` and `/reset` already refused a
+  running bash command; the deletion guard now does too and names the tab and the reason.
 - The fullscreen transcript keeps the reader's rows when a frame drops the windowed transcript's
   measured heights. A content change that invalidates the container (an expanded card, a block that
   re-renders) wiped the height table, so every block outside the window fell back to the 4-row

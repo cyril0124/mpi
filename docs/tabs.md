@@ -278,10 +278,11 @@ load.
 
 `/delete-session`, `/delete-all-sessions`, and the session selector refuse to delete a session
 file that an open tab holds, and name that tab: it keeps appending to the path, so removing the file
-under it leaves a headerless replacement that no restart can load. A tab with a turn in progress
-reports what it is busy with instead, and `/delete-all-sessions` reports that before it opens its
-panel. The two session commands also replace the session of the tab they keep, so an extension that
-cancels `session_before_switch` cancels the delete with it and the file stays where that tab writes.
+under it leaves a headerless replacement that no restart can load. A tab with a turn or a `!`
+command in progress reports what it is busy with instead, and `/delete-all-sessions` reports that
+before it opens its panel. The two session commands also replace the session of the tab they keep, so
+an extension that cancels `session_before_switch` cancels the delete with it and the file stays where
+that tab writes.
 
 `/delete-all-sessions` confirms on a typed word: the run starts only once `DELETE` has been entered in
 full, so no single key confirms it, whether a stray `y`, Enter or a key sent into the terminal by another

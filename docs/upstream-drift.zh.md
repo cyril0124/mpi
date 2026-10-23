@@ -24,7 +24,7 @@
 | `/clear` | `/new` 用新文件替换当前会话，正在进行的回合会被中断 | 命令改为 `/clear`：回合或 bash 运行中拒绝执行，新会话沿用旧 header 的 parent，标签页底色随会话一起丢掉 | 跟随 mixcode-pi 的 `/clear`：忙碌时拒绝执行，不再中断回合；底色按 session id 存，新会话本就没有 |
 | `/reset` | 无此命令；回到一段对话的根节点只能在 `/tree` 里手动导航 | `/reset` 在同一文件里把叶子退回会话根，保留标签页、标题与全部条目，旧分支仍在 `/tree` 可达 | 回到根节点不该先打开树选择器，而被放弃的分支值得留下 |
 | `/editor` | 无此命令；草稿只能通过 `app.editor.external` 按键交给外部编辑器 | `/editor` 从斜杠输入与命令面板打开同一个编辑器，并保留它写入的内容（清空成空草稿也算） | 编辑器槽位里是面板的命令文本时，草稿也需要能编辑 |
-| 会话删除 | 直接删除所选会话文件 | 所属标签页有对话进行中时拒绝 | 可能还有另一个标签页在写该文件 |
+| 会话删除 | 直接删除所选会话文件 | 所属标签页有对话或 `!` 命令进行中时拒绝 | 可能还有另一个标签页在写该文件 |
 | 已删除会话 | 直接 unlink 文件 | 文件移入 `<agent dir>/mixcode-pi/trash/` 并记入 `trash-index.jsonl`（上限 2 GiB，先淘汰最旧），`/resume-trash` 可把选中的一条还原回原路径；移动失败则退回系统 `trash` CLI、再退回 unlink | 误按 `/delete-session` 应当可撤销，不必依赖备份；该 trash 目录与 mixcode-pi 共用 |
 | `app.model.cycleForward` 默认键 | `ctrl+p` | 无默认键 | `ctrl+p` 改作打开命令面板 |
 | `app.tab.jump` 默认键 | 无此动作；`ctrl+t` 切换 thinking 块显示 | `ctrl+t` 打开 Tab Jump 切换浮层，`app.thinking.toggle` 保留 `ctrl+t` 默认值但在 composer 中按注册顺序把该键让给跳转 | 有多个 agent 时应当直接跳过去，而不是逐个循环；见 [Agent 标签页](tabs.zh.md#标签页跳转) |
