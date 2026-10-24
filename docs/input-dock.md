@@ -27,8 +27,8 @@ replaces pi's status footer.
 - An empty composer hints the two keys that act on it besides `@` and `/`: `← Home` opens
   MixCode Home and `→ widgets` toggles the side panel. Both labels follow the configured keybindings,
   and the panel half is left out in TUI modes that do not split the chat. While vim mode owns the
-  composer the hint lists the modal keys instead: the message jumps (`→`, `Shift+→`), `j`/`k`
-  scrolling, `gg`/`G` for the oldest and newest row, and `q` to exit.
+  composer the hint lists the mode's keys instead: the message jumps, `j`/`k` scrolling, the 10-row
+  page keys, the oldest and newest row, and the exit key, each under the key the user has.
 
 The card needs ten columns. Below that the plain editor is used, so a working status always has
 somewhere to go. The status degrades from its message to the spinner to a truncated spinner, the

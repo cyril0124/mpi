@@ -18,6 +18,12 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Vim mode's composer hint now names the keys the user actually has, and it names the page action.
+  The row was a fixed string, so after rebinding `app.vim.*` in `keybindings.json` it kept promising
+  `j/k`, `gg`, `G` and `q` while the rebound keys were the ones that worked, and it never mentioned
+  `app.vim.pageUp` / `pageDown` (`ctrl+u` / `ctrl+d`) at all - the mode's only 10-row jump, which the
+  [Vim Mode](docs/vim-mode.md#keys) page documents. Every segment is now read from the keybindings
+  like the rest of the dock's hints, and an unbound action drops out instead of naming a dead key.
 - An extension dialog focused in zen mode now receives `tab` and `shift+tab`. The app answers those
   keys before the dialog while the dialog owns the keyboard, and zen's tab cycle consumes them
   without switching anything, so the key disappeared on its way to the dialog and a view that wanted

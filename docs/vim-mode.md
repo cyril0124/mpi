@@ -28,7 +28,9 @@ in regular mode and on MixCode Home, which covers that transcript, the key stays
 
 While vim mode is on the editor is locked: it renders with the accent frame, draws no caret, ignores typing, and
 refuses to submit. Extension widgets above and below the editor are not rendered, so their rows go
-to the transcript; registrations and lifecycle are untouched.
+to the transcript; registrations and lifecycle are untouched. The row the empty composer shows in its
+place names the mode's actions with the keys bound to them, the 10-row page keys included, so a
+rebound action is listed under the key the user has.
 
 ## Keys
 

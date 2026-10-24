@@ -4,10 +4,11 @@
  */
 
 import type { ContextUsage } from "../../../../../core/extensions/types.ts";
+import type { AppKeybinding } from "../../../../../core/keybindings.ts";
 import { type HomeSelectionState, homeSelectedTab } from "../../../../../core/mixcode/home/home-state.ts";
 import type { AgentTab } from "../../../../../core/mixcode/multi-tab/tab-manager.ts";
 import { theme } from "../../../theme/theme.ts";
-import { keyGlyphText } from "../key-hints.ts";
+import { keyGlyphText, primaryKeyGlyphText } from "../key-hints.ts";
 import { exactContextUsageText } from "./input-meta.ts";
 import type { EditorCardChrome } from "./prompt-editor.ts";
 
@@ -54,10 +55,46 @@ export function composerPlaceholder(context: ComposerContext): string {
 		);
 	}
 	if (context.vimActive) {
-		return theme.fg("dim", "Vim: → newer · Shift+→ older · j/k scroll · gg top · G bottom · q exit");
+		return theme.fg("dim", `Vim: ${vimKeyHints()}`);
 	}
 	const hints = composerKeyHints(context.uiMode);
 	return theme.fg("dim", `Describe your next change...${FILES_COMMANDS_HINT}${hints}`);
+}
+
+/**
+ * One vim action's main key, capitalized the way a hint reads. A single-letter key
+ * keeps its case, because it names that exact key: `q` exits, `Q` does not.
+ */
+function vimKeyLabel(action: AppKeybinding): string {
+	const label = primaryKeyGlyphText(action);
+	return label.length > 1 ? label.charAt(0).toUpperCase() + label.slice(1) : label;
+}
+
+/**
+ * Key row of the modal transcript surface. Every key comes from the keybindings, so a
+ * rebound vim action is named by the key the user has; `topPrefix` appears twice because
+ * its jump is a two-key chord (`gg`). An unbound action drops its segment, which keeps
+ * the row from naming a key that does nothing.
+ */
+function vimKeyHints(): string {
+	const lineKeys = [vimKeyLabel("app.vim.lineDown"), vimKeyLabel("app.vim.lineUp")].filter(Boolean).join("/");
+	const pageKeys = [vimKeyLabel("app.vim.pageUp"), vimKeyLabel("app.vim.pageDown")].filter(Boolean).join("/");
+	const topPrefix = vimKeyLabel("app.vim.topPrefix");
+	const endKeys = [topPrefix ? `${topPrefix}${topPrefix}` : "", vimKeyLabel("app.vim.bottom")]
+		.filter(Boolean)
+		.join("/");
+	const messageKeys = [vimKeyLabel("app.vim.nextUserMessage"), vimKeyLabel("app.vim.previousUserMessage")]
+		.filter(Boolean)
+		.join("/");
+	const exitKey = vimKeyLabel("app.vim.exit");
+	const segments = [
+		lineKeys && `${lineKeys} scroll`,
+		pageKeys,
+		endKeys && `${endKeys} ends`,
+		messageKeys && `${messageKeys} msg`,
+		exitKey && `${exitKey} exit`,
+	];
+	return segments.filter(Boolean).join(" · ");
 }
 
 /**
