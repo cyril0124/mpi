@@ -18,6 +18,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A restart now selects the tab that was focused last, as `docs/tabs.md` describes. Focus is not a
+  layout change, so no publication covered it: the peer poll folded the focused tab into its delta
+  baseline without writing it, the exit-time publish then saw no change and skipped the write, and
+  the next start selected whichever tab had been published last. The exit path now records the
+  focused tab on its own, so Home comes back on the agent the user left.
 - A command that keeps the tab in front (`/close-all-sessions`, `/delete-all-sessions`) no longer
   moves the reader's transcript. Both re-enter the mounted tab through the switch path, and taking
   the tab's remembered row there put back the row it had when it was last left, so a transcript

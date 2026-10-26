@@ -86,6 +86,11 @@ export class TabController {
 		this.sharedLayout?.publish();
 	}
 
+	/** Record the focused tab, which no delta publish covers. */
+	publishFocus(): void {
+		this.sharedLayout?.publishFocus();
+	}
+
 	/** Stop peer synchronization and dispose all runtimes. */
 	async dispose(fallbackRuntime: AgentSessionRuntime): Promise<void> {
 		this.sharedLayout?.dispose();

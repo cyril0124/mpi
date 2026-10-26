@@ -4274,6 +4274,17 @@ export class InteractiveMode {
 		this.tabs?.publish();
 	}
 
+	/**
+	 * Record the layout and the tab the user left on as the app exits. A delta publish cannot
+	 * report the focus: the peer poll folds it into its baseline, so `publish()` then sees no
+	 * change and the next start selects the tab that was published last, not the focused one.
+	 */
+	private persistExitLayout(): void {
+		if (!this.tabsRestoreAttempted) return;
+		this.persistOpenTabs();
+		this.tabs?.publishFocus();
+	}
+
 	private async restoreOpenTabsOnStartup(): Promise<void> {
 		const manager = this.tabManager;
 		if (!manager) {
@@ -7236,7 +7247,7 @@ export class InteractiveMode {
 			// terminal. If the terminal is gone, the restore writes below emit EIO,
 			// which the stdout/stderr error handler turns into emergencyTerminalExit;
 			// the render loop is already idle, so this cannot hot-spin (see #4144).
-			this.persistOpenTabs();
+			this.persistExitLayout();
 			this.sharedLayoutErrorShown.clear();
 			await this.tabs.dispose(this.runtimeHost);
 			this.themeController.disableAutoSync();
@@ -7255,7 +7266,7 @@ export class InteractiveMode {
 
 		// Record the tab the user left on. Focus changes do not write the layout, so
 		// the exit path is what keeps the restored focus current.
-		this.persistOpenTabs();
+		this.persistExitLayout();
 		this.stop();
 		this.sharedLayoutErrorShown.clear();
 		await this.tabs.dispose(this.runtimeHost);

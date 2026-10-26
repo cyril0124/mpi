@@ -175,6 +175,27 @@ export class SharedTabLayout {
 	}
 
 	/**
+	 * Record the focused tab for the next start.
+	 *
+	 * Focus is not a layout change, so no delta publish covers it: the peer poll folds the focused
+	 * tab into its baseline without writing it, and the next `publish()` then sees no change and
+	 * skips the write. The exit path calls this so a restart selects the tab the user left on
+	 * (`docs/tabs.md`, Startup restore) instead of whichever tab was published last.
+	 */
+	publishFocus(): void {
+		if (!this.started || this.disposed) return;
+		const active = this.options.manager.activeTab()?.runtime.session.sessionManager.getSessionId();
+		if (!active) return;
+		try {
+			// No membership change, so a peer's entries survive; the delta baseline follows the write.
+			mutateOpenTabs(this.options.workdir, () => {}, active);
+			this.activeSessionId = active;
+		} catch (error) {
+			this.options.onError(error);
+		}
+	}
+
+	/**
 	 * Drop sessions from the shared membership. Called for sessions that were deleted,
 	 * whose removal must not depend on the local delta snapshot.
 	 *
