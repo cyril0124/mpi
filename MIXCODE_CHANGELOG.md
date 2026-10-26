@@ -18,6 +18,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- The fullscreen viewport's own scroll keys keep working in vim mode. `ctrl+u` / `ctrl+d` reach the
+  vim page action without taking the rest of the viewport's commands with them: the
+  `↓ Jump to latest message · Ctrl+End` label stayed on screen during vim mode while `ctrl+end` did
+  nothing, because the whole viewport key block was skipped instead of just the two page keys.
+  `ctrl+home`, `ctrl+end` and the prompt jumps answer again while the modal surface owns input.
 - A restart now selects the tab that was focused last, as `docs/tabs.md` describes. Focus is not a
   layout change, so no publication covered it: the peer poll folded the focused tab into its delta
   baseline without writing it, the exit-time publish then saw no change and skipped the write, and

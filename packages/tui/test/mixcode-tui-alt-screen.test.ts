@@ -1052,3 +1052,56 @@ describe("fullscreen composer caret keys", () => {
 		}
 	});
 });
+
+/**
+ * Vim mode keeps `pageUp` / `pageDown` for its own fixed 10-row page, and the host says so
+ * through `shouldDeferPageKeys`. That predicate covers the page keys only: the viewport's
+ * other commands keep answering, because the jump-to-end label goes on naming
+ * `tui.altScreen.bottom` (`ctrl+end`) while the modal surface owns input. Deferring the whole
+ * command block left that advertised key dead.
+ */
+describe("modal page-key deferral", () => {
+	it("hands over the page keys but keeps the viewport's end jumps", async () => {
+		const terminal = new VirtualTerminal(40, 8);
+		const tui = new TuiAltScreen(terminal, undefined, undefined, { shouldDeferPageKeys: () => true });
+		const transcript = new ScrollView(
+			new Text(Array.from({ length: 40 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
+			{ follow: "end", primary: true },
+		);
+		const editor = new Editor(tui, defaultEditorTheme);
+		editor.setText("first\nsecond");
+		tui.setLayoutRoot(
+			new VStack([
+				{ component: transcript, basis: 0, grow: 1, minSize: 1 },
+				{ component: editor, basis: "auto", minSize: 3 },
+			]),
+		);
+		tui.setFocus(editor);
+		tui.start();
+		try {
+			await terminal.waitForRender();
+
+			// Wheel up first so a key that reaches the viewport has something to move.
+			terminal.sendInput("\x1b[<64;1;1M");
+			await terminal.waitForRender();
+			const scrolledTop = transcript.scrollTop;
+			assert.ok(scrolledTop > 0, "the wheel must scroll the transcript for the test to mean anything");
+
+			// The host's modal page action owns pageUp; the viewport must not page behind it.
+			terminal.sendInput("\x1b[5~");
+			await terminal.waitForRender();
+			assert.strictEqual(transcript.scrollTop, scrolledTop, "pageUp belongs to the modal surface");
+
+			// The label the viewport paints during the modal surface keeps naming this key.
+			terminal.sendInput("\x1b[1;5F");
+			await terminal.waitForRender();
+			assert.strictEqual(transcript.isFollowingEnd, true, "ctrl+end still jumps to the newest rows");
+
+			terminal.sendInput("\x1b[1;5H");
+			await terminal.waitForRender();
+			assert.strictEqual(transcript.scrollTop, 0, "ctrl+home still jumps to the oldest rows");
+		} finally {
+			tui.stop();
+		}
+	});
+});

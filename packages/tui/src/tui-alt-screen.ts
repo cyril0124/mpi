@@ -862,7 +862,14 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 				return { consume: true };
 			}
 		}
-		if (this.shouldDeferViewportInputToOverlay() || this.shouldDeferPageKeys?.() === true) return undefined;
+		if (this.shouldDeferViewportInputToOverlay()) return undefined;
+		// A modal surface keeps the two page keys for its own fixed-distance page and nothing
+		// else: the label this screen paints for the content end goes on naming `ctrl+end`
+		// while the surface owns input, so the remaining commands have to keep answering here.
+		const modalOwnsPageKey =
+			this.shouldDeferPageKeys?.() === true &&
+			(keybindings.matches(data, "tui.altScreen.pageUp") || keybindings.matches(data, "tui.altScreen.pageDown"));
+		if (modalOwnsPageKey) return undefined;
 		if (keybindings.matches(data, "tui.altScreen.pageUp")) {
 			if (!isRelease) {
 				this.scrollBy(-Math.max(1, this.getPrimaryScrollView().viewportHeight - PAGE_SCROLL_OVERLAP));
