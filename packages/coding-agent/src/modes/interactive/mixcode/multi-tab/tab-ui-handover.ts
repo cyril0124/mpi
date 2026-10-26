@@ -130,7 +130,10 @@ export class TabUiHandover {
 		const leftHome = homeBehind || view.homeActive;
 		view.leaveHome();
 		const outgoingId = controller.activeTabIdForUi;
-		if (outgoingId && outgoingId !== tab.id) {
+		// A command that re-enters the tab that is already mounted (`/close-all-sessions`,
+		// `/delete-all-sessions`) changes no surface, so nothing of another tab is captured here.
+		const surfaceSwapped = outgoingId !== tab.id;
+		if (outgoingId && surfaceSwapped) {
 			this.departedSessions.add(runtime.current.session.sessionManager.getSessionId());
 			if (!leftHome) this.captureScroll(outgoingId);
 			this.captureTranscript(outgoingId);
@@ -149,8 +152,10 @@ export class TabUiHandover {
 		if (!this.restoreTranscript(tab.id)) {
 			transcript.rebuild();
 		}
-		// The transcript now holds the incoming tab's blocks, so its remembered row resolves.
-		this.restoreScroll(tab.id);
+		// The transcript now holds the incoming tab's blocks, so its remembered row resolves. A tab
+		// that was never left keeps the row the reader is on: the anchor remembered for its last
+		// departure is older than the live viewport, and putting it back would move the reader.
+		if (surfaceSwapped) this.restoreScroll(tab.id);
 		// A tab's first view reports its compaction history; coming back to one does not.
 		if (!this.departedSessions.has(tab.runtime.session.sessionManager.getSessionId())) {
 			transcript.showCompactionHistory();

@@ -18,6 +18,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A command that keeps the tab in front (`/close-all-sessions`, `/delete-all-sessions`) no longer
+  moves the reader's transcript. Both re-enter the mounted tab through the switch path, and taking
+  the tab's remembered row there put back the row it had when it was last left, so a transcript
+  scrolled somewhere else jumped away from where the reader was. A tab that was never left has no
+  surface to swap, so it keeps the live viewport instead.
 - Vim mode's composer hint now names the keys the user actually has, and it names the page action.
   The row was a fixed string, so after rebinding `app.vim.*` in `keybindings.json` it kept promising
   `j/k`, `gg`, `G` and `q` while the rebound keys were the ones that worked, and it never mentioned
