@@ -45,6 +45,12 @@ export class ScrollView extends Container {
 	private transientScrollbarVisible = false;
 	private scrollbarActive = false;
 	private scrollbarHideTimer: NodeJS.Timeout | undefined;
+	/**
+	 * Relative rows requested by {@link scrollBy} since the last layout pass, for a
+	 * child whose row numbering can shift while it is being measured. Absolute
+	 * jumps clear it.
+	 */
+	private pendingRelativeDelta: number | undefined;
 
 	constructor(component: Component, options: ScrollViewOptions = {}) {
 		super();
@@ -96,6 +102,17 @@ export class ScrollView extends Container {
 		if (scrollbar !== "auto") this.hideTransientScrollbar();
 		else if (this.scrollbarActive) this.markScrollbarActivity();
 		this.requestRenderCallback?.();
+	}
+
+	/**
+	 * The relative rows requested by {@link scrollBy} since the last layout pass,
+	 * then cleared. A windowed child turns the delta into a content-anchored move,
+	 * because its absolute row numbers move whenever an estimated block is measured.
+	 */
+	consumeRelativeScrollDelta(): number | undefined {
+		const delta = this.pendingRelativeDelta;
+		this.pendingRelativeDelta = undefined;
+		return delta;
 	}
 
 	getContentWidth(width: number): number {
@@ -189,6 +206,7 @@ export class ScrollView extends Container {
 	}
 
 	scrollTo(scrollTop: number, options: ScrollViewScrollToOptions = {}): void {
+		this.pendingRelativeDelta = undefined;
 		const requested = Number.isFinite(scrollTop) ? Math.trunc(scrollTop) : this.currentScrollTop;
 		const maxScrollTop = this.maxScrollTop();
 		const next = Math.max(0, Math.min(maxScrollTop, requested));
@@ -228,11 +246,17 @@ export class ScrollView extends Container {
 		}
 		if (moved !== 0) this.markScrollbarActivity();
 		if (moved !== 0 || this.followingEnd !== wasFollowingEnd) this.requestRenderCallback?.();
+		// Accumulate the requested rows for the next frame's content-anchored placement.
+		// A request clamped to a standstill (already at an end) never happened on screen,
+		// so it must not leak into the next anchored move.
+		if (moved === 0) this.pendingRelativeDelta = undefined;
+		else this.pendingRelativeDelta = (this.pendingRelativeDelta ?? 0) + requested;
 		return requested - moved;
 	}
 
 	/** Move to the content end and take up follow-end without painting. */
 	private moveToEnd(): void {
+		this.pendingRelativeDelta = undefined;
 		this.clearFollowSuspension();
 		this.currentScrollTop = this.maxScrollTop();
 		this.followingEnd = this.followEnd;
@@ -248,6 +272,7 @@ export class ScrollView extends Container {
 	}
 
 	scrollToStart(): void {
+		this.pendingRelativeDelta = undefined;
 		const changed =
 			this.currentScrollTop !== 0 ||
 			this.followingEnd !== (this.followEnd && this.contentHeight <= this.currentViewportHeight);

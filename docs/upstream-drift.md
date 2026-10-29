@@ -175,18 +175,24 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
   reported model through the same helper as the Responses adapter, so the overwrite rule has one definition
 - `packages/agent/src/agent.ts`: the steering and follow-up queue APIs
 - `packages/tui/src/components/editor.ts`, `packages/tui/src/editor-component.ts`: `setHistory` replaces a whole prompt history, a recalled entry takes the caret at its end, and `cursorVisible` hides the caret of a locked editor
-- `packages/tui/src/layout-node.ts`: the `WindowedLayoutNode` arm of the `LayoutNode` union
-- `packages/tui/src/mixcode/windowed-node.ts`: the windowed layout state and the scroll line provider
+- `packages/tui/src/layout-node.ts`: the `WindowedLayoutNode` arm of the `LayoutNode` union, and
+  `ScrollLayoutState.consumeRelativeScrollDelta`, which hands a windowed child the rows a
+  `scrollBy` requested since the last layout pass
+- `packages/tui/src/mixcode/windowed-node.ts`: the windowed layout state and the scroll line provider,
+  with `renderWindow`'s `relativeDelta` argument a content-anchored relative move resolves
 - `packages/tui/src/components/settings-list.ts`: the optional `section` heading row on `SettingItem`
 - `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section entries, the `Fullscreen exit output` description, and the `onSettingsChanged` hook the panel calls after a row change
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`: the `getSettingsListTheme` section heading style
 - `packages/tui/src/layout.ts`: windowed scroll child, the line provider carried on a scroll box, the
-  `honorOffset` argument a suspended scroll view passes to its windowed child, and the
-  `HStack` intrinsic-height measurement skipped for a stretched child of a known height
+  `honorOffset` argument a suspended scroll view passes to its windowed child, the relative-delta
+  handoff to the same child, and the `HStack` intrinsic-height measurement skipped for a stretched
+  child of a known height
 - `packages/tui/src/mixcode/layout-queries.ts`: `getComponentBox`, the scroll line provider lookup, and
   the materialized-line query
 - `packages/tui/src/components/scroll-view.ts`: `setFollowSuspended` / `isFollowSuspended` /
-  `resumeFollowEnd`, so a pointer gesture can hold the rows it is selecting over
+  `resumeFollowEnd`, so a pointer gesture can hold the rows it is selecting over; and the relative
+  `scrollBy` delta it accumulates for its windowed child, cleared by absolute jumps and by requests
+  clamped to a standstill
 - `packages/tui/src/components/box.ts`: `componentAtRow`, so a row inside a padded card resolves to the
   child that painted it (the descent a host walks to find the component a transcript row belongs to)
 - `packages/tui/src/tui.ts`: the overlay mouse dispatch reports the overlay it hit, so a point

@@ -162,14 +162,16 @@
 - `packages/ai/src/api/anthropic-messages.ts`、`packages/ai/src/api/openai-completions.ts`：与 Responses 适配器共用同一个助手记录服务端报告的模型，让覆盖规则只有一处定义
 - `packages/agent/src/agent.ts`：steering 与 follow-up 队列 API
 - `packages/tui/src/components/editor.ts`、`packages/tui/src/editor-component.ts`：`setHistory` 可整体替换历史，且回召回的历史条目把光标放在末尾；`cursorVisible` 让被锁定的编辑器不画光标
-- `packages/tui/src/layout-node.ts`：`LayoutNode` 联合里的 `WindowedLayoutNode` 分支
-- `packages/tui/src/mixcode/windowed-node.ts`：窗口化布局状态与滚动行提供者
+- `packages/tui/src/layout-node.ts`：`LayoutNode` 联合里的 `WindowedLayoutNode` 分支，以及
+  `ScrollLayoutState.consumeRelativeScrollDelta`：把上一次布局以来 `scrollBy` 请求的行数交给窗口化子组件
+- `packages/tui/src/mixcode/windowed-node.ts`：窗口化布局状态与滚动行提供者，含 `renderWindow` 的
+  `relativeDelta` 参数，供内容锚定的相对滚动解析
 - `packages/tui/src/components/settings-list.ts`：`SettingItem` 的可选 `section` 标题行
 - `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`：`MixCode` 分组条目，`Fullscreen exit output` 的描述，以及面板在行变化后调用的 `onSettingsChanged` 钩子
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`：`getSettingsListTheme` 的分组标题样式
-- `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒携带的行提供者、被挂起的滚动视图传给窗口化子组件的 `honorOffset` 参数，以及已有高度的 `HStack` 拉伸子项跳过固有高度测量
+- `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒携带的行提供者、被挂起的滚动视图传给窗口化子组件的 `honorOffset` 参数、交给同一子组件的相对增量传递，以及已有高度的 `HStack` 拉伸子项跳过固有高度测量
 - `packages/tui/src/mixcode/layout-queries.ts`：`getComponentBox`、滚动行提供者查询与物化整行的查询
-- `packages/tui/src/components/scroll-view.ts`：`setFollowSuspended` / `isFollowSuspended` / `resumeFollowEnd`，让指针手势能钉住它正在选中的那些行
+- `packages/tui/src/components/scroll-view.ts`：`setFollowSuspended` / `isFollowSuspended` / `resumeFollowEnd`，让指针手势能钉住它正在选中的那些行；以及为窗口化子组件累积的 `scrollBy` 相对增量，绝对跳转与被夹死的请求会清掉它
 - `packages/tui/src/tui.ts`：浮层鼠标派发会返回命中的浮层，以便区分“在浮层外”与“在浮层上”；把某一行解析到画出它的组件的 `Container.componentAtRow`、`hasCapturingOverlay`，以及区域解析所需的浮层矩形查询
 - `packages/tui/src/mixcode/selection-types.ts`：`TuiSelectionOptions` 契约（含 `clearOnRelease` 与带绘制行信息的 `highlight`）
 - `packages/tui/src/mixcode/child-at-row.ts`：`Container` 与 `Box` 共用的行到子组件命中测试

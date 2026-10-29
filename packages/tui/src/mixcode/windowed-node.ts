@@ -18,6 +18,9 @@ export interface WindowedLayoutState {
 	 * which happens when the caller is already at the end. `honorOffset` skips that
 	 * shortcut, for a caller that must keep the rows under the pointer where they are
 	 * even though the estimate still says the offset is the end of the content.
+	 * `relativeDelta` is the row delta of a relative move since the last pass; a
+	 * windowed child resolves it against content rather than against its estimated
+	 * row numbers, which move whenever an estimated block is measured.
 	 */
 	renderWindow(
 		width: number,
@@ -25,6 +28,7 @@ export interface WindowedLayoutState {
 		height: number,
 		overscan: number,
 		honorOffset?: boolean,
+		relativeDelta?: number,
 	): RenderedLineWindow;
 	/**
 	 * Lines for an arbitrary range. The range is resolved against the same

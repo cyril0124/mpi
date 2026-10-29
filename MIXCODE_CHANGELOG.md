@@ -18,6 +18,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Vim-mode paging (`ctrl+u` / `ctrl+d`) moves exactly 10 rows again after the windowed height
+  table resets (tab switch, MixCode Home, a resize, a resumed session). The transcript's scroll
+  offset is an absolute row number, and a reset re-estimates never-measured blocks at 4 rows, so
+  every block the scroll walk measured above the viewport renumbered the rows under the reader:
+  one page key moved 30-60 rows, later presses pinned at the estimated top and stopped moving.
+  Relative scrolls now carry their delta into the windowed child, which resolves it against the
+  remembered anchor block instead of the row number, after measuring the rows the moved view will
+  paint. Wheel scrolling and the viewport's page keys get the same exactness.
 - The fullscreen viewport's own scroll keys keep working in vim mode. `ctrl+u` / `ctrl+d` reach the
   vim page action without taking the rest of the viewport's commands with them: the
   `↓ Jump to latest message · Ctrl+End` label stayed on screen during vim mode while `ctrl+end` did

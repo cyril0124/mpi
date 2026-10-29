@@ -276,6 +276,7 @@ export class WindowedTranscript extends Container {
 		height: number,
 		overscan: number,
 		honorOffset = false,
+		relativeDelta?: number,
 	): RenderedLineWindow {
 		const safeWidth = this.safeWidth(width);
 		const viewportHeight = Math.max(0, Math.floor(height));
@@ -298,8 +299,21 @@ export class WindowedTranscript extends Container {
 				? this.resolveScrollAnchor(safeWidth, viewportHeight, restoreAnchor)
 				: undefined;
 			if (resolved !== undefined) return resolved;
-			if (!restoreFallsBackToEnd) return undefined;
-			return Math.max(0, this.totalHeight() - viewportHeight);
+			if (restoreFallsBackToEnd) return Math.max(0, this.totalHeight() - viewportHeight);
+			if (relativeDelta === undefined) return undefined;
+			// A relative move resolves against content, not against the row number the caller
+			// carried in: measuring an estimated block renumbers every row below it, so the
+			// same offset points at different rows on the next pass. The anchor block keeps
+			// the viewport's top row; without one the content end is what the reader looks at.
+			// The rows the moved view will paint are measured up front, so the placement is
+			// exact in one pass instead of chasing the renumbering a collection causes.
+			this.measureRowsAboveAnchor(safeWidth, relativeDelta, viewportHeight, margin);
+			const anchorRow = this.scrollAnchor
+				? this.anchorRowUnderTable()
+				: Math.max(0, this.totalHeight() - viewportHeight);
+			if (anchorRow === undefined) return undefined;
+			const max = Math.max(0, this.totalHeight() - viewportHeight);
+			return Math.max(0, Math.min(max, anchorRow + relativeDelta));
 		};
 		const anchoredTop = placeAnchor();
 		if (anchoredTop !== undefined) top = anchoredTop;
@@ -326,6 +340,53 @@ export class WindowedTranscript extends Container {
 			scrollTop: Math.max(0, effectiveScrollTop),
 			total,
 		};
+	}
+
+	/**
+	 * The scroll anchor's content row under the current height table, summing the
+	 * table's heights without rendering anything. Measuring a block above the anchor
+	 * moves this row, which is exactly what a relative scroll must compensate for.
+	 */
+	private anchorRowUnderTable(): number | undefined {
+		const anchor = this.scrollAnchor;
+		if (!anchor) return undefined;
+		let offset = 0;
+		for (const block of this.blockList()) {
+			if (block === anchor.block) {
+				const height = this.heightOf(block);
+				return offset + Math.min(anchor.rowInBlock, Math.max(0, height - 1));
+			}
+			offset += this.heightOf(block);
+		}
+		return undefined;
+	}
+
+	/**
+	 * Render the blocks the next `relativeDelta` move will paint, measuring them before
+	 * the window is placed. An anchor anchors the walk at the viewport's top row; without
+	 * one the reader is at the content end, whose whole moved view must be exact. The
+	 * work is bounded by the move plus the overscan margin, not by the distance travelled.
+	 */
+	private measureRowsAboveAnchor(width: number, delta: number, viewportHeight: number, margin: number): void {
+		const blocks = this.blockList();
+		const anchor = this.scrollAnchor;
+		let covered: number;
+		let index: number;
+		let needed: number;
+		if (anchor) {
+			const anchorIndex = blocks.lastIndexOf(anchor.block);
+			if (anchorIndex < 0) return;
+			covered = anchor.rowInBlock;
+			index = anchorIndex - 1;
+			needed = (delta < 0 ? -delta : 0) + margin;
+		} else {
+			covered = 0;
+			index = blocks.length - 1;
+			needed = viewportHeight + (delta < 0 ? -delta : 0) + margin;
+		}
+		for (; index >= 0 && covered < needed; index -= 1) {
+			covered += this.linesOf(blocks[index]!, width).length;
+		}
 	}
 
 	/** Recalculate the global row containing the remembered block after reflow. */
@@ -408,8 +469,8 @@ export class WindowedTranscript extends Container {
 			type: "windowed",
 			state: {
 				lineCount: (width) => this.lineCount(width),
-				renderWindow: (width, scrollTop, height, overscan, honorOffset) =>
-					this.renderWindow(width, scrollTop, height, overscan, honorOffset),
+				renderWindow: (width, scrollTop, height, overscan, honorOffset, relativeDelta) =>
+					this.renderWindow(width, scrollTop, height, overscan, honorOffset, relativeDelta),
 				getLines: (width, start, count) => this.getLines(width, start, count),
 				materialize: (width) => this.materialize(width),
 			},

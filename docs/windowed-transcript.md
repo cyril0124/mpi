@@ -27,12 +27,18 @@ renders only the rows near the viewport. Long conversations scroll at a bounded 
    layout paints and scrolls against those. A frame that measured part of the content therefore leaves the
    scroll range and the visible rows consistent with each other, instead of painting an offset the estimates
    produced.
-7. Search, prompt jumps (`ctrl+shift+up/down`) and clipboard selections ask for exact rows on demand,
+7. A relative scroll (`ScrollView.scrollBy`: the wheel, the viewport's page keys, vim mode's
+   `ctrl+u` / `ctrl+d`) carries its row delta into the child, which resolves it against the remembered
+   anchor block and measures the rows the moved view will paint before placing it. Measuring an estimated
+   block renumbers every row below it, so resolving the delta against the row number would shift the rows
+   under the reader after the height table resets; against the anchor the move is exactly the requested
+   rows. Absolute jumps (`scrollTo`) keep rendering the offset they were given.
+8. Search, prompt jumps (`ctrl+shift+up/down`) and clipboard selections ask for exact rows on demand,
    and materialize the document once. The open search overlay keeps its materialized lines until the
    transcript's measured height changes, so an idle frame stays O(window). Vim's user-message jumps
    read the matched blocks and their exact rows through `matchingBlocks`, since the preview panel
    lists every match; one jump measures the whole document once.
-8. A surface swap keeps the row the reader was on. Each tab remembers the block at its viewport top,
+9. A surface swap keeps the row the reader was on. Each tab remembers the block at its viewport top,
    and the incoming tab resolves its own anchor on the next frame instead of reusing the outgoing
    offset; a tab that was at its newest output, or whose transcript was rebuilt while parked, opens
    at the end. See [Agent Tabs](tabs.md).

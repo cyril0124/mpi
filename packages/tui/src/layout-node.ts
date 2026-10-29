@@ -34,6 +34,12 @@ export interface ScrollLayoutState {
 	readonly isFollowSuspended: boolean;
 	getContentWidth(width: number): number;
 	updateLayout(contentHeight: number, viewportHeight: number, requestRender: () => void): void;
+	/**
+	 * Relative rows requested by a scrollBy since the last layout pass, then cleared.
+	 * A windowed child resolves the delta against content, because its absolute row
+	 * numbers move whenever an estimated block is measured.
+	 */
+	consumeRelativeScrollDelta(): number | undefined;
 }
 
 export interface ScrollLayoutNode {

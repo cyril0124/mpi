@@ -190,13 +190,16 @@ function layoutComponent(
 
 			// The child measures what it paints and reports the offset and total it
 			// settled on. Those win over the estimate, so the scroll range and the rows
-			// agree with each other from this frame on.
+			// agree with each other from this frame on. A relative move carries its delta,
+			// because the child's absolute row numbers move while it measures.
+			const relativeDelta = node.state.consumeRelativeScrollDelta();
 			const renderedWindow = windowed.state.renderWindow(
 				contentWidth,
 				requestedScrollTop,
 				viewportHeight,
 				WINDOW_OVERSCAN_LINES,
 				node.state.isFollowSuspended,
+				relativeDelta,
 			);
 			const scrollView = node.state as ScrollView;
 			// The measured total is authoritative before applying a resize anchor. Applying
