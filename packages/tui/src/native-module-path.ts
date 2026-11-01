@@ -14,6 +14,8 @@ export interface NativeModuleCandidateOptions {
 export function getNativeModuleCandidates(nativePath: string, options: NativeModuleCandidateOptions = {}): string[] {
 	const moduleDir = dirname(fileURLToPath(options.moduleUrl ?? import.meta.url));
 	const candidates: string[] = [];
+	// A compiled host extracts its assets under PI_PACKAGE_DIR, not beside the executable.
+	if (process.env.PI_PACKAGE_DIR) candidates.push(join(process.env.PI_PACKAGE_DIR, nativePath));
 
 	try {
 		const packageEntry = (options.resolvePackage ?? moduleRequire.resolve)(TUI_PACKAGE_NAME);

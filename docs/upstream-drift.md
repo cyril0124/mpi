@@ -10,6 +10,7 @@ commit that causes it.
 
 | Area | Upstream | This fork | Reason |
 | --- | --- | --- | --- |
+| Standalone image and clipboard assets | Photon reads WASM beside the executable; the TUI looks for native helpers beside its module, package, or executable | both also look in `PI_PACKAGE_DIR`, the extracted package root | a single-file `mpi` runs from read-only install directories without adjacent resource files |
 | `install.sh` | release archives via `scripts/build-binaries.sh` | installs a standalone runtime in `<prefix>/lib/<name>/` and a wrapper at `<prefix>/bin/<name>`; `<name>` defaults to `mpi` and supports `--name` or `INSTALL_NAME` | single-machine installs can use a custom command name while keeping the runtime and wrapper names aligned |
 | Distribution name | the app is `pi`; `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are derived from `APP_NAME`, and the debug log is `pi-debug.log` | `piConfig.name` is `mpi`, so `--help`, the package-command help, the terminal title and runtime messages say `mpi`; `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR` are pinned to their upstream names in `config.ts`, and the unsupported `update` command is not listed in `--help` | the fork installs and ships as `mpi` (see `install.sh`) without moving users' agent-dir env vars or the shared `.pi` directory |
 | `app.thinking.cycle` default key | `shift+tab` | `alt+t` | `shift+tab` became `app.tab.previous` |
@@ -139,6 +140,8 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/src/core/agent-session-runtime.ts`: the runtime factory accepts the
   project trust context that a tab resumed into another workdir supplies
 - `packages/coding-agent/src/config.ts`: `ENV_AGENT_DIR` / `ENV_SESSION_DIR` are pinned to the `PI_*` names instead of following `piConfig.name`
+- `packages/coding-agent/src/utils/photon.ts`: find extracted Photon WASM through `getPackageDir()`
+- `packages/tui/src/native-module-path.ts`: try native helpers in `PI_PACKAGE_DIR` before package and executable fallbacks
 - `packages/coding-agent/src/modes/interactive/components/status-indicator.ts`: summary model label and reason-specific message colors
 - `packages/coding-agent/src/modes/interactive/components/session-selector.ts`
 - `packages/coding-agent/src/modes/interactive/components/custom-editor.ts`

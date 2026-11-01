@@ -22,6 +22,7 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Single-file MixCode binaries find Photon WASM and native clipboard helpers in the extracted `PI_PACKAGE_DIR`; both resolvers previously searched near the executable, where single-file installations have no sidecar resources.
 - Vim-mode paging (`ctrl+u` / `ctrl+d`) moves exactly 10 rows again after the windowed height
   table resets (tab switch, MixCode Home, a resize, a resumed session). The transcript's scroll
   offset is an absolute row number, and a reset re-estimates never-measured blocks at 4 rows, so
