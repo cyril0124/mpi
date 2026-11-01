@@ -25,7 +25,7 @@
 | `/new-session [--focus\|--no-focus] [title]` | 新建标签页，可选标题。默认聚焦新标签页，`--no-focus` 保持当前标签页聚焦。参数非法时报 `Usage: /new-session [--focus\|--no-focus] [title]`。 |
 | `/clone` | 把当前分支复制成一个新标签页，标题为 `<当前标题>-cloned`，并聚焦新标签页。原标签页保留会话文件并保持打开，之后两个标签页各自改动互不影响。 |
 | `/close-session [yes]` | 关闭当前标签页，保留会话文件。`yes` 跳过确认。 |
-| `/close-all-sessions` | 关闭除当前标签页外的所有标签页，需确认。 |
+| `/close-all-sessions` | 关闭除当前标签页外的所有标签页。确认需逐字键入 `CLOSE`；会话文件保留。 |
 | `/delete-session [yes]` | 关闭当前标签页并把会话文件移入回收站，可用 `/resume-trash` 还原。`yes` 跳过确认。 |
 | `/delete-all-sessions` | 把所有标签页的会话文件移入回收站并重新开始。确认需逐字键入 `DELETE`；有标签页正忙时在弹面板前直接拒绝。 |
 | `/resume` | 打开会话选择器：选中的会话在它自己的标签页里打开；已在某个标签页里打开的会话则聚焦那个标签页。 |
@@ -43,9 +43,9 @@
 | `/mark-done` | 在标签栏把当前标签页标记为已完成。 |
 | `/toggle-zen-mode` | 隐藏当前聚焦标签页的标签块，把这行让给对话区；分隔线保留并汇报其他 agent。开启期间 `tab` 与 `shift+tab` 不再切换。见 [Zen 专注模式](zen-mode.zh.md)。 |
 
-会话确认框（`/close-session`、`/delete-session` 以及 `/close-all-sessions`）除方向键选择器外，
-也可以按 `y` 确认、按 `n` 或 `esc` 取消。`/delete-all-sessions` 是例外：只有把 `DELETE` 打完
-才会开始删除。
+会话确认框（`/close-session`、`/delete-session`）除方向键选择器外，也可以按 `y` 确认、按 `n`
+或 `esc` 取消。两个“全部”命令是例外：只有把 `DELETE`（`/delete-all-sessions`）或 `CLOSE`
+（`/close-all-sessions`）逐字打完才会执行。
 
 ## 标签页跳转
 
@@ -181,7 +181,7 @@
 
 `/delete-session`、`/delete-all-sessions` 以及会话选择器都会拒绝删除任何已打开标签页持有的会话文件，并指出是哪个标签页：该标签页会继续往这个路径追加，文件被移走后重建出来的文件没有 session header，重启后无法作为会话载入。标签页正在执行一轮对话或还在跑 `!` 命令时改报它忙在什么上，`/delete-all-sessions` 在弹面板前就报出这一点。两个会话命令还会给保留的那个标签页换一个新会话，因此扩展取消 `session_before_switch` 时删除也一并取消，文件留在该标签页写入的位置。
 
-`/delete-all-sessions` 用逐字键入确认：只有把 `DELETE` 打完才会执行，所以任何单键都无法确认，无论是误触的 `y`、回车，还是别的进程送进终端的按键。`n` 或取消键可关闭面板。
+`/delete-all-sessions` 用逐字键入确认：只有把 `DELETE` 打完才会执行，所以任何单键都无法确认，无论是误触的 `y`、回车，还是别的进程送进终端的按键。`n` 或取消键可关闭面板。`/close-all-sessions` 用同一面板，需键入 `CLOSE`。
 
 已删除的会话不会回来。该命令把被删的 session id 直接从共享布局里移除；启动时若仍读到这样的 id，会跳过该条目，不为它重建空对话的标签页。早先某次启动遗留在该 id 下的占位文件会被移入回收站，因此不会挡住 `/resume-trash` 还原回来的那份会话。
 

@@ -15,6 +15,10 @@ point `## [Unreleased]` at the new tag.
 
 - Merged upstream pi v1.4.0, retaining per-tab extension dialogs, provider error diagnostics,
   response-model notices, and Lua batch dependencies alongside the new client identity API.
+- `/close-all-sessions` confirms on the typed word `CLOSE` instead of a `y`/`n` dialog. Closing every
+  other tab in one go deserved the same no-single-key guarantee `/delete-all-sessions` already had, so
+  the delete panel was generalized into a shared typed-word component and both commands use it
+  (`DELETE` for delete-all, unchanged behavior).
 
 ### Fixed
 

@@ -28,6 +28,8 @@ export interface SessionActionHost {
 	showExtensionConfirm(title: string, message: string): Promise<boolean>;
 	/** Ask for the typed DELETE confirmation of `/delete-all-sessions`. */
 	showDeleteAllSessionsConfirm(totalTabs: number): Promise<boolean>;
+	/** Ask for the typed CLOSE confirmation of `/close-all-sessions`. */
+	showCloseAllSessionsConfirm(otherTabs: number): Promise<boolean>;
 	showError(message: string): void;
 	showWarning(message: string): void;
 	showStatus(message: string): void;
@@ -89,18 +91,14 @@ export async function handleDeleteSession(host: SessionActionHost, args: string)
 	}
 }
 
-/** `/close-all-sessions` closes every tab except the active one, after confirmation. */
+/** `/close-all-sessions` closes every tab except the active one, after the typed CLOSE confirmation. */
 export async function handleCloseAllSessions(host: SessionActionHost): Promise<void> {
 	const { tabManager } = host;
 	if (!tabManager) {
 		host.showWarning("Multi-tab is unavailable in this session.");
 		return;
 	}
-	const confirmed = await host.showExtensionConfirm(
-		"Close all sessions",
-		`Close ${tabManager.size - 1} other tab(s)? Session files are kept.`,
-	);
-	if (!confirmed) return;
+	if (!(await host.showCloseAllSessionsConfirm(tabManager.size - 1))) return;
 	const keep = tabManager.getActive();
 	const blocked: string[] = [];
 

@@ -281,11 +281,7 @@ import {
 } from "./components/mixcode/command-palette/command-palette.ts";
 import { ConsoleNotice, consoleNoticeOverlayOptions } from "./components/mixcode/console/console-notice.ts";
 import { ContextLimitSelectorComponent } from "./components/mixcode/context-limit/context-limit-selector.ts";
-import {
-	DELETE_ALL_SESSIONS_CONFIRM_TITLE,
-	DELETE_ALL_SESSIONS_CONFIRM_WIDTH,
-	DeleteAllSessionsConfirmComponent,
-} from "./components/mixcode/delete-all-sessions-confirm/delete-all-sessions-confirm.ts";
+import { TypedWordConfirmComponent } from "./components/mixcode/typed-word-confirm/typed-word-confirm.ts";
 import { DockWidgetBudget } from "./components/mixcode/dock-widgets/dock-widgets.ts";
 import {
 	QueuePreviewComponent,
@@ -644,6 +640,19 @@ const TAB_JUMP_MAX_ROWS_SHARE = 0.5;
 const TAB_JUMP_MIN_VISIBLE_ROWS = 5;
 /** Fixed width of the quit dialog: one sentence and two buttons. */
 const QUIT_CONFIRM_WIDTH = 72;
+
+/** Blocked-status label of the `/delete-all-sessions` typed-word panel. */
+const DELETE_ALL_SESSIONS_CONFIRM_TITLE = "Delete all sessions";
+
+/** Word that unlocks `/delete-all-sessions`. */
+const DELETE_ALL_SESSIONS_CONFIRM_WORD = "delete";
+
+/** Blocked-status label of the `/close-all-sessions` typed-word panel. */
+const CLOSE_ALL_SESSIONS_CONFIRM_TITLE = "Close all sessions";
+
+/** Word that unlocks `/close-all-sessions`. */
+const CLOSE_ALL_SESSIONS_CONFIRM_WORD = "close";
+
 /**
  * Share of the terminal rows the tab bar may take before its chips collapse into
  * the overflow counts; the bar must not push the transcript off the screen.
@@ -3235,6 +3244,7 @@ export class InteractiveMode {
 			// the editor slot it waits in, which drops the dialog and leaves its promise unsettled.
 			showExtensionConfirm: (title, msg) => this.showExtensionConfirm(title, msg, undefined, this.activeTabIdForUi),
 			showDeleteAllSessionsConfirm: (totalTabs) => this.showDeleteAllSessionsConfirm(totalTabs),
+			showCloseAllSessionsConfirm: (otherTabs) => this.showCloseAllSessionsConfirm(otherTabs),
 		};
 	}
 
@@ -4594,8 +4604,43 @@ export class InteractiveMode {
 	 * only fail is never asked for.
 	 */
 	private showDeleteAllSessionsConfirm(totalTabs: number): Promise<boolean> {
+		const tabs = totalTabs === 1 ? "1 open tab" : `${totalTabs} open tabs`;
+		return this.showTypedWordConfirm({
+			title: DELETE_ALL_SESSIONS_CONFIRM_TITLE,
+			word: DELETE_ALL_SESSIONS_CONFIRM_WORD,
+			body: [
+				theme.fg("text", `Delete the session files of all ${tabs} and start fresh?`),
+				theme.fg("text", "They move to the trash and can be restored with /resume-trash."),
+				theme.fg("text", "A file already in the trash, or one whose move fails,"),
+				theme.fg("text", "is deleted for good."),
+			],
+		});
+	}
+
+	/**
+	 * `/close-all-sessions` confirmation panel, the typed-word twin of the
+	 * delete-all one: closing every other tab also deserves more than a stray `y`.
+	 */
+	private showCloseAllSessionsConfirm(otherTabs: number): Promise<boolean> {
+		const tabs = otherTabs === 1 ? "1 other open tab" : `${otherTabs} other open tabs`;
+		return this.showTypedWordConfirm({
+			title: CLOSE_ALL_SESSIONS_CONFIRM_TITLE,
+			word: CLOSE_ALL_SESSIONS_CONFIRM_WORD,
+			body: [
+				theme.fg("text", `Close ${tabs}?`),
+				theme.fg("text", "Session files are kept; /resume can reopen them."),
+			],
+		});
+	}
+
+	/** Open the typed-word overlay and resolve once the word is completed or the panel is dismissed. */
+	private showTypedWordConfirm(options: {
+		title: string;
+		word: string;
+		body: string[];
+	}): Promise<boolean> {
 		return this.setExtensionDialogBlock(
-			{ kind: "permission", message: DELETE_ALL_SESSIONS_CONFIRM_TITLE },
+			{ kind: "permission", message: options.title },
 			new Promise<boolean>((resolve) => {
 				let handle: OverlayHandle | undefined;
 				let settled = false;
@@ -4606,12 +4651,14 @@ export class InteractiveMode {
 					resolve(confirmed);
 				};
 				handle = this.ui.showOverlay(
-					new DeleteAllSessionsConfirmComponent(
-						totalTabs,
-						() => finish(true),
-						() => finish(false),
-					),
-					{ anchor: "center", width: DELETE_ALL_SESSIONS_CONFIRM_WIDTH, margin: 1 },
+					new TypedWordConfirmComponent({
+						title: options.title,
+						word: options.word,
+						body: options.body,
+						onConfirm: () => finish(true),
+						onCancel: () => finish(false),
+					}),
+					{ anchor: "center", width: QUIT_CONFIRM_WIDTH, margin: 1 },
 				);
 			}),
 		);

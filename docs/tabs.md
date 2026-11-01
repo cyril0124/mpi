@@ -32,7 +32,7 @@ start-up instructions do not name the toggle, and `/hotkeys` reports it with a n
 | `/new-session [--focus\|--no-focus] [title]` | Open a tab with an optional title. Focuses the new tab unless `--no-focus` is given. An invalid argument reports `Usage: /new-session [--focus\|--no-focus] [title]`. |
 | `/clone` | Copy the active branch into a new tab titled `<current title>-cloned`, and focus the new tab. The source tab keeps its session file and stays open, so the two tabs continue from the same conversation independently. |
 | `/close-session [yes]` | Close the current tab, keeping its session file. `yes` skips the confirmation. |
-| `/close-all-sessions` | Close every tab except the current one, after confirmation. |
+| `/close-all-sessions` | Close every tab except the current one. Confirmation needs the word `CLOSE` typed in full; the session files are kept. |
 | `/delete-session [yes]` | Close the current tab and move its session file to the trash, where `/resume-trash` can restore it. `yes` skips the confirmation. |
 | `/delete-all-sessions` | Move every tab's session file to the trash and start fresh. Confirmation needs the word `DELETE` typed in full; a tab that is busy is refused before the panel opens. |
 | `/resume` | Open the session selector; the picked session opens in a tab of its own, or focuses the tab that already holds it. |
@@ -50,9 +50,10 @@ start-up instructions do not name the toggle, and `/hotkeys` reports it with a n
 | `/mark-done` | Flag the current tab as finished in the tab bar. |
 | `/toggle-zen-mode` | Hide the focused tab's tab-bar chips so the transcript gets the row; the separator stays and reports the other agents. `tab` and `shift+tab` stop switching while it is on. See [Zen Mode](zen-mode.md). |
 
-The session confirmations (`/close-session`, `/delete-session` and `/close-all-sessions`) take `y` to
-confirm and `n` or `esc` to cancel, in addition to the arrow-key selector. `/delete-all-sessions` is
-the exception: its panel starts the deletion only once the word `DELETE` has been typed.
+The session confirmations (`/close-session` and `/delete-session`) take `y` to confirm and `n` or
+`esc` to cancel, in addition to the arrow-key selector. The two all-sessions commands are the
+exception: their panels run only once the word `DELETE` (`/delete-all-sessions`) or `CLOSE`
+(`/close-all-sessions`) has been typed in full.
 
 A session confirmation is that tab's dialog: switching away parks it and the chip paints `?`, and
 switching back puts it on the editor slot again, so a delete or a close is answered on the tab the
@@ -286,7 +287,8 @@ that tab writes.
 
 `/delete-all-sessions` confirms on a typed word: the run starts only once `DELETE` has been entered in
 full, so no single key confirms it, whether a stray `y`, Enter or a key sent into the terminal by another
-process. `n` or the cancel chord dismisses the panel.
+process. `n` or the cancel chord dismisses the panel. `/close-all-sessions` uses the same panel with
+the word `CLOSE`.
 
 A deleted session stays deleted. The command removes the deleted ids from the shared layout itself, and a
 start that still reads one of them skips that entry rather than rebuilding it as an empty tab. A
