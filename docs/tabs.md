@@ -238,7 +238,8 @@ open until idle, and a session whose file is not yet available is retried on a l
 Changed titles, colors, workdirs, and unread badges are merged per session under a lock;
 unchanged local metadata is not republished over a peer's newer values. These locks coordinate
 writers in this fork; other applications writing the same files need to follow the same locking
-protocol.
+protocol. A filesystem that refuses both `link` and exclusive create makes the writer proceed
+unlocked: each write still lands atomically, so only a concurrent merge can be lost.
 
 Startup joins the stored layout without discarding peer entries. `--no-session` sessions do not
 participate in shared persistence or polling.

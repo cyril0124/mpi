@@ -13,7 +13,19 @@
  * metadata under a separate lock.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+	closeSync,
+	existsSync,
+	linkSync,
+	mkdirSync,
+	openSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+	writeSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "../../../config.ts";
 import { stripBom } from "../../../utils/text.ts";
@@ -421,6 +433,34 @@ function tryReclaimStaleLock(lockPath: string): boolean {
 	return true;
 }
 
+function linkUnsupported(error: unknown): boolean {
+	const code = (error as NodeJS.ErrnoException).code;
+	return code === "EPERM" || code === "ENOTSUP" || code === "EOPNOTSUPP";
+}
+
+/**
+ * Publish `payload` with exclusive create, the only atomic primitive left once
+ * `link` is refused. Filesystems that refuse both report `degraded`, which lets
+ * the caller proceed unlocked: a single write stays atomic there, so only
+ * concurrent merges are lost.
+ */
+function acquireExclusive(lockPath: string, payload: string): "locked" | "busy" | "degraded" {
+	let fd: number;
+	try {
+		fd = openSync(lockPath, "wx");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "EEXIST") return "busy";
+		if (linkUnsupported(error)) return "degraded";
+		throw error;
+	}
+	try {
+		writeSync(fd, payload);
+	} finally {
+		closeSync(fd);
+	}
+	return "locked";
+}
+
 /** Publish the lock through a temp file plus `link`, so the path is never seen empty. */
 function tryAcquireLock(lockPath: string, payload: string): boolean {
 	const temp = `${lockPath}.${process.pid}.${randomUUID()}.tmp`;
@@ -430,7 +470,12 @@ function tryAcquireLock(lockPath: string, payload: string): boolean {
 			linkSync(temp, lockPath);
 			return true;
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			if (linkUnsupported(error)) {
+				// Locked or degraded both let this section proceed; only a peer holding it blocks.
+				if (acquireExclusive(lockPath, payload) !== "busy") return true;
+			} else if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+				throw error;
+			}
 			const holder = readLockPid(lockPath);
 			if (holder === undefined || !isProcessAlive(holder)) tryReclaimStaleLock(lockPath);
 			return false;

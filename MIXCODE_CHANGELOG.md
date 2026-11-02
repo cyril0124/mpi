@@ -22,6 +22,11 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Saving the shared tab layout no longer fails on a filesystem that refuses hard links. The state
+  lock was published with `link` only, so `EPERM` / `ENOTSUP` from a network or restricted mount
+  threw out of every tab metadata write. The lock now falls back to exclusive create, and when both
+  are refused the writer proceeds unlocked: a single write still lands atomically, so only a
+  concurrent merge can be lost.
 - Single-file MixCode binaries find Photon WASM and native clipboard helpers in the extracted `PI_PACKAGE_DIR`; both resolvers previously searched near the executable, where single-file installations have no sidecar resources.
 - Vim-mode paging (`ctrl+u` / `ctrl+d`) moves exactly 10 rows again after the windowed height
   table resets (tab switch, MixCode Home, a resize, a resumed session). The transcript's scroll
