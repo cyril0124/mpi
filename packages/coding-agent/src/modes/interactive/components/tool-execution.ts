@@ -17,8 +17,9 @@ export type { ToolRenderers };
 
 import { formatToolCallWithArgs, getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.ts";
 import { ensurePngTranscoder } from "../../../utils/image-convert.ts";
-import { getActiveThemeName, theme } from "../theme/theme.ts";
-import { keyHint } from "./keybinding-hints.ts";
+import { getHighlightLanguageCount } from "../../../utils/syntax-highlight.ts";
+import { getGlobalTheme, type Theme, theme } from "../theme/theme.ts";
+import { keyHint, keyText } from "./keybinding-hints.ts";
 import { BlockHover } from "./mixcode/hover/hover-block.ts";
 
 const FALLBACK_PREVIEW_LINES = 10;
@@ -59,6 +60,8 @@ export class ToolExecutionComponent extends Container {
 	private cwd: string;
 	private executionStarted = false;
 	private argsComplete = false;
+	/** `updateArgs()` ran since the last display update; the next render applies it. */
+	private argsPending = false;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
@@ -69,7 +72,8 @@ export class ToolExecutionComponent extends Container {
 	/** Last rendered card, reused while the width, the content and the theme are unchanged. */
 	private renderedLines: string[] | undefined;
 	private renderedWidth = -1;
-	private renderedTheme: string | undefined;
+	private renderedTheme: Theme | undefined;
+	private renderedLanguageCount = -1;
 	/** Set while `invalidate` has dropped the memo but the next paint has not rebuilt it yet. */
 	private rebuildPending = false;
 
@@ -146,6 +150,8 @@ export class ToolExecutionComponent extends Container {
 			isError: this.result?.isError ?? false,
 			durationMs: this.isPartial ? undefined : this.result?.durationMs,
 			outputPad: this.outputPad,
+			keyText,
+			keyHint,
 		};
 	}
 
@@ -169,9 +175,14 @@ export class ToolExecutionComponent extends Container {
 		return new Text(text, 0, 0);
 	}
 
+	/**
+	 * Show new partial arguments. Applied at the next render, so a call streaming many argument deltas between two
+	 * frames runs its renderer once per frame, not once per delta (#9265).
+	 */
 	updateArgs(args: any): void {
 		this.args = args;
-		this.updateDisplay();
+		this.argsPending = true;
+		this.ui.requestRender();
 	}
 
 	markExecutionStarted(): void {
@@ -235,25 +246,30 @@ export class ToolExecutionComponent extends Container {
 	 * renderer tree to be rebuilt. `render` cannot tell those callers from a tree invalidation, and
 	 * only the rows the viewport paints should pay, so the rebuild happens on the paint.
 	 *
-	 * The subtree is flushed only when the theme changed: the card's children cache
-	 * their rendered lines against content and width alone, so a theme switch would
-	 * otherwise serve rows in the old colors.
+	 * Theme and grammar changes also flush reused renderer children at the next paint.
 	 */
 	override invalidate(): void {
-		if (this.renderedTheme !== undefined && this.renderedTheme !== getActiveThemeName()) {
-			super.invalidate();
-		}
 		this.rebuildPending = true;
 		this.renderedLines = undefined;
 	}
 
 	override render(width: number): string[] {
-		const themeName = getActiveThemeName();
-		if (!this.renderedLines || this.renderedWidth !== width || this.renderedTheme !== themeName) {
-			if (this.rebuildPending) this.updateDisplay();
+		const currentTheme = getGlobalTheme();
+		const languageCount = getHighlightLanguageCount();
+		if (
+			this.renderedWidth >= 0 &&
+			(this.renderedTheme !== currentTheme || this.renderedLanguageCount !== languageCount)
+		) {
+			super.invalidate();
+			this.rebuildPending = true;
+		}
+		// Pending work must run before the outer memo can return a same-width card.
+		if (this.argsPending || this.rebuildPending) this.updateDisplay();
+		if (!this.renderedLines || this.renderedWidth !== width) {
 			this.renderedLines = this.renderCard(width);
 			this.renderedWidth = width;
-			this.renderedTheme = themeName;
+			this.renderedTheme = currentTheme;
+			this.renderedLanguageCount = languageCount;
 		}
 		// The cue is painted after the memo: a passive move requests a render without
 		// invalidating, so a memoized cue would keep serving the pre-hover rows.
@@ -323,6 +339,7 @@ export class ToolExecutionComponent extends Container {
 	private updateDisplay(): void {
 		this.renderedLines = undefined;
 		this.rebuildPending = false;
+		this.argsPending = false;
 		const bgFn = this.isPartial
 			? (text: string) => theme.bg("toolPendingBg", text)
 			: this.result?.isError
@@ -428,6 +445,8 @@ export class ToolExecutionComponent extends Container {
 								);
 					if (source.mimeType !== "image/png") {
 						ensurePngTranscoder(() => {
+							// Reused images may still cache the fallback painted before the transcoder loaded.
+							imageComponent.invalidate();
 							this.invalidate();
 							this.ui.requestRender();
 						});

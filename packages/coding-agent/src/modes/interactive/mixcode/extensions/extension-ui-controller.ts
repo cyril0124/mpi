@@ -63,7 +63,7 @@ export interface TabExtensionUi {
  */
 export interface TabInteraction {
 	/** Status reported while this interaction waits for an answer. */
-	blocked?: { kind: "question" | "permission"; message: string };
+	blocked?: { kind: "question" | "permission" | "auth"; message: string };
 	/** Which surface the interaction took, which decides how it is parked. */
 	kind: "selector" | "input" | "editor" | "custom" | "overlay";
 	/** The tab that owns it, so a close can hand the slot back to what it parked. */
@@ -1162,8 +1162,12 @@ export class ExtensionUiController {
 
 		const currentText = this.host.editor.getText();
 
-		this.host.disposeActiveSelector();
-		this.host.editorContainer.clear();
+		// A mounted dialog keeps its slot and focus until it closes onto the replacement editor.
+		const dialogOpen = this.tabInteractionsFor(this.host.shownTabId()).some((interaction) => interaction.mounted);
+		if (!dialogOpen) {
+			this.host.disposeActiveSelector();
+			this.host.editorContainer.clear();
+		}
 
 		if (factory) {
 			const newEditor = factory(this.host.ui, getEditorTheme(), this.host.keybindings);
@@ -1231,10 +1235,10 @@ export class ExtensionUiController {
 			this.host.editor = this.host.defaultEditor;
 		}
 
-		this.host.editorContainer.addChild(this.host.editor as Component);
+		if (!dialogOpen) this.host.editorContainer.addChild(this.host.editor as Component);
 		this.host.syncEditorHistory();
 		this.host.refreshEditorStatus();
-		this.host.ui.setFocus(this.host.editor as Component);
+		if (!dialogOpen) this.host.ui.setFocus(this.host.editor as Component);
 		this.host.ui.requestRender();
 	}
 
@@ -1263,12 +1267,17 @@ export class ExtensionUiController {
 			overlay?: boolean;
 			overlayOptions?: OverlayOptions | (() => OverlayOptions);
 			onHandle?: (handle: OverlayHandle) => void;
+			blocked?: TabInteraction["blocked"];
 		},
 		tabId?: string,
 	): Promise<T> {
 		tabId ??= this.host.shownTabId();
 		const isOverlay = options?.overlay ?? false;
-		const interaction: TabInteraction = { kind: isOverlay ? "overlay" : "custom", mounted: false };
+		const interaction: TabInteraction = {
+			kind: isOverlay ? "overlay" : "custom",
+			mounted: false,
+			blocked: isOverlay ? undefined : options?.blocked,
+		};
 		this.trackTabInteraction(tabId, interaction);
 
 		// A custom component owns the composer while it is on the slot, so the draft it displaced

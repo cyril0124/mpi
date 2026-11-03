@@ -1,6 +1,7 @@
 import { Container, Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
-import { getActiveThemeName, getMarkdownTheme, theme } from "../theme/theme.ts";
+import { getHighlightLanguageCount } from "../../../utils/syntax-highlight.ts";
+import { getGlobalTheme, getMarkdownTheme, type Theme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 import { ClockedMessageBody, formatMessageClock } from "./mixcode/message-clock.ts";
 
@@ -68,14 +69,17 @@ export class UserMessageComponent extends Container {
 	private markdownTheme: MarkdownTheme;
 	private outputPad: number;
 	private markdownTransformers: readonly MarkdownTransformer[];
+	private messageId?: string;
+	private timestamp?: string;
 	/** Send time of the message, drawn at the right end of the block's first row. */
-	private timestamp: number | undefined;
+	private sentAt: number | undefined;
 	/** Which ends of the message the shell prompt zone markers belong to. */
 	private readonly marks: UserMessageZoneMarks;
 	/** Last rendered block, reused while the width and the content are unchanged. */
 	private renderedLines: string[] | undefined;
 	private renderedWidth = -1;
-	private renderedTheme: string | undefined;
+	private renderedTheme: Theme | undefined;
+	private renderedLanguageCount = -1;
 	/** Set while `invalidate` has dropped the memo but the next paint has not rebuilt it yet. */
 	private rebuildPending = false;
 
@@ -84,8 +88,10 @@ export class UserMessageComponent extends Container {
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
+		messageId?: string,
+		timestamp?: string,
 		marks: UserMessageZoneMarks = "both",
-		timestamp?: number,
+		sentAt?: number,
 	) {
 		super();
 		this.text = text;
@@ -93,7 +99,9 @@ export class UserMessageComponent extends Container {
 		this.markdownTheme = markdownTheme;
 		this.outputPad = outputPad;
 		this.markdownTransformers = markdownTransformers;
+		this.messageId = messageId;
 		this.timestamp = timestamp;
+		this.sentAt = sentAt;
 		this.rebuild();
 	}
 
@@ -114,15 +122,9 @@ export class UserMessageComponent extends Container {
 	 * takes effect through that rebuild: the body's own cache holds the lines the previous
 	 * transformer chain produced.
 	 *
-	 * The subtree is flushed only when the theme changed: the children cache their
-	 * rendered lines against content and width alone, so a theme switch would otherwise
-	 * serve rows in the old colors. A plain relayout or a background tab bind leaves the
-	 * theme alone and must not pay for a subtree walk.
+	 * Rebuilding replaces the subtree lazily, so a background tab does not pay for a subtree walk.
 	 */
 	override invalidate(): void {
-		if (this.renderedTheme !== undefined && this.renderedTheme !== getActiveThemeName()) {
-			super.invalidate();
-		}
 		this.rebuildPending = true;
 		this.renderedLines = undefined;
 	}
@@ -145,7 +147,13 @@ export class UserMessageComponent extends Container {
 			{
 				preserveOrderedListMarkers: true,
 				preserveBackslashEscapes: true,
-				transform: createMarkdownTransform("user", false, this.markdownTransformers),
+				transform: createMarkdownTransform(
+					"user",
+					() => false,
+					this.markdownTransformers,
+					this.messageId,
+					this.timestamp,
+				),
 			},
 		);
 		// The clock takes cells off the body's width, which the body leaves unpainted, so the
@@ -153,7 +161,7 @@ export class UserMessageComponent extends Container {
 		this.addChild(
 			new ClockedMessageBody(
 				body,
-				formatMessageClock(this.timestamp),
+				formatMessageClock(this.sentAt),
 				(content) => theme.bg("userMessageBg", theme.fg("dim", content)),
 				this.outputPad,
 			),
@@ -161,9 +169,12 @@ export class UserMessageComponent extends Container {
 	}
 
 	override render(width: number): string[] {
-		if (this.rebuildPending) this.rebuild();
-		const themeName = getActiveThemeName();
-		if (this.renderedLines && this.renderedWidth === width && this.renderedTheme === themeName) {
+		const currentTheme = getGlobalTheme();
+		const languageCount = getHighlightLanguageCount();
+		if (this.rebuildPending || this.renderedTheme !== currentTheme || this.renderedLanguageCount !== languageCount) {
+			this.rebuild();
+		}
+		if (this.renderedLines && this.renderedWidth === width) {
 			return this.renderedLines;
 		}
 		const lines = super.render(width);
@@ -177,7 +188,8 @@ export class UserMessageComponent extends Container {
 		}
 		this.renderedLines = lines;
 		this.renderedWidth = width;
-		this.renderedTheme = themeName;
+		this.renderedTheme = currentTheme;
+		this.renderedLanguageCount = languageCount;
 		return lines;
 	}
 }

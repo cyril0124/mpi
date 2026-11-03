@@ -7,7 +7,25 @@ Entries say what changed and why; the why is the part git does not keep. When me
 upstream tag, insert a boundary heading `## base pi vX.Y.Z — <date>` above the previous one and
 point `## [Unreleased]` at the new tag.
 
-## [Unreleased] — base pi v1.4.0
+## [Unreleased] — base pi v1.5.0
+
+### Added
+
+### Changed
+
+- Merged upstream pi v1.5.0, preserving per-tab dialogs, windowed transcript rendering,
+  provider error diagnostics, response-model notices, and Lua batch dependencies.
+
+### Fixed
+
+- The dev launcher no longer treats the removed shx binary as a partial install, so repeated
+  launches reuse complete dependencies while still repairing missing compiler or TypeBox files.
+- Updated the fixed Together catalog fixture to the relocated generator and models.dev v2,
+  preserving its regression coverage for delisted DeepSeek models.
+
+### Removed
+
+## base pi v1.4.0 — 2026-11-03
 
 ### Added
 

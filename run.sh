@@ -9,7 +9,6 @@ cd "$repo_dir"
 # Probing tsgo is what TypeScript 7 retired: typescript@7 ships `tsc` only, so the probe failed
 # on every launch and reinstalled the whole workspace first.
 if [ ! -x node_modules/.bin/tsc ] ||
-  [ ! -x node_modules/.bin/shx ] ||
   [ ! -f node_modules/typebox/build/index.mjs ] ||
   [ ! -f node_modules/typebox/build/index.d.mts ]; then
   bun install --force --ignore-scripts --no-save

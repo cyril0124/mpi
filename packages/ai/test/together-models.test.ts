@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getModel } from "../src/compat.ts";
 import { findEnvKeys, getEnvApiKey } from "../src/env-api-keys.ts";
 import type { Model } from "../src/types.ts";
+import { writeUpstreamMock } from "./catalog-generation-utils.ts";
 
 // Generate the historical mapping from a fixed catalog so its effort regression survives delisting.
 function generateDeepSeekV4Model(): Model<"openai-completions"> {
@@ -14,26 +15,27 @@ function generateDeepSeekV4Model(): Model<"openai-completions"> {
 	try {
 		const preloadPath = join(root, "catalog.mjs");
 		const outputPath = join(root, "output");
-		const catalog = {
-			together: { models: { "deepseek-ai/DeepSeek-V4-Pro-0813": { tool_call: true, reasoning: true } } },
-		};
-		writeFileSync(
-			preloadPath,
-			`const catalog = ${JSON.stringify(catalog)};\n` +
-				`globalThis.fetch = async (input) => {\n` +
-				`  const url = String(input);\n` +
-				`  if (url === "https://models.dev/api.json") return Response.json(catalog);\n` +
-				`  if (url === "https://openrouter.ai/api/v1/models" || url === "https://ai-gateway.vercel.sh/v1/models") return Response.json({ data: [] });\n` +
-				`  if (url === "https://radius.pi.dev/v1/config") return Response.json({ baseUrl: "https://radius.pi.dev", models: [{ id: "test", name: "Test", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 4096, maxTokens: 4096 }] });\n` +
-				`  throw new Error(\`Unexpected fetch: \${url}\`);\n` +
-				`};\n`,
-		);
+		const modelId = "deepseek-ai/DeepSeek-V4-Pro-0813";
+		writeUpstreamMock(preloadPath, {
+			togetherai: {
+				models: {
+					[modelId]: {
+						id: modelId,
+						type: "chat",
+						name: modelId,
+						modalities: { input: ["text"], output: ["text"] },
+						capabilities: { tools: { supported: true }, reasoning: { supported: true } },
+						api: {},
+					},
+				},
+			},
+		});
 		const result = spawnSync(
 			process.execPath,
 			[
 				"--import",
 				pathToFileURL(preloadPath).href,
-				"scripts/generate-models.ts",
+				"catalog/generate.ts",
 				"--json-only",
 				"--json-output",
 				outputPath,
@@ -45,7 +47,7 @@ function generateDeepSeekV4Model(): Model<"openai-completions"> {
 		const models: Record<string, Model<"openai-completions">> = JSON.parse(
 			readFileSync(join(outputPath, "providers/together.json"), "utf8"),
 		);
-		return models["deepseek-ai/DeepSeek-V4-Pro-0813"];
+		return models[modelId];
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

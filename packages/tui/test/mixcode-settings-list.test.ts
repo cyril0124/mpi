@@ -73,6 +73,33 @@ describe("SettingsList sections", () => {
 		assert.deepStrictEqual(clicked, ["b"]);
 	});
 
+	it("pages by items rather than section rows and keeps mouse selection aligned", () => {
+		const changed: string[] = [];
+		const list = new SettingsList(
+			Array.from({ length: 12 }, (_, index) => ({
+				id: `item-${index}`,
+				label: `Item ${index}`,
+				currentValue: "off",
+				values: ["off", "on"],
+				section: `Group ${Math.floor(index / 2)}`,
+			})),
+			5,
+			testTheme,
+			(id) => changed.push(id),
+			() => {},
+		);
+		list.handleInput("\x1b[6~");
+		list.handleInput("\r");
+		assert.deepStrictEqual(changed, ["item-5"]);
+		const row = list.render(80).findIndex((line) => line.includes("Item 6"));
+		assert.ok(row >= 0);
+		list.handleMouse(mouse(0, row));
+		assert.deepStrictEqual(changed, ["item-5", "item-6"]);
+		list.handleInput("\x1b[5~");
+		list.handleInput("\r");
+		assert.deepStrictEqual(changed, ["item-5", "item-6", "item-1"]);
+	});
+
 	it("keeps navigation on settings and drops the headings while searching", () => {
 		const changes: string[] = [];
 		const list = new SettingsList(

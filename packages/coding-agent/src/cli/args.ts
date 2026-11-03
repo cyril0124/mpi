@@ -316,7 +316,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} list                      List installed extensions from settings
   ${APP_NAME} config [-l]               Open TUI to enable/disable package resources (Tab switches scope)
   ${APP_NAME} auth <command>            Print credentials or check provider readiness
-  ${APP_NAME} mcp <command>             Check MCP servers, sign in to or out of OAuth servers
+  ${APP_NAME} mcp <command>             Manage MCP servers
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/list/config/auth/mcp
 
 ${chalk.bold("Options:")}
@@ -329,11 +329,11 @@ ${chalk.bold("Options:")}
   --batch <script>               Run a Lua or TypeScript batch script
   --batch-dry-run                Validate and print a batch plan without applying it
   --print, -p                    Non-interactive mode: process prompt and exit
-  --continue, -c                 Continue previous session
-  --resume, -r                   Select a session to resume
-  --session <path|id>            Use specific session file or partial UUID
-  --session-id <id>              Use exact project session ID, creating it if missing
-  --fork <path|id>               Fork specific session file or partial UUID into a new session
+  --continue, -c                 Continue the most recent session for the current directory
+  --resume, -r                   Pick a session to resume
+  --session <path|id>            Open a session by file path or full/partial ID
+  --session-id <id>              Use the current directory's existing session with the ID, creating it otherwise
+  --fork <path|id>               Fork a session by file path or full/partial ID into the current directory
   --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
   --name, -n <name>              Set session display name
@@ -358,7 +358,7 @@ ${chalk.bold("Options:")}
   --use-theme <name[/name]>      Set the initial interactive theme for this run
   --no-themes                    Disable theme discovery and loading
   --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
-  --export <file>                Export session file to HTML and exit
+  --export <file> [output]       Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
   --tui-mode <mode>              TUI mode: fullscreen (default) or regular

@@ -1,7 +1,8 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { type Component, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
-import { getActiveThemeName, getMarkdownTheme, theme } from "../theme/theme.ts";
+import { getHighlightLanguageCount } from "../../../utils/syntax-highlight.ts";
+import { getGlobalTheme, getMarkdownTheme, type Theme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 import { HoverRegion } from "./mixcode/hover/hover-region.ts";
 import {
@@ -16,6 +17,15 @@ const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 
 /**
+ * A Markdown block of the last update. The next update reuses it at the same position for the same kind of content, so
+ * a streamed answer keeps the blocks it already rendered, also once the stream ends.
+ */
+interface MarkdownSlot {
+	kind: "text" | "thinking";
+	markdown: Markdown;
+}
+
+/**
  * Component that renders a complete assistant message
  */
 export class AssistantMessageComponent extends Container {
@@ -28,14 +38,19 @@ export class AssistantMessageComponent extends Container {
 	private lastMessage?: AssistantMessage;
 	private hasToolCalls = false;
 	private isStreaming = false;
+	private messageId?: string;
+	private timestamp?: string;
 	private thinkingVisibilityOverrides = new Map<number, boolean>();
 	/** Per thinking run: the stamps the live/frozen duration is read from. */
 	private thinkingTailTimers = new Map<number, ThinkingTailTimer>();
 	/** Last rendered block, reused while the width and the content are unchanged. */
 	private renderedLines: string[] | undefined;
 	private renderedWidth = -1;
-	private renderedTheme: string | undefined;
+	private renderedTheme: Theme | undefined;
+	private renderedLanguageCount = -1;
 	private boxedHiddenThinking: boolean;
+	private hasLiveThinkingTail = false;
+	private markdownSlots: MarkdownSlot[] = [];
 
 	constructor(
 		message?: AssistantMessage,
@@ -44,6 +59,8 @@ export class AssistantMessageComponent extends Container {
 		hiddenThinkingLabel?: string,
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
+		messageId?: string,
+		timestamp?: string,
 		boxedHiddenThinking = false,
 	) {
 		super();
@@ -53,6 +70,8 @@ export class AssistantMessageComponent extends Container {
 		this.hiddenThinkingLabel = hiddenThinkingLabel;
 		this.outputPad = outputPad;
 		this.markdownTransformers = markdownTransformers;
+		this.messageId = messageId;
+		this.timestamp = timestamp;
 		this.boxedHiddenThinking = boxedHiddenThinking;
 
 		// Container for text/thinking content
@@ -77,9 +96,6 @@ export class AssistantMessageComponent extends Container {
 	 * directly, so the lazy path never serves stale lines.
 	 */
 	override invalidate(): void {
-		if (this.renderedTheme !== undefined && this.renderedTheme !== getActiveThemeName()) {
-			super.invalidate();
-		}
 		this.renderedLines = undefined;
 	}
 
@@ -108,16 +124,29 @@ export class AssistantMessageComponent extends Container {
 
 	setOutputPad(padding: number): void {
 		this.outputPad = padding;
+		// Markdown takes its padding at construction.
+		this.markdownSlots = [];
 		if (this.lastMessage) {
 			this.updateContent(this.lastMessage);
 		}
 	}
 
 	override render(width: number): string[] {
-		const themeName = getActiveThemeName();
-		if (this.renderedLines && this.renderedWidth === width && this.renderedTheme === themeName) {
+		const currentTheme = getGlobalTheme();
+		const languageCount = getHighlightLanguageCount();
+		const themeChanged = this.renderedTheme !== currentTheme;
+		if (themeChanged || this.renderedLanguageCount !== languageCount) {
+			// Markdown keeps styled blocks across setText(), so flushing only the outer lines is insufficient.
+			super.invalidate();
+			this.renderedLines = undefined;
+			if (themeChanged && this.renderedWidth >= 0 && this.lastMessage) this.updateContent(this.lastMessage);
+		}
+		if (this.renderedLines && this.renderedWidth === width && !this.hasLiveThinkingTail) {
 			return this.renderedLines;
 		}
+		this.renderedTheme = currentTheme;
+		this.renderedLanguageCount = languageCount;
+		this.renderedWidth = width;
 		const lines = super.render(width);
 		if (this.hasToolCalls || lines.length === 0) {
 			return lines;
@@ -126,8 +155,6 @@ export class AssistantMessageComponent extends Container {
 		lines[0] = OSC133_ZONE_START + lines[0];
 		lines[lines.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + lines[lines.length - 1];
 		this.renderedLines = lines;
-		this.renderedWidth = width;
-		this.renderedTheme = themeName;
 		return lines;
 	}
 
@@ -135,17 +162,31 @@ export class AssistantMessageComponent extends Container {
 		this.renderedLines = undefined;
 		this.lastMessage = message;
 		this.isStreaming = isStreaming;
+		this.hasLiveThinkingTail = false;
 
 		// Clear content container
 		this.contentContainer.clear();
+		const previousSlots = this.markdownSlots;
+		this.markdownSlots = [];
+		const markdownBlock = (kind: MarkdownSlot["kind"], text: string, create: () => Markdown): Markdown => {
+			const slot = previousSlots[this.markdownSlots.length];
+			const markdown = slot?.kind === kind ? slot.markdown : create();
+			markdown.setText(text);
+			this.markdownSlots.push({ kind, markdown });
+			return markdown;
+		};
 
-		const hasVisibleContent = message.content.some(
-			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
-		);
-
-		if (hasVisibleContent) {
-			this.contentContainer.addChild(new Spacer(1));
-		}
+		// Spacers are added lazily, right before the next visible content block. This puts a blank
+		// line before the first visible block and after each visible thinking run that is followed
+		// by more visible content. Hidden thinking keeps the fork label/tail fallback.
+		let needsSpacer = true;
+		const addVisibleChild = (child: Component) => {
+			if (needsSpacer) {
+				this.contentContainer.addChild(new Spacer(1));
+				needsSpacer = false;
+			}
+			this.contentContainer.addChild(child);
+		};
 
 		// Render content in order
 		let thinkingRunIndex = 0;
@@ -154,10 +195,22 @@ export class AssistantMessageComponent extends Container {
 			if (content.type === "text" && content.text.trim()) {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
-				this.contentContainer.addChild(
-					new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme, undefined, {
-						transform: createMarkdownTransform("assistant", this.isStreaming, this.markdownTransformers),
-					}),
+				const text = content.text.trim();
+				addVisibleChild(
+					markdownBlock(
+						"text",
+						text,
+						() =>
+							new Markdown(text, this.outputPad, 0, this.markdownTheme, undefined, {
+								transform: createMarkdownTransform(
+									"assistant",
+									() => this.isStreaming,
+									this.markdownTransformers,
+									this.messageId,
+									this.timestamp,
+								),
+							}),
+					),
 				);
 			} else if (content.type === "thinking") {
 				const thinkingBlocks: string[] = [];
@@ -177,12 +230,6 @@ export class AssistantMessageComponent extends Container {
 					continue;
 				}
 
-				// Add spacing only when another visible assistant content block follows.
-				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
-				const hasVisibleContentAfter = message.content
-					.slice(i + 1)
-					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
-
 				const runIndex = thinkingRunIndex++;
 				const hidden = this.thinkingVisibilityOverrides.get(runIndex) ?? this.hideThinkingBlock;
 				// A run stays live until a later block (answer text or tool call) arrives or
@@ -195,30 +242,45 @@ export class AssistantMessageComponent extends Container {
 					message.content.slice(i + 1).some((c) => c.type === "toolCall" || (c.type === "text" && c.text.trim()));
 				if (runClosed && timer.endedAt === undefined) timer.endedAt = Date.now();
 				this.thinkingTailTimers.set(runIndex, timer);
+				const thinking = thinkingBlocks.join("\n\n");
 				const thinkingComponent = hidden
-					? hiddenThinkingComponent(thinkingBlocks.join("\n\n"), timer, {
+					? hiddenThinkingComponent(thinking, timer, {
 							boxed: this.boxedHiddenThinking,
 							label: this.hiddenThinkingLabel,
 							outputPad: this.outputPad,
 						})
-					: new Markdown(
-							thinkingBlocks.join("\n\n"),
-							this.outputPad,
-							0,
-							this.markdownTheme,
-							{
-								color: (text: string) => theme.fg("thinkingText", text),
-								italic: true,
-							},
-							{
-								transform: createMarkdownTransform(
-									"assistant-thinking",
-									this.isStreaming,
-									this.markdownTransformers,
+					: markdownBlock(
+							"thinking",
+							thinking,
+							() =>
+								new Markdown(
+									thinking,
+									this.outputPad,
+									0,
+									this.markdownTheme,
+									{
+										color: (text: string) => theme.fg("thinkingText", text),
+										italic: true,
+									},
+									{
+										transform: createMarkdownTransform(
+											"assistant-thinking",
+											() => this.isStreaming,
+											this.markdownTransformers,
+											this.messageId,
+											this.timestamp,
+										),
+									},
 								),
-							},
 						);
-				this.contentContainer.addChild(
+				if (
+					thinkingComponent instanceof ThinkingTailComponent &&
+					timer.startedAt !== undefined &&
+					timer.endedAt === undefined
+				) {
+					this.hasLiveThinkingTail = true;
+				}
+				addVisibleChild(
 					new HoverRegion(
 						thinkingComponent,
 						(event) => {
@@ -233,9 +295,9 @@ export class AssistantMessageComponent extends Container {
 						},
 					),
 				);
-				if (hasVisibleContentAfter) {
-					this.contentContainer.addChild(new Spacer(1));
-				}
+				// Add spacing only when another visible assistant content block follows.
+				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
+				needsSpacer = true;
 			}
 		}
 

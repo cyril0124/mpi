@@ -54,7 +54,16 @@ describe("message send time", () => {
 		const clock = formatMessageClock(timestamp);
 		expect(clock).not.toBe("");
 
-		const rows = new UserMessageComponent("hello", getMarkdownTheme(), 1, [], "both", timestamp).render(40);
+		const rows = new UserMessageComponent(
+			"hello",
+			getMarkdownTheme(),
+			1,
+			[],
+			undefined,
+			undefined,
+			"both",
+			timestamp,
+		).render(40);
 		const plain = rows.map((row) => stripAnsi(row));
 		const firstText = plain.findIndex((row) => row.trim() !== "");
 		expect(firstText).toBeGreaterThanOrEqual(0);

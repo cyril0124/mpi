@@ -7,6 +7,7 @@ import { VStack } from "../src/components/v-stack.ts";
 import { getScrollbarGeometry, renderLayoutFrame, WINDOW_OVERSCAN_LINES } from "../src/layout.ts";
 import { materializeScrollLines } from "../src/mixcode/layout-queries.ts";
 import { WINDOWED_NODE, type WindowedLayoutNode } from "../src/mixcode/windowed-node.ts";
+import { encodeKitty, getMaxKittyImageRows, registerKittyImageMetadata } from "../src/terminal-image.ts";
 import type { Component } from "../src/tui.ts";
 import { TuiAltScreen } from "../src/tui-alt-screen.ts";
 import { stripTerminalSequences, visibleWidth } from "../src/utils.ts";
@@ -18,6 +19,7 @@ class WindowedRows implements Component {
 	/** Rows the virtual line count claims beyond the real ones (unmeasured estimate). */
 	private readonly phantomRows: number;
 	readonly requested: Array<{ start: number; end: number }> = [];
+	readonly lineReads: Array<{ start: number; count: number }> = [];
 	fullRenders = 0;
 	materializeCalls = 0;
 
@@ -44,7 +46,10 @@ class WindowedRows implements Component {
 					this.requested.push({ start, end });
 					return { lines: this.rows.slice(start, end), start, scrollTop, total: this.rows.length };
 				},
-				getLines: (_width, start, count) => this.rows.slice(start, start + count),
+				getLines: (_width, start, count) => {
+					this.lineReads.push({ start, count });
+					return this.rows.slice(start, start + count);
+				},
 				materialize: () => {
 					this.materializeCalls += 1;
 					return [...this.rows];
@@ -99,6 +104,33 @@ describe("windowed scroll child", () => {
 		const middle = content.requested.at(-1);
 		assert.strictEqual(middle?.start, 2_500 - WINDOW_OVERSCAN_LINES);
 		assert.strictEqual(middle?.end, 2_500 + viewport + WINDOW_OVERSCAN_LINES);
+	});
+
+	it("crops an image beyond overscan using bounded provider reads across nonempty placeholders", () => {
+		// #11271 also applies to virtual transcripts: placeholder text must not stop the image search.
+		const rows = Array.from({ length: 5_000 }, (_, index) => `row-${index}`);
+		const imageId = 112710;
+		registerKittyImageMetadata({ imageId, columns: 2, rows: 30, widthPx: 20, heightPx: 300 });
+		rows[2_500] = encodeKitty("AAAA", { columns: 2, rows: 30, imageId, moveCursor: false });
+		rows[2_524] = encodeKitty("AAAA", { columns: 2, rows: 1, imageId: 112711, moveCursor: false });
+		const content = new WindowedRows(0, { rows });
+		const { transcript, render } = frameFor(content, 6);
+		render();
+		transcript.scrollTo(2_525);
+		content.lineReads.length = 0;
+		const frame = render();
+		assert.match(frame.lines[0]!, /y=250/);
+		assert.match(frame.lines[0]!, /h=50/);
+		assert.match(frame.lines[0]!, /r=5/);
+		assert.strictEqual(content.fullRenders, 0);
+		assert.strictEqual(content.materializeCalls, 0);
+		assert.ok(content.lineReads.length > 0);
+		assert.ok(
+			content.lineReads.every(
+				({ start, count }) => start >= 2_525 - getMaxKittyImageRows() && start + count <= 2_525,
+			),
+		);
+		assert.ok(content.lineReads.reduce((count, read) => count + read.count, 0) <= getMaxKittyImageRows());
 	});
 
 	it("reports the virtual height so the scroll range and scrollbar span the document", () => {

@@ -1,4 +1,3 @@
-import * as os from "node:os";
 import {
 	type Component,
 	Container,
@@ -13,22 +12,13 @@ import {
 import { KeybindingsManager } from "../../../core/keybindings.ts";
 import { deleteSessionFile } from "../../../core/mixcode/session-delete.ts";
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.ts";
-import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.ts";
+import { canonicalizePath, getPathComparisonKey, shortenHomePath } from "../../../utils/paths.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint, keyText } from "./keybinding-hints.ts";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.ts";
 
 type SessionScope = "current" | "all";
-
-function shortenPath(path: string): string {
-	const home = os.homedir();
-	if (!path) return path;
-	if (path.startsWith(home)) {
-		return `~${path.slice(home.length)}`;
-	}
-	return path;
-}
 
 function formatSessionDate(date: Date): string {
 	const now = new Date();
@@ -46,9 +36,9 @@ function formatSessionDate(date: Date): string {
 	return `${Math.floor(diffDays / 365)}y`;
 }
 
-function canonicalizePath(path: string | undefined): string | undefined {
-	if (!path) return path;
-	return _canonicalizePath(path);
+/** Comparison key for a session file path; follows symlinks and ignores case on Windows. */
+function getSessionPathKey(path: string): string {
+	return getPathComparisonKey(canonicalizePath(path));
 }
 
 class SessionSelectorHeader implements Component {
@@ -208,16 +198,16 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
 	const byPath = new Map<string, SessionTreeNode>();
 
 	for (const session of sessions) {
-		const sessionPath = canonicalizePath(session.path) ?? session.path;
+		const sessionPath = getSessionPathKey(session.path);
 		byPath.set(sessionPath, { session, children: [], latestActivity: session.modified.getTime() });
 	}
 
 	const roots: SessionTreeNode[] = [];
 
 	for (const session of sessions) {
-		const sessionPath = canonicalizePath(session.path) ?? session.path;
+		const sessionPath = getSessionPathKey(session.path);
 		const node = byPath.get(sessionPath)!;
-		const parentPath = canonicalizePath(session.parentSessionPath);
+		const parentPath = session.parentSessionPath ? getSessionPathKey(session.parentSessionPath) : undefined;
 
 		if (parentPath && byPath.has(parentPath)) {
 			byPath.get(parentPath)!.children.push(node);
@@ -294,7 +284,7 @@ class SessionList implements Component, Focusable {
 	private keybindings: KeybindingsManager;
 	private showPath = false;
 	private confirmingDeletePath: string | null = null;
-	private currentSessionCanonicalPath?: string;
+	private currentSessionPathKey?: string;
 	public onSelect?: (sessionPath: string) => void;
 	public onCancel?: () => void;
 	public onExit: () => void = () => {};
@@ -338,7 +328,7 @@ class SessionList implements Component, Focusable {
 		this.sortMode = sortMode;
 		this.nameFilter = nameFilter;
 		this.keybindings = keybindings;
-		this.currentSessionCanonicalPath = canonicalizePath(currentSessionFilePath);
+		this.currentSessionPathKey = currentSessionFilePath ? getSessionPathKey(currentSessionFilePath) : undefined;
 		this.filterSessions("");
 
 		// Handle Enter in search input - select current item
@@ -423,8 +413,8 @@ class SessionList implements Component, Focusable {
 	}
 
 	private isCurrentSessionPath(path: string): boolean {
-		if (!this.currentSessionCanonicalPath) return false;
-		return (canonicalizePath(path) ?? path) === this.currentSessionCanonicalPath;
+		if (!this.currentSessionPathKey) return false;
+		return getSessionPathKey(path) === this.currentSessionPathKey;
 	}
 
 	invalidate(): void {}
@@ -484,10 +474,10 @@ class SessionList implements Component, Focusable {
 			const msgCount = String(session.messageCount);
 			let rightPart = `${msgCount} ${age}`;
 			if (this.showCwd && session.cwd) {
-				rightPart = `${shortenPath(session.cwd)} ${rightPart}`;
+				rightPart = `${shortenHomePath(session.cwd)} ${rightPart}`;
 			}
 			if (this.showPath) {
-				rightPart = `${shortenPath(session.path)} ${rightPart}`;
+				rightPart = `${shortenHomePath(session.path)} ${rightPart}`;
 			}
 
 			// Cursor
@@ -665,6 +655,10 @@ export class SessionSelectorComponent extends Container implements Focusable {
 	/** Refuses a deletion for a session whose tab is mid-turn; see `SessionList`. */
 	public setSessionDeleteGuard(guard: (sessionPath: string) => string | undefined): void {
 		this.sessionList.sessionDeleteGuard = guard;
+	}
+
+	get capturesViewportInput(): boolean {
+		return this.mode !== "rename";
 	}
 
 	handleInput(data: string): void {

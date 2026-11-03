@@ -1,5 +1,5 @@
 import { type Component, Text, type TuiAltScreen, visibleWidth } from "@earendil-works/pi-tui";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import { createChatViewport } from "../../src/modes/interactive/chat-viewport.ts";
 import {
@@ -38,8 +38,14 @@ type PanelWiringContext = {
 };
 const proto = InteractiveMode.prototype as unknown as PanelWiringContext;
 
+const activeTuis: TuiAltScreen[] = [];
+
 beforeEach(() => {
 	initTheme("dark");
+});
+
+afterEach(() => {
+	for (const tui of activeTuis.splice(0)) tui.stop();
 });
 
 /**
@@ -129,6 +135,7 @@ async function bootPanel(options: {
 		panel: { component: widgetPanel, visible: (width) => widgetPanel.isOpen(width) },
 	});
 	tui.setLayoutRoot(viewport.root);
+	activeTuis.push(tui);
 	tui.start();
 	await terminal.waitForRender();
 

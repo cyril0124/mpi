@@ -5,6 +5,7 @@ import { AssistantMessageComponent } from "../../src/modes/interactive/component
 import { UserMessageComponent } from "../../src/modes/interactive/components/user-message.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import {
+	getActiveThemeName,
 	getMarkdownTheme,
 	initTheme,
 	loadThemeFromPath,
@@ -25,7 +26,7 @@ function message(): UserMessageComponent {
 	// Inline code is used here because the surrounding box resamples its background on every
 	// render, which would mask a stale Markdown cache. The inline code span retains whatever
 	// color the Markdown body produced when it last rendered.
-	return new UserMessageComponent("hello `world`", getMarkdownTheme(), 1, [], "both");
+	return new UserMessageComponent("hello `world`", getMarkdownTheme(), 1, [], undefined, undefined, "both");
 }
 
 describe("message block theme invalidation", () => {
@@ -41,6 +42,21 @@ describe("message block theme invalidation", () => {
 
 		component.invalidate();
 		expect(codeColor(component.render(40))).toBe(freshColor);
+	});
+
+	it("recolours nested cached Markdown when the theme identity changes without its active name changing", () => {
+		setThemeInstance(loadThemeFromPath(`${THEME_DIR}dark.json`));
+		const activeName = getActiveThemeName();
+		const blocks = [message(), assistantMessageBlock("hello `world`")];
+		const before = blocks.map((block) => codeColor(block.render(60)));
+		setThemeInstance(loadThemeFromPath(`${THEME_DIR}light.json`));
+		expect(getActiveThemeName()).toBe(activeName);
+		const expected = [message(), assistantMessageBlock("hello `world`")].map((block) => codeColor(block.render(60)));
+		expect(expected).not.toEqual(before);
+		for (const [index, block] of blocks.entries()) {
+			block.invalidate();
+			expect(codeColor(block.render(60))).toBe(expected[index]);
+		}
 	});
 
 	it("keeps identical output when the theme did not change", () => {
@@ -114,9 +130,9 @@ describe("message block grammar invalidation", () => {
 		const freshLines = assistantMessageBlock(markdown).render(60);
 		expect(deletionColor(freshLines)).not.toBe(plainColor);
 
-		// A plain invalidation keeps the rows the block's children memoized.
+		// A grammar change must invalidate the reused Markdown blocks, not just the outer lines.
 		block.invalidate();
-		expect(deletionColor(block.render(60))).toBe(plainColor);
+		expect(block.render(60)).toEqual(freshLines);
 
 		// The startup flush drops them in the chat and in a parked tab, so the next paint matches
 		// a cold block. It is private, so drive it against the fields the app provides.

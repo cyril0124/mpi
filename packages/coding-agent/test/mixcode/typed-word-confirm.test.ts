@@ -9,12 +9,12 @@ import { setKeybindings, stripTerminalSequences, type TUI, TuiMainScreen } from 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import { KeybindingsManager } from "../../src/core/keybindings.ts";
-import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
-import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
 import {
 	TypedWordConfirmComponent,
 	type TypedWordConfirmOptions,
 } from "../../src/modes/interactive/components/mixcode/typed-word-confirm/typed-word-confirm.ts";
+import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
+import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
 import { overlayPanelLine } from "./test-utils.ts";
 
 beforeEach(() => {
@@ -141,7 +141,7 @@ describe.each(["delete", "close"] as const)("typed-word confirmation (%s)", (kin
 	});
 
 	it("renders the singular body for a single tab", async () => {
-		const { terminal, ui, screen } = await openPanel(kind, 1);
+		const { ui, screen } = await openPanel(kind, 1);
 		try {
 			expect(screen()).toContain(spec.singularBody);
 		} finally {

@@ -7,6 +7,9 @@ type DialogContext = {
 	homeSelection: { active: boolean };
 	editorContainer: Container;
 	editor: Component & { getText(): string; setText(text: string): void };
+	defaultEditor: Component & { getText(): string; setText(text: string): void };
+	syncEditorHistory: ReturnType<typeof vi.fn>;
+	refreshEditorStatus: ReturnType<typeof vi.fn>;
 	focused: Component | undefined;
 	ui: { setFocus: (component: Component) => void; requestRender: () => void };
 	programStatus: { setBlocked: ReturnType<typeof vi.fn> };
@@ -18,7 +21,11 @@ type DialogMethods = {
 	showExtensionConfirm(title: string, message: string, opts?: { signal?: AbortSignal }): Promise<boolean>;
 	showExtensionCustom<T>(
 		factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: T) => void) => Component,
+		options?: { blocked?: { kind: "permission" | "question" | "auth"; message: string } },
 	): Promise<T>;
+	setCustomEditorComponent(
+		factory: ((tui: unknown, theme: unknown, keybindings: unknown) => Component) | undefined,
+	): void;
 };
 
 function createContext(): DialogContext & DialogMethods {
@@ -33,6 +40,9 @@ function createContext(): DialogContext & DialogMethods {
 		homeSelection: { active: false },
 		editorContainer: new Container(),
 		editor,
+		defaultEditor: editor,
+		syncEditorHistory: vi.fn(),
+		refreshEditorStatus: vi.fn(),
 		focused: undefined,
 		ui: {
 			setFocus: (component) => {
@@ -141,5 +151,64 @@ describe("InteractiveMode extension dialogs", () => {
 		done?.("kept");
 		await expect(custom).resolves.toBe("kept");
 		expect(context.focused).toBe(context.editor);
+	});
+
+	// Regression for #11428: inline custom dialogs could not report blocked program status.
+	it.each(["permission", "question", "auth"] as const)(
+		"reports %s status for an inline custom component that opts in",
+		async (kind) => {
+			const context = createContext();
+			const dones: Array<(result: string) => void> = [];
+			const first = context.showExtensionCustom<string>(
+				(_tui, _theme, _keybindings, done) => {
+					dones.push(done);
+					return new Text("approval");
+				},
+				{ blocked: { kind, message: "Approve?" } },
+			);
+			await vi.waitFor(() => expect(visible(context)).toContain("approval"));
+			expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", {
+				kind,
+				message: "Approve?",
+			});
+
+			const loader = context.showExtensionCustom<string>((_tui, _theme, _keybindings, done) => {
+				dones.push(done);
+				return new Text("loading");
+			});
+			await vi.waitFor(() => expect(visible(context)).toContain("loading"));
+			expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", undefined);
+
+			dones[1]("loaded");
+			await expect(loader).resolves.toBe("loaded");
+			expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", {
+				kind,
+				message: "Approve?",
+			});
+
+			dones[0]("yes");
+			await expect(first).resolves.toBe("yes");
+			expect(context.focused).toBe(context.editor);
+			expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", undefined);
+		},
+	);
+
+	// Regression for #11431: replacing the editor while a dialog was open hid the dialog and left it unanswerable.
+	it("keeps an open dialog visible when the editor component is replaced", async () => {
+		const context = createContext();
+		const confirmed = context.showExtensionConfirm("Title", "Continue?");
+		const customEditor: Component & { getText(): string; setText(text: string): void } = {
+			render: () => ["custom editor"],
+			invalidate: () => {},
+			getText: () => "",
+			setText: () => {},
+		};
+		context.setCustomEditorComponent(() => customEditor);
+
+		expect(visible(context)).toContain("Title");
+		context.focused?.handleInput?.("\r");
+		await expect(confirmed).resolves.toBe(true);
+		expect(context.focused).toBe(customEditor);
+		expect(context.editorContainer.children).toEqual([customEditor]);
 	});
 });

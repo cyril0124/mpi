@@ -1,5 +1,5 @@
 import { type Component, Container, type ScrollView, Text, type TuiAltScreen } from "@earendil-works/pi-tui";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import type { MixCodeSettings } from "../../src/core/mixcode/mixcode-settings.ts";
 import { createChatViewport } from "../../src/modes/interactive/chat-viewport.ts";
@@ -75,8 +75,14 @@ type InlineWiringContext = {
 };
 const proto = InteractiveMode.prototype as unknown as InlineWiringContext;
 
+const activeTuis: TuiAltScreen[] = [];
+
 beforeEach(() => {
 	initTheme("dark");
+});
+
+afterEach(() => {
+	for (const tui of activeTuis.splice(0)) tui.stop();
 });
 
 type WidgetSpec = { key: string; rows: number; placement?: "above" | "below" };
@@ -177,6 +183,7 @@ async function bootInline(options: {
 	context.transcriptScrollView = viewport.transcript;
 	context.requestWidgetRender();
 	tui.setLayoutRoot(viewport.root);
+	activeTuis.push(tui);
 	tui.start();
 	await terminal.waitForRender();
 

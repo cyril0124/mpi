@@ -10,7 +10,6 @@
  * must not replace the draft being typed behind it.
  */
 import { type Component, getKeybindings, matchesKey } from "@earendil-works/pi-tui";
-import { theme } from "../../../theme/theme.ts";
 import { keyHint, rawKeyHint } from "../../keybinding-hints.ts";
 import { panel } from "../panel.ts";
 
