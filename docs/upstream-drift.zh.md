@@ -215,4 +215,10 @@
 - `docs/` —— 本目录
 - `test-all.sh`、`run.sh`、`install.sh` —— fork 测试入口、开发启动脚本与本地安装脚本
 - `packages/*/src/**/mixcode/`、`packages/*/test/mixcode/`、`packages/tui/test/mixcode-*.test.ts` —— fork 代码与其测试
+- [`packages/coding-agent/src/core/mixcode/multi-tab/mixcode-state.ts`](../packages/coding-agent/src/core/mixcode/multi-tab/mixcode-state.ts)：
+  规范会话 ID 替换在发布成员列表之前复制有效的标题、颜色、工作目录与标题锁定元数据，
+  并把 `activeSessionId` 映射到目标 ID。目标键已有的值优先，包括显式空值、`null` 与 `false`。
+  只有目标尚未在打开的标签页集合中时，源 ID 的未读状态才会传给目标；已打开的目标保留自身
+  的已读/未读决定。源 ID 的元数据别名与未知字段保留，存储格式不变。先获取 state 锁，再获取
+  open-tabs 锁，两者共用原有的 5 秒锁等待预算；该预算不是包含文件 I/O 的总耗时上限。
 - `packages/coding-agent/src/modes/interactive/components/clickable-card.ts` —— 位于 `mixcode/` 目录之外的 fork 模块

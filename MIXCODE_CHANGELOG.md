@@ -18,6 +18,10 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Canonical session-ID replacement carries metadata and focus to the destination without
+  overwriting its explicit values or dropping source aliases, preserving the stored format.
+  The nested state/open-tabs locks share the original 5-second wait budget instead of restarting
+  it for each acquisition.
 - The dev launcher no longer treats the removed shx binary as a partial install, so repeated
   launches reuse complete dependencies while still repairing missing compiler or TypeBox files.
 - Updated the fixed Together catalog fixture to the relocated generator and models.dev v2,

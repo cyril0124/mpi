@@ -255,4 +255,12 @@ Nothing upstream references them, so they can never conflict:
 - `docs/` — this directory
 - `test-all.sh`, `run.sh`, `install.sh` — fork test runner, dev launcher, and local installer
 - `packages/*/src/**/mixcode/`, `packages/*/test/mixcode/`, `packages/tui/test/mixcode-*.test.ts` — fork code and its tests
+- [`packages/coding-agent/src/core/mixcode/multi-tab/mixcode-state.ts`](../packages/coding-agent/src/core/mixcode/multi-tab/mixcode-state.ts):
+  canonical session-ID replacement copies valid title, color, workdir, and title-lock metadata
+  before publishing membership, and maps `activeSessionId` to the destination. Existing destination
+  keys win, including explicit empty, `null`, or `false` values. An unread source marks a destination
+  unread only if it was not already in the open-tab set; an already-open destination keeps its
+  read/unread decision. Source metadata aliases and unknown fields are retained, with no stored-format
+  change. The state lock precedes the open-tabs lock; both share the original 5-second lock-wait
+  budget, not a wall-clock limit including filesystem I/O.
 - `packages/coding-agent/src/modes/interactive/components/clickable-card.ts` — a fork module that sits outside the `mixcode/` folders

@@ -188,25 +188,124 @@ export function forgetOpenTabs(workdir: string, sessionIds: readonly string[]): 
 	});
 }
 
+function replaceSessionId(sessionIds: string[], from: string, to: string): boolean {
+	if (from === to) return false;
+	const fromIndex = sessionIds.indexOf(from);
+	if (fromIndex < 0) return false;
+	if (sessionIds.includes(to)) sessionIds.splice(fromIndex, 1);
+	else sessionIds[fromIndex] = to;
+	return true;
+}
+
+type AppliedSessionRename = {
+	from: string;
+	to: string;
+	targetWasOpen: boolean;
+};
+
+function copyMissingSessionMeta(
+	state: Record<string, unknown>,
+	key: string,
+	from: string,
+	to: string,
+	isValid: (value: unknown) => boolean,
+): void {
+	const stored = state[key];
+	if (!stored || typeof stored !== "object" || Array.isArray(stored)) return;
+	const values = stored as Record<string, unknown>;
+	if (Object.hasOwn(values, to)) return;
+	const value = values[from];
+	if (isValid(value)) state[key] = { ...values, [to]: value };
+}
+
+/** Caller holds the metadata and membership locks. */
+function updateRenamedTabMeta(stateFile: string, renames: readonly AppliedSessionRename[]): void {
+	let state: Record<string, unknown> | undefined;
+	if (existsSync(stateFile)) {
+		try {
+			const parsed: unknown = JSON.parse(stripBom(readFileSync(stateFile, "utf-8")));
+			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+				state = parsed as Record<string, unknown>;
+			}
+		} catch {
+			// Keep malformed cosmetic state intact; membership can still be repaired.
+		}
+	}
+	if (!state) return;
+
+	const children = state.children;
+	if (Array.isArray(children) && children.every((id) => typeof id === "string")) {
+		for (const { from, to } of renames) replaceSessionId(children as string[], from, to);
+	}
+
+	for (const { from, to, targetWasOpen } of renames) {
+		copyMissingSessionMeta(state, "tab_titles", from, to, (value) => typeof value === "string" && !!value.trim());
+		copyMissingSessionMeta(state, "tab_colors", from, to, isTabColorName);
+		copyMissingSessionMeta(state, "workdirs", from, to, (value) => typeof value === "string" && !!value);
+		copyMissingSessionMeta(state, "tab_title_locked", from, to, (value) => typeof value === "boolean");
+
+		const unseen = state.unseen_done;
+		if (targetWasOpen || !Array.isArray(unseen)) continue;
+		const sourceIsUnread = unseen.some((id) => String(id) === from);
+		const targetIsUnread = unseen.some((id) => String(id) === to);
+		if (sourceIsUnread && !targetIsUnread) unseen.push(to);
+	}
+
+	atomicWrite(stateFile, `${JSON.stringify(state, null, 2)}\n`);
+}
+
 /**
- * Point the open-tab membership at the real session id of a tab whose file opened
- * under a different id: a session file's name and its header disagree after a
- * repair or a rename, and the header id is the session's own. Each entry keeps its
- * position, and an id another writer already replaced is left alone.
+ * Replace an open tab's recorded id with its session header id. Persist metadata
+ * before publishing membership, retaining aliases for readers of the previous set.
  */
 export function replaceOpenTabSessionIds(workdir: string, renames: ReadonlyArray<{ from: string; to: string }>): void {
-	mutateOpenTabs(workdir, (ids) => {
-		for (const { from, to } of renames) {
-			if (!ids.has(from)) continue;
-			const ordered = [...ids].filter((id) => id !== from);
-			if (!ids.has(to)) {
-				const index = [...ids].indexOf(from);
-				ordered.splice(Math.min(index, ordered.length), 0, to);
-			}
-			ids.clear();
-			for (const id of ordered) ids.add(id);
-		}
-	});
+	const openTabsFile = openTabsFilePath(workdir);
+	const stateFile = stateFilePath(workdir);
+	const pendingRenames = renames.filter(({ from, to }) => from.trim() && to.trim() && from !== to);
+	if (pendingRenames.length === 0) return;
+	const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
+
+	// Match saveTabMeta's state-first access; hold both locks through publication.
+	withStateLockUntil(
+		`${stateFile}.lock`,
+		() => {
+			withStateLockUntil(
+				`${openTabsFile}.lock`,
+				() => {
+					const openTabs = readOpenTabs(workdir);
+					if (openTabs.kind === "invalid") throw new Error(openTabs.error);
+					if (openTabs.kind === "missing") return;
+
+					const sessionIds = [...openTabs.snapshot.sessionIds];
+					let activeSessionId = openTabs.snapshot.activeSessionId;
+					const appliedRenames: AppliedSessionRename[] = [];
+					for (const { from, to } of pendingRenames) {
+						const targetWasOpen = sessionIds.includes(to);
+						if (!replaceSessionId(sessionIds, from, to)) continue;
+						appliedRenames.push({ from, to, targetWasOpen });
+						if (activeSessionId === from) activeSessionId = to;
+					}
+					if (appliedRenames.length === 0) return;
+
+					// readOpenTabs validates known fields but does not return peer-owned keys.
+					const storedMembership = asRecord(JSON.parse(stripBom(readFileSync(openTabsFile, "utf-8"))));
+					updateRenamedTabMeta(stateFile, appliedRenames);
+
+					const snapshot: OpenTabsSnapshot = {
+						...storedMembership,
+						version: OPEN_TABS_VERSION,
+						sessionIds,
+						updatedAt: new Date().toISOString(),
+					};
+					if (activeSessionId && sessionIds.includes(activeSessionId)) snapshot.activeSessionId = activeSessionId;
+					else delete snapshot.activeSessionId;
+					atomicWrite(openTabsFile, `${JSON.stringify(snapshot, null, 2)}\n`);
+				},
+				deadline,
+			);
+		},
+		deadline,
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -493,9 +592,14 @@ const LOCK_WAIT_TIMEOUT_MS = 5_000;
  * unreadable holder is reclaimed.
  */
 export function withStateLock<T>(lockPath: string, fn: () => T): T {
+	return withStateLockUntil(lockPath, fn);
+}
+
+/** Share an existing wait deadline when acquiring another lock for the same operation. */
+function withStateLockUntil<T>(lockPath: string, fn: () => T, sharedDeadline?: number): T {
 	ensureDir(lockPath);
 	const payload = `${JSON.stringify({ pid: process.pid })}\n`;
-	const deadline = Date.now() + LOCK_WAIT_TIMEOUT_MS;
+	const deadline = sharedDeadline ?? Date.now() + LOCK_WAIT_TIMEOUT_MS;
 	while (!tryAcquireLock(lockPath, payload)) {
 		if (Date.now() >= deadline) throw new Error(`Timed out waiting for state lock: ${lockPath}`);
 		sleepMs(20);
