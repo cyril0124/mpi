@@ -18,6 +18,14 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- A transcript frame that is not a scroll no longer moves the rows the reader is looking at. Collecting
+  a window covers 20 overscan rows above the viewport, and measuring an estimated block up there
+  renumbers every row below it, but the frame kept painting the offset it was handed: one repaint slid
+  the conversation by the height such a block gained as soon as a dropped height table (a surface swap,
+  a resize) left the blocks above the viewport back at the 4-row estimate. The placement is now
+  re-resolved against the remembered anchor after a frame's own measurements, the recollect loop runs
+  until the settled row holds still instead of stopping after two passes, and a caller that asked for
+  another offset (search, prompt jumps, vim's message jumps) keeps the offset it asked for.
 - Canonical session-ID replacement carries metadata and focus to the destination without
   overwriting its explicit values or dropping source aliases, preserving the stored format.
   The nested state/open-tabs locks share the original 5-second wait budget instead of restarting

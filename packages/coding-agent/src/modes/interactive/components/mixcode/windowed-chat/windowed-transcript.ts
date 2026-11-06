@@ -29,8 +29,11 @@ import {
 /** Rows assumed for a block that has not been rendered at the current width. */
 export const ESTIMATED_BLOCK_HEIGHT = 4;
 
-/** How many times a window is collected again while its own walk keeps measuring blocks. */
-const WINDOW_RECOLLECT_ATTEMPTS = 2;
+/**
+ * How many times a window is collected again while its own walk keeps measuring blocks. The loop
+ * stops earlier once the settled row holds still, so this only bounds a pathological walk.
+ */
+const WINDOW_RECOLLECT_ATTEMPTS = 4;
 
 /** The block painted on a content row, with the row's offset inside that block. */
 interface BlockAtRow {
@@ -294,39 +297,53 @@ export class WindowedTranscript extends Container {
 		// back to the newest rows, so the offset of the surface that was just unmounted never shows.
 		const restoreAnchor = this.pendingScrollRestore ? this.pendingScrollRestore.anchor : this.pendingAnchor;
 		const restoreFallsBackToEnd = this.pendingScrollRestore !== undefined;
-		const placeAnchor = (): number | undefined => {
+		// The row the caller asked for, next to the row the anchor remembers before this pass
+		// measures anything. They agree when the caller asks for the row already on screen and
+		// differ when it jumps elsewhere, which keeps the offset it asked for.
+		const requestedTop = top;
+		const anchorRowAtStart =
+			relativeDelta === undefined && this.scrollAnchor ? this.anchorRowUnderTable() : undefined;
+		/** Content row for this pass. `isRecollect` marks a pass after a collection measured blocks. */
+		const placeAnchor = (isRecollect: boolean): number | undefined => {
 			const resolved = restoreAnchor
 				? this.resolveScrollAnchor(safeWidth, viewportHeight, restoreAnchor)
 				: undefined;
 			if (resolved !== undefined) return resolved;
 			if (restoreFallsBackToEnd) return Math.max(0, this.totalHeight() - viewportHeight);
-			if (relativeDelta === undefined) return undefined;
-			// A relative move resolves against content, not against the row number the caller
-			// carried in: measuring an estimated block renumbers every row below it, so the
-			// same offset points at different rows on the next pass. The anchor block keeps
-			// the viewport's top row; without one the content end is what the reader looks at.
-			// The rows the moved view will paint are measured up front, so the placement is
-			// exact in one pass instead of chasing the renumbering a collection causes.
-			this.measureRowsAboveAnchor(safeWidth, relativeDelta, viewportHeight, margin);
+			// Resolve against content instead of the row number the caller carried in: measuring an
+			// estimated block renumbers every row below it, so the same offset points at different
+			// rows on the next pass. The anchor keeps the viewport's top row; without one the content
+			// end is what the reader looks at.
+			const delta = relativeDelta ?? 0;
+			// An overscan block above the viewport renumbers the rows under the reader the same way, so
+			// a pass that is not a scroll is re-placed once its own collection measured blocks. Until
+			// then, and for a caller that asked for another offset, its offset stands.
+			const repaintsAnchoredRow = isRecollect && anchorRowAtStart === requestedTop;
+			if (relativeDelta === undefined && !repaintsAnchoredRow) return undefined;
+			this.measureRowsAboveAnchor(safeWidth, delta, viewportHeight, margin);
 			const anchorRow = this.scrollAnchor
 				? this.anchorRowUnderTable()
 				: Math.max(0, this.totalHeight() - viewportHeight);
 			if (anchorRow === undefined) return undefined;
 			const max = Math.max(0, this.totalHeight() - viewportHeight);
-			return Math.max(0, Math.min(max, anchorRow + relativeDelta));
+			return Math.max(0, Math.min(max, anchorRow + delta));
 		};
-		const anchoredTop = placeAnchor();
+		const anchoredTop = placeAnchor(false);
 		if (anchoredTop !== undefined) top = anchoredTop;
 		const atContentEnd = !honorOffset && top + viewportHeight >= this.totalHeight();
 		let window = this.collectWindow(safeWidth, top, viewportHeight, margin, atContentEnd);
-		// Each walk measures the blocks it paints, which moves the total and the row the
-		// window ends at. The anchor is recomputed after those measurements so a changed
-		// prefix estimate cannot move the anchored block.
+		// Each walk measures the blocks it paints, which moves the total and the row the window ends
+		// at. One walk only measures the blocks its own window touches, and a measurement above the
+		// viewport renumbers everything below it, so the placement and the window are recomputed
+		// until the row holds still.
 		for (let attempt = 0; attempt < WINDOW_RECOLLECT_ATTEMPTS && this.measuredThisPass; attempt += 1) {
+			const previousTop = top;
 			this.measuredThisPass = false;
-			const nextTop = placeAnchor();
+			const nextTop = placeAnchor(true);
 			if (nextTop !== undefined) top = nextTop;
 			window = this.collectWindow(safeWidth, top, viewportHeight, margin, atContentEnd);
+			// A later pass that ended on the same row measured nothing above it.
+			if (attempt > 0 && top === previousTop) break;
 		}
 		this.pendingAnchor = undefined;
 		this.pendingScrollRestore = undefined;

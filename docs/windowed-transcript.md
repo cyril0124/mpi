@@ -33,12 +33,18 @@ renders only the rows near the viewport. Long conversations scroll at a bounded 
    block renumbers every row below it, so resolving the delta against the row number would shift the rows
    under the reader after the height table resets; against the anchor the move is exactly the requested
    rows. Absolute jumps (`scrollTo`) keep rendering the offset they were given.
-8. Search, prompt jumps (`ctrl+shift+up/down`) and clipboard selections ask for exact rows on demand,
+8. A frame that is not a scroll keeps the rows under the reader. The window covers 20 overscan rows
+   above the viewport, so measuring an estimated block up there renumbers every row below it; the frame
+   therefore re-resolves its placement against the remembered anchor after its own measurements, and
+   collects again until the settled row holds still. A repaint or a viewport-height change then leaves
+   the view where it is, instead of sliding it by the height a measured block gained. A caller that asks
+   for another offset (search, a prompt jump, vim's message jumps) keeps the offset it asked for.
+9. Search, prompt jumps (`ctrl+shift+up/down`) and clipboard selections ask for exact rows on demand,
    and materialize the document once. The open search overlay keeps its materialized lines until the
    transcript's measured height changes, so an idle frame stays O(window). Vim's user-message jumps
    read the matched blocks and their exact rows through `matchingBlocks`, since the preview panel
    lists every match; one jump measures the whole document once.
-9. A surface swap keeps the row the reader was on. Each tab remembers the block at its viewport top,
+10. A surface swap keeps the row the reader was on. Each tab remembers the block at its viewport top,
    and the incoming tab resolves its own anchor on the next frame instead of reusing the outgoing
    offset; a tab that was at its newest output, or whose transcript was rebuilt while parked, opens
    at the end. See [Agent Tabs](tabs.md).
