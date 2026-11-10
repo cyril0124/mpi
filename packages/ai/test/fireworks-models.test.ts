@@ -19,26 +19,6 @@ afterEach(() => {
 });
 
 describe("Fireworks models", () => {
-	it("registers Inkling via Anthropic-compatible Messages API", () => {
-		const model = getModel("fireworks", "accounts/fireworks/models/inkling");
-
-		expect(model).toBeDefined();
-		expect(model.name).toBe("Inkling");
-		expect(model.api).toBe("anthropic-messages");
-		expect(model.provider).toBe("fireworks");
-		expect(model.baseUrl).toBe("https://api.fireworks.ai/inference");
-		expect(model.reasoning).toBe(true);
-		expect(model.input).toEqual(["text", "image"]);
-		expect(model.contextWindow).toBe(1048576);
-		expect(model.maxTokens).toBe(1048576);
-		expect(model.cost).toEqual({
-			input: 1,
-			output: 4.05,
-			cacheRead: 0.17,
-			cacheWrite: 0,
-		});
-	});
-
 	it("aligns GLM 5.3 Fast with GLM 5.3's OpenAI-compatible config", () => {
 		const base = getModel("fireworks", "accounts/fireworks/models/glm-5p3");
 		const fast = getModel("fireworks", "accounts/fireworks/routers/glm-5p3-fast");
@@ -197,7 +177,8 @@ describe("Fireworks models", () => {
 		},
 	);
 
-	it("keeps toggle-only Messages models without a verified fallback on budget-based thinking", async () => {
+	it("keeps non-adaptive Messages models on budget-based thinking", async () => {
+		// Use a fixed fixture: the live catalog no longer lists toggle-only Messages models.
 		const model = createFireworksModel();
 		expect(model.compat?.forceAdaptiveThinking).toBeUndefined();
 		let payload: Record<string, unknown> | undefined;
@@ -225,7 +206,7 @@ describe("Fireworks models", () => {
 	});
 
 	it("sets Fireworks-specific compat for session affinity and unsupported tool fields", () => {
-		const model = getModel("fireworks", "accounts/fireworks/models/inkling");
+		const model = getModel("fireworks", "accounts/fireworks/models/deepseek-v4p1-flash");
 
 		expect(model.compat).toBeDefined();
 		expect(model.compat?.sendSessionAffinityHeaders).toBe(true);
