@@ -439,6 +439,6 @@ describe("app dialogs belong to the mounted tab", () => {
 		const selector = slotted(host);
 		expect(selector).toBeInstanceOf(ExtensionSelectorComponent);
 		(selector as ExtensionSelectorComponent).handleInput("\r");
-		expect(await pending).toBe("/here");
+		expect(await pending).toBe("continue");
 	});
 });
