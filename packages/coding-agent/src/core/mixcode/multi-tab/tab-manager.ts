@@ -108,7 +108,7 @@ export function tabBusyReason(tab: AgentTab): string | undefined {
  *
  * A deletion moves the file to the trash while the tab keeps its session, and a running `!`
  * command still appends its result to the old path, which recreates the file without its session
- * header. That is why `/clear` and `/reset` refuse a running bash command too.
+ * header. That is why `/new` and `/reset` refuse a running bash command too.
  */
 export function tabDeletionPhrase(tab: AgentTab): string | undefined {
 	const busy = tabBusyPhrase(tab);
@@ -763,7 +763,7 @@ export class TabManager {
 	}
 
 	/**
-	 * Re-subscribe a tab after its runtime replaced its session (e.g. `/clear`,
+	 * Re-subscribe a tab after its runtime replaced its session (e.g. `/new`,
 	 * `/workdir`), since the old subscription died with the old session object.
 	 * The replacement also drops a `/context-limit` override: it belonged to the
 	 * outgoing session's model and settings manager, both now discarded. A custom
@@ -791,7 +791,7 @@ export class TabManager {
 
 	/**
 	 * Give a tab back its generated title when the replacement session carries no
-	 * name (`/clear`, or a `/workdir` move onto a session nobody named). `/rename` keeps the
+	 * name (`/new`, or a `/workdir` move onto a session nobody named). `/rename` keeps the
 	 * title and the session name in step, so a kept title would claim a name the
 	 * session no longer has. An existing `Agent-NN` stays put.
 	 */

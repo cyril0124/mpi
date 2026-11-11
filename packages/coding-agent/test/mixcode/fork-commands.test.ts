@@ -87,7 +87,6 @@ function commandHost() {
 			toggleZen: vi.fn(),
 			toggleInlineWidgets: vi.fn(),
 			widgets: vi.fn(),
-			clear: vi.fn(async () => {}),
 			reset: vi.fn(async () => {}),
 			resumeTrash: vi.fn(),
 			error: (message) => errors.push(message),

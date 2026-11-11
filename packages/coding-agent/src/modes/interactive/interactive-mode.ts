@@ -1441,7 +1441,6 @@ export class InteractiveMode {
 				toggleZen: () => mode.handleToggleZenMode(),
 				toggleInlineWidgets: () => mode.handleToggleInlineWidgets(),
 				widgets: (args) => mode.handleWidgetsCommand(args),
-				clear: () => mode.handleClearCommand(),
 				reset: () => mode.handleResetCommand(),
 				resumeTrash: () => mode.showTrashSelector(),
 				error: (message) => mode.showError(message),
@@ -6302,6 +6301,11 @@ export class InteractiveMode {
 			if (text === "/logout") {
 				this.showOAuthSelector("logout");
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/new") {
+				this.editor.setText("");
+				await this.handleClearCommand();
 				return;
 			}
 			if (text === "/compact" || text.startsWith("/compact ")) {
@@ -11165,7 +11169,7 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * `/clear`: replace the active tab's session with a fresh file, keeping the tab, its workdir, its
+	 * `/new`: replace the active tab's session with a fresh file, keeping the tab, its workdir, its
 	 * model and its thinking level. Refused while a turn or a bash command runs.
 	 */
 	private async handleClearCommand(): Promise<void> {

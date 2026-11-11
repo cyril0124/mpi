@@ -18,7 +18,7 @@ function stubRuntime(name?: string): AgentSessionRuntime {
 }
 
 /**
- * A runtime whose session is swapped in place, the way `/clear` does it:
+ * A runtime whose session is swapped in place, the way `/new` does it:
  * the tab keeps the same runtime object and only `session` changes.
  */
 function replaceableRuntime(): {

@@ -343,7 +343,7 @@ export async function handleDeleteTabs(
 /**
  * Attach the host rebind and invalidate callbacks to a runtime, whether it is the
  * initial one or a tab created later. After a rebind the layout is published, so
- * the shared set follows a session that `/clear` or `/workdir` replaced.
+ * the shared set follows a session that `/new` or `/workdir` replaced.
  */
 export function bindRuntimeCallbacks(host: RuntimeCallbackHost, runtime: AgentSessionRuntime): void {
 	runtime.setBeforeSessionInvalidate(() => {

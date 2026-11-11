@@ -1,5 +1,5 @@
 /**
- * `/clear` side effects belong to the tab that ran the command. The session replacement awaits and
+ * `/new` side effects belong to the tab that ran the command. The session replacement awaits and
  * keys keep arriving, so a tab switch can land while it runs; the chip color reset, the discarded
  * follow-up rounds and the "New session started" line must stay on the tab that asked.
  */
@@ -113,7 +113,7 @@ function createContext(options: { switchDuringReplace: boolean }): {
 	return { context, requestingTab, otherTab, requestingState, otherState };
 }
 
-describe("/clear tab scope", () => {
+describe("/new tab scope", () => {
 	it("resets the chip color and drops the queues of the tab that ran it", async () => {
 		const { context, requestingTab, otherTab, requestingState, otherState } = createContext({
 			switchDuringReplace: true,

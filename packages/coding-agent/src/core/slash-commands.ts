@@ -43,7 +43,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "trust", description: "Save project trust decision for future sessions" },
 	{ name: "login", description: "Configure provider authentication", argumentHint: "<provider>" },
 	{ name: "logout", description: "Remove provider authentication" },
-	{ name: "clear", description: "Replace the session with a fresh one (resets the tab title)" },
+	{ name: "new", description: "Start a new session" },
 	{ name: "reset", description: "Reset the session branch to its root (history stays in the tree; keeps the title)" },
 	{ name: "new-session", description: "Open a new agent tab", argumentHint: "[title]" },
 	{ name: "workdir", description: "Change the active tab's working directory", argumentHint: "[path]" },

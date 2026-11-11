@@ -54,7 +54,6 @@ export interface ForkCommandHost {
 		toggleZen(): void;
 		toggleInlineWidgets(): void;
 		widgets(args: string): void;
-		clear(): Promise<void>;
 		reset(): Promise<void>;
 		resumeTrash(): void;
 		error(message: string): void;
@@ -278,11 +277,6 @@ export class ForkCommands {
 			this.consumeCommandText();
 			this.host.actions.widgets(args);
 			return true;
-		}
-		// Explicit upstream /clear override: replace only the active tab session.
-		if (text === "/clear") {
-			this.consumeCommandText();
-			return handled(this.host.actions.clear());
 		}
 		if (text === "/reset") {
 			this.consumeCommandText();

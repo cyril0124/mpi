@@ -13,6 +13,13 @@ point `## [Unreleased]` at the new tag.
 
 ### Changed
 
+- `/clear` is renamed to `/new`, the upstream name; the drift table records only the behavior that
+  still differs. That behavior is unchanged: `/new` refuses while a turn or a bash command runs
+  instead of aborting the turn, starts the replacement from the outgoing header's `parentSession`,
+  and drops the tab's chip color with the session. The name differs from mixcode-pi's `/clear`.
+  `/new` dispatches through the upstream block in `interactive-mode.ts` rather than the fork's command
+  router, so a merge never deletes that block. See [Tabs](docs/tabs.md#commands).
+
 ### Fixed
 
 ### Removed

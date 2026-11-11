@@ -22,7 +22,7 @@
 | `/fork` 消息选择 | 替换当前会话 | 在原标签页后创建独立标签页，标题追加 `-fork` 并自动去重，输入框填入所选消息 | 原对话与新分支可以并排保留 |
 | `/resume` | 用选中的会话替换当前会话 | 选中的会话在自己的标签页里打开；已在某标签页打开的会话则聚焦那个标签页 | 焦点标签页的对话与恢复出来的会话并存，且两个 runtime 不能同时往一个会话文件追加 |
 | `/resume` 的扩展否决 | `session_before_switch` 以 `resume` 原因触发，扩展可以取消这次替换 | 选中的会话挂载成新标签页，没有 runtime 替换自己的会话，因此该否决不会触发；新标签页的 `session_start` 原因为 `resume` | `/clone` 与为对端打开的标签页出于同样原因不触发该否决 |
-| `/clear` | `/new` 用新文件替换当前会话，正在进行的回合会被中断 | 命令改为 `/clear`：回合或 bash 运行中拒绝执行，新会话沿用旧 header 的 parent，标签页底色随会话一起丢掉 | 跟随 mixcode-pi 的 `/clear`：忙碌时拒绝执行，不再中断回合；底色按 session id 存，新会话本就没有 |
+| `/new` | 用新文件替换当前会话，正在进行的回合会被中断 | 回合或 bash 运行中拒绝执行，新会话沿用旧 header 的 parent，标签页底色随会话一起丢掉 | 替换会话不该打断正在跑的回合；新旧两个会话互为兄弟；底色按 session id 存，新会话本就没有 |
 | `/reset` | 无此命令；回到一段对话的根节点只能在 `/tree` 里手动导航 | `/reset` 在同一文件里把叶子退回会话根，保留标签页、标题与全部条目，旧分支仍在 `/tree` 可达 | 回到根节点不该先打开树选择器，而被放弃的分支值得留下 |
 | `/editor` | 无此命令；草稿只能通过 `app.editor.external` 按键交给外部编辑器 | `/editor` 从斜杠输入与命令面板打开同一个编辑器，并保留它写入的内容（清空成空草稿也算） | 编辑器槽位里是面板的命令文本时，草稿也需要能编辑 |
 | 会话删除 | 直接删除所选会话文件 | 所属标签页有对话或 `!` 命令进行中时拒绝 | 可能还有另一个标签页在写该文件 |
@@ -94,10 +94,6 @@
 
 | 页面 | 原文 | 实际 |
 | --- | --- | --- |
-| `packages/coding-agent/docs/slash-commands.md:23` | `/new` 那一行写作 "Start a new session" | 命令是 `/clear` |
-| `packages/coding-agent/docs/usage.md:59` | "`/new` starts a new session." | 命令是 `/clear` |
-| `packages/coding-agent/docs/sessions.md:14` | "`/new` starts a new session" | 命令是 `/clear` |
-| `packages/coding-agent/docs/keybindings.md:136` | `app.session.new` 的场景写作 "Start a new session (`/new`)" | 该动作清空会话；命令是 `/clear` |
 | `packages/coding-agent/docs/session-format.md:20` | "When available, pi uses the `trash` CLI to avoid permanent deletion" | `/delete-session` 与选择器把文件移入 `<agentDir>/mixcode-pi/trash/`；系统 `trash` CLI 只在移动失败时使用 |
 | `packages/coding-agent/docs/usage.md:92` | `/debug` 把输出写入 `pi-debug.log` | 文件名是 `mpi-debug.log`，因为调试日志名跟随 `APP_NAME` |
 | `packages/coding-agent/docs/cli-integration.md:95` | `piConfig.name` 会影响 "the CLI banner, configuration paths, and derived environment variable names" | 本 fork 把环境变量名固定为 `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR`，因此 `piConfig.name` 不再改变它们 |
