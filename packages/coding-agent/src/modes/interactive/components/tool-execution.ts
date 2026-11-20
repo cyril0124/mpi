@@ -70,7 +70,7 @@ export class ToolExecutionComponent extends Container {
 	};
 	private hideComponent = false;
 	/** Last rendered card, reused while the width, the content and the theme are unchanged. */
-	private renderedLines: string[] | undefined;
+	private renderedLines: readonly string[] | undefined;
 	private renderedWidth = -1;
 	private renderedTheme: Theme | undefined;
 	private renderedLanguageCount = -1;
@@ -253,7 +253,7 @@ export class ToolExecutionComponent extends Container {
 		this.renderedLines = undefined;
 	}
 
-	override render(width: number): string[] {
+	override render(width: number): readonly string[] {
 		const currentTheme = getGlobalTheme();
 		const languageCount = getHighlightLanguageCount();
 		if (
@@ -280,7 +280,7 @@ export class ToolExecutionComponent extends Container {
 	 * One card, from scratch, without the pointer cue. The result is memoized by
 	 * {@link render}, which paints the cue over it, so the memo never depends on hover.
 	 */
-	private renderCard(width: number): string[] {
+	private renderCard(width: number): readonly string[] {
 		if (this.hideComponent) {
 			return [];
 		}
@@ -295,7 +295,8 @@ export class ToolExecutionComponent extends Container {
 			const lines: string[] = [];
 			if (contentLines.length > 0) {
 				lines.push("");
-				lines.push(...contentLines);
+				// Append in a loop: spreading hundreds of thousands of wrapped lines exceeds V8's argument limit.
+				for (const line of contentLines) lines.push(line);
 			}
 			for (let i = 0; i < this.imageComponents.length; i++) {
 				const spacer = this.imageSpacers[i];

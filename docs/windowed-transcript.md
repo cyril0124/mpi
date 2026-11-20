@@ -39,9 +39,10 @@ renders only the rows near the viewport. Long conversations scroll at a bounded 
    collects again until the settled row holds still. A repaint or a viewport-height change then leaves
    the view where it is, instead of sliding it by the height a measured block gained. A caller that asks
    for another offset (search, a prompt jump, vim's message jumps) keeps the offset it asked for.
-9. Search, prompt jumps (`ctrl+shift+up/down`) and clipboard selections ask for exact rows on demand,
-   and materialize the document once. The open search overlay keeps its materialized lines until the
-   transcript's measured height changes, so an idle frame stays O(window). Vim's user-message jumps
+9. Clipboard selection reads the selected rows. Search and prompt jumps (`ctrl+shift+up/down`) read
+   the whole transcript on demand. An open search refreshes its snapshot on a content redraw,
+   including edits that preserve the line count. Scrolling, dragging a selection and moving the search
+   cursor reuse the snapshot. Vim's user-message jumps
    read the matched blocks and their exact rows through `matchingBlocks`, since the preview panel
    lists every match; one jump measures the whole document once.
 10. A surface swap keeps the row the reader was on. Each tab remembers the block at its viewport top,

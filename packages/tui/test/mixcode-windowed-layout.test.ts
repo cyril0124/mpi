@@ -280,7 +280,41 @@ describe("windowed transcript and prompt jumps", () => {
 });
 
 describe("windowed transcript and the search overlay", () => {
-	it("materializes once while the search overlay stays open", async () => {
+	it("finds a new match outside the window after a same-length line replacement", async () => {
+		const rows = Array.from({ length: 400 }, (_, index) => `row-${index} filler`);
+		rows[385] = "row-385 needle";
+		const content = new WindowedRows(0, { rows });
+		const transcript = new ScrollView(content, { follow: "end", primary: true });
+		const terminal = new VirtualTerminal(60, 8);
+		const tui = new TuiAltScreen(terminal);
+		tui.setLayoutRoot(transcript);
+		tui.start();
+		try {
+			await terminal.waitForRender();
+			terminal.sendInput("\x1b[102;6u");
+			terminal.sendInput("needle");
+			await terminal.waitForRender();
+			assert.ok(terminal.getViewport().some((line) => line.includes("1/1")));
+			assert.ok(content.requested.at(-1)!.start > 100, "the replacement is outside the rendered window");
+
+			rows[100] = "row-100 needle";
+			tui.requestRender();
+			await terminal.waitForRender();
+			assert.ok(
+				terminal.getViewport().some((line) => line.includes("2/2")),
+				"refresh finds the offscreen match",
+			);
+
+			terminal.sendInput("\x1b[103;6u");
+			await terminal.waitForRender();
+			assert.ok(terminal.getViewport().some((line) => line.includes("1/2")));
+			assert.ok(terminal.getViewport().some((line) => line.includes("row-100 needle")));
+		} finally {
+			tui.stop();
+		}
+	});
+
+	it("reuses the materialized transcript during scroll, selection, and search overlay input", async () => {
 		const content = new WindowedRows(400);
 		const transcript = new ScrollView(content, { follow: "end", primary: true });
 		const editor = {
@@ -290,7 +324,10 @@ describe("windowed transcript and the search overlay", () => {
 			handleInput: () => {},
 		};
 		const terminal = new VirtualTerminal(60, 8);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			copyOnSelect: false,
+			searchNavigationButtonStyle: (text, hovered) => (hovered ? `\x1b[45m${text}\x1b[49m` : text),
+		});
 		tui.setLayoutRoot(
 			new VStack([
 				{ component: transcript, basis: 0, grow: 1, minSize: 1 },
@@ -299,20 +336,44 @@ describe("windowed transcript and the search overlay", () => {
 		);
 		tui.setFocus(editor);
 		tui.start();
-		await terminal.waitForRender();
-		assert.strictEqual(content.materializeCalls, 0, "a plain frame never materializes");
-
-		terminal.sendInput("\x1b[102;6u");
-		terminal.sendInput("row");
-		await terminal.waitForRender();
-		const afterQuery = content.materializeCalls;
-		assert.ok(afterQuery >= 1, "the opened search materializes the document");
-
-		for (let frame = 0; frame < 3; frame += 1) {
-			tui.requestRender();
+		try {
 			await terminal.waitForRender();
+			assert.strictEqual(content.materializeCalls, 0, "a plain frame never materializes");
+
+			terminal.sendInput("\x1b[102;6u");
+			terminal.sendInput("row");
+			await terminal.waitForRender();
+			const afterQuery = content.materializeCalls;
+			assert.ok(afterQuery >= 1, "the opened search materializes the document");
+
+			const beforeScroll = transcript.scrollTop;
+			terminal.sendInput("\x1b[<64;1;4M");
+			await terminal.waitForRender();
+			assert.ok(transcript.scrollTop < beforeScroll);
+
+			const beforeCursor = terminal.getCursorPosition();
+			terminal.sendInput("\x1b[D");
+			await terminal.waitForRender();
+			assert.strictEqual(terminal.getCursorPosition().x, beforeCursor.x - 1);
+
+			const viewport = terminal.getViewport();
+			const arrowRow = viewport.findIndex((line) => line.includes("↓ Enter"));
+			const arrowColumn = viewport[arrowRow]?.indexOf("↓ Enter") ?? -1;
+			assert.ok(arrowRow >= 0 && arrowColumn >= 0);
+			terminal.sendInput(`\x1b[<35;${arrowColumn + 1};${arrowRow + 1}M`);
+			await terminal.waitForRender();
+			assert.ok(tui.getScreenLines()[arrowRow]?.includes("\x1b[45m↓ Enter\x1b[49m"));
+
+			terminal.sendInput("\x1b[<0;1;5M");
+			await terminal.waitForRender();
+			terminal.sendInput("\x1b[<32;5;5M");
+			await terminal.waitForRender();
+			terminal.sendInput("\x1b[<0;5;5m");
+			await terminal.waitForRender();
+			assert.ok(tui.hasActiveSelection());
+			assert.strictEqual(content.materializeCalls, afterQuery, "viewport and search UI changes reuse the snapshot");
+		} finally {
+			tui.stop();
 		}
-		assert.strictEqual(content.materializeCalls, afterQuery, "unchanged content is reused, not re-rendered");
-		tui.stop();
 	});
 });

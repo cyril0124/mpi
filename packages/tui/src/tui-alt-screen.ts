@@ -167,9 +167,9 @@ interface ActiveSearch {
 	selectedKey?: string;
 	anchorRow: number;
 	selectionMode: SearchSelectionMode;
-	/** Transcript lines the index was built from. */
+	/** Snapshot of the windowed transcript. */
 	lines?: string[];
-	/** Line count the cached transcript lines were materialized from. */
+	/** Estimated line count when the windowed snapshot was taken. */
 	lineCount?: number;
 }
 
@@ -402,12 +402,16 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.requestRender();
 	}
 
-	override render(width: number): string[] {
+	override render(width: number): readonly string[] {
 		return this.layoutRoot?.render(width) ?? super.render(width);
 	}
 
 	protected override getMountedRoots(): readonly Component[] {
 		return this.layoutRoot ? [this.layoutRoot] : this.children;
+	}
+
+	protected override focusedInputChangesContent(component: Component): boolean {
+		return component !== this.activeSearch?.component;
 	}
 
 	private getPrimaryScrollView(): ScrollView {
@@ -581,19 +585,19 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	/** Scroll the primary transcript by the given number of lines. */
 	scrollBy(lines: number): void {
 		this.getPrimaryScrollView().scrollBy(lines);
-		this.requestRender();
+		this.requestViewRender();
 	}
 
 	/** Scroll the primary transcript to its start. */
 	scrollToTop(): void {
 		this.getPrimaryScrollView().scrollToStart();
-		this.requestRender();
+		this.requestViewRender();
 	}
 
 	/** Scroll the primary transcript to its end. */
 	scrollToBottom(): void {
 		this.getPrimaryScrollView().scrollToEnd();
-		this.requestRender();
+		this.requestViewRender();
 	}
 
 	/** Jump to the next or previous OSC 133 prompt start; returns whether one was found. */
@@ -609,7 +613,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		for (let row = from + direction; row >= 0 && row < lines.length; row += direction) {
 			if (!OSC133_PROMPT_START.test(lines[row] ?? "")) continue;
 			scrollView.scrollTo(row);
-			this.requestRender();
+			this.requestViewRender();
 			return true;
 		}
 		return false;
@@ -658,14 +662,14 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		search.query = query;
 		search.selectionMode = "query";
 		search.component.setResult(-1, 0);
-		this.requestRender();
+		this.requestViewRender();
 	}
 
 	private navigateSearch(direction: -1 | 1): void {
 		const search = this.activeSearch;
 		if (!search?.query) return;
 		search.selectionMode = direction < 0 ? "previous" : "next";
-		this.requestRender();
+		this.requestViewRender();
 	}
 
 	private getSearchNavigationDirectionAt(x: number, y: number): -1 | 1 | undefined {
@@ -682,7 +686,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const search = this.activeSearch;
 		if (!search) return false;
 		const direction = this.getSearchNavigationDirectionAt(event.x, event.y);
-		if (search.component.setHoveredNavigationDirection(direction)) this.requestRender();
+		if (search.component.setHoveredNavigationDirection(direction)) this.requestViewRender();
 		if (direction === undefined || event.release || (event.button & 32) !== 0 || (event.button & 3) !== 0) {
 			return false;
 		}
@@ -690,7 +694,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		return true;
 	}
 
-	private refreshSearch(layout: LayoutFrame): boolean {
+	private refreshSearch(layout: LayoutFrame, contentChanged: boolean): boolean {
 		const search = this.activeSearch;
 		if (!search) return false;
 		const scrollView = layout.primaryScrollView ?? this.implicitScrollView;
@@ -707,14 +711,21 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			return false;
 		}
 
-		// Materializing walks the whole document, and this runs on every frame while the
-		// search overlay is open, so the lines are kept until the line count moves.
 		const lineCount = provider.lineCount();
-		if (search.lines === undefined || search.lineCount !== lineCount) {
-			search.lines = materializeScrollLines(layout, scrollView) ?? [];
-			search.lineCount = lineCount;
+		let lines: readonly string[];
+		if (provider.materialize) {
+			// A content render can replace rows without changing their count. View-only
+			// renders can reuse the snapshot and skip searching if the query is unchanged.
+			if (contentChanged || search.lines === undefined || search.lineCount !== lineCount) {
+				search.lines = provider.materialize();
+				search.lineCount = provider.lineCount();
+			} else if (search.selectionMode === "retain") {
+				return false;
+			}
+			lines = search.lines;
+		} else {
+			lines = provider.getLines(0, lineCount);
 		}
-		const lines = search.lines;
 
 		const shouldRevealSelection = search.selectionMode !== "retain";
 		const result = search.index.search(lines, search.query);
@@ -795,7 +806,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			this.selectionPressActive = false;
 			this.stopSelectionAutoScroll();
 			this.stopScrollbarHover();
-			if (this.activeSearch?.component.setHoveredNavigationDirection(undefined)) this.requestRender();
+			if (this.activeSearch?.component.setHoveredNavigationDirection(undefined)) this.requestViewRender();
 			this.stopScrollbarDrag();
 			this.pressedUrl = undefined;
 			this.releaseSelectionScrollPin(this.selectionDragged ? "keep" : "resume-silently");
@@ -808,7 +819,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 				this.selectionGranularity = "character";
 				this.selectionInitialRange = undefined;
 				this.selectionSurface = undefined;
-				if (hadNonEmptyActiveSelection) this.requestRender();
+				if (hadNonEmptyActiveSelection) this.requestViewRender();
 			}
 			this.lastClick = undefined;
 			this.lastMousePosition = undefined;
@@ -1262,7 +1273,9 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		const primary = this.getPrimaryScrollView();
 		if (remaining !== 0 && !seen.has(primary)) primary.scrollBy(remaining);
 		this.updateScrollbarHover(event.x, event.y);
-		this.requestRender();
+		// Scrolling moves the viewport only. Reusing the previous component output keeps a wheel
+		// frame O(viewport); re-rendering a long transcript on every wheel event saturated a core.
+		this.requestViewRender();
 	}
 
 	private parseSgrMouseEvent(data: string): SgrMouseEvent | undefined {
@@ -1598,7 +1611,8 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		}
 		const point = this.getScrollSelectionPoint(scrollView, pointer.x, pointer.y);
 		if (point) this.updateSelectionFocus(point);
-		this.requestRender();
+		// Selection is painted onto the screen after layout, so it needs no new component output.
+		this.requestViewRender();
 	}
 
 	private stopSelectionAutoScroll(): void {
@@ -1664,7 +1678,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 				// the drag. A release that copies nothing keeps it for the copy command.
 				if (this.selection?.clearOnRelease) this.clearTextSelection();
 			}
-			this.requestRender();
+			this.requestViewRender();
 			return;
 		}
 		if ((event.button & 32) !== 0) {
@@ -1674,7 +1688,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			this.pressedUrl = undefined;
 			this.updateSelectionFocus(point);
 			this.updateSelectionAutoScroll(event);
-			this.requestRender();
+			this.requestViewRender();
 			return;
 		}
 		this.stopSelectionAutoScroll();
@@ -1706,7 +1720,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 					this.previousScreen[Math.max(0, Math.min(this.terminal.rows - 1, event.y))] ?? "",
 					Math.max(0, Math.min(this.terminal.columns - 1, event.x)),
 				);
-		this.requestRender();
+		this.requestViewRender();
 	}
 
 	private getSelectionBounds(): { start: SelectionPoint; end: SelectionPoint } | undefined {
@@ -2041,9 +2055,12 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			this.scrollToEndIndicatorHover = false;
 		}
 		const root = this.layoutRoot ?? this.implicitScrollView;
-		let nextLayout = renderLayoutFrame(root, width, height, () => this.requestRender());
-		if (this.refreshSearch(nextLayout)) {
-			nextLayout = renderLayoutFrame(root, width, height, () => this.requestRender());
+		const requestViewRender = () => this.requestViewRender();
+		const reusableOutput = this.contentChanged ? undefined : this.currentLayout?.renderCache;
+		this.contentChanged = false;
+		let nextLayout = renderLayoutFrame(root, width, height, requestViewRender, reusableOutput);
+		if (this.refreshSearch(nextLayout, reusableOutput === undefined)) {
+			nextLayout = renderLayoutFrame(root, width, height, requestViewRender, nextLayout.renderCache);
 		}
 		// Resolve fake cursors before highlighting and compositing, which only track SGR codes
 		let screen = this.resolveFakeCursors(nextLayout.lines.map((line) => line.replace(OSC133_ZONE_PREFIX, "")));
@@ -2089,11 +2106,13 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		let buffer = BEGIN_SYNCHRONIZED_OUTPUT;
 		if (fullRedraw) {
 			this.fullRedrawCount += 1;
-			const clearImages =
-				this.imageProtocol === "kitty" && hadUploadedKittyImages
-					? deleteAllKittyPlacements()
-					: this.deleteKittyImages();
-			buffer += `${clearImages}\x1b[2J`;
+			if (this.imageProtocol === "kitty" && hadUploadedKittyImages) {
+				// Kitty frees image data without placements on ED 2, which would break placement-only reuse.
+				// Every row is cleared with EL 2 below, so keep the uploads and skip the screen clear.
+				buffer += deleteAllKittyPlacements();
+			} else {
+				buffer += `${this.deleteKittyImages()}\x1b[2J`;
+			}
 		} else if (imagesNeedRedraw) {
 			if (this.imageProtocol === "iterm2") buffer += "\x1b[2J";
 			else if (this.imageProtocol === "kitty") buffer += deleteAllKittyPlacements();

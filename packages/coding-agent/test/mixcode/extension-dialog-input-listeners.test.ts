@@ -101,7 +101,7 @@ describe("extension terminal-input listeners across tabs", () => {
 
 	test("a listener registered on Home receives keys after returning to the mounted tab", async () => {
 		const { host, terminal } = createHost("tab-a");
-		const tab = { id: "tab-a", draftInput: "" };
+		const tab = { id: "tab-a", draftInput: "", runtime: { session: {} } };
 		const received: string[] = [];
 		Object.assign(host, {
 			homeSelection: { active: true },

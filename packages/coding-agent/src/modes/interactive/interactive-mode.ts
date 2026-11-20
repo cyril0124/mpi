@@ -254,6 +254,7 @@ import { addMcpServerConfig } from "../../extensions/mcp/config.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
 import { copyToClipboard, readClipboardFilePaths, readClipboardText } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
+import { flushStdout } from "../../utils/flush-stdout.ts";
 import { parseGitUrl } from "../../utils/git.ts";
 import { ensurePngTranscoder } from "../../utils/image-convert.ts";
 import { getCwdRelativePath, resolvePath, shortenHomePath } from "../../utils/paths.ts";
@@ -795,6 +796,56 @@ interface ExtensionChangelogUpdate {
 	name: string;
 	version: string;
 	markdown: string;
+}
+
+interface ReasoningDropDiagnostic {
+	provider: string;
+	/** Transformation `type` of a withheld block. */
+	droppedType: string;
+	/** Singular and plural name of a withheld block. */
+	noun: [string, string];
+}
+
+/** Assistant diagnostics that list reasoning a provider withheld from the model, by diagnostic type. */
+const REASONING_DROP_DIAGNOSTICS = new Map<string, ReasoningDropDiagnostic>([
+	[
+		"anthropic_input_transformations",
+		{ provider: "Anthropic", droppedType: "thinking_dropped", noun: ["thinking block", "thinking blocks"] },
+	],
+	[
+		"openai_input_transformations",
+		{ provider: "OpenAI", droppedType: "reasoning", noun: ["reasoning item", "reasoning items"] },
+	],
+]);
+
+interface DroppedReasoning {
+	diagnostic: ReasoningDropDiagnostic;
+	count: number;
+	reasons: string[];
+}
+
+/** Count the reasoning blocks a provider reported as withheld from the request that produced `message`. */
+function getDroppedReasoning(message: AssistantMessage): DroppedReasoning | undefined {
+	for (const diagnostic of message.diagnostics ?? []) {
+		const kind = REASONING_DROP_DIAGNOSTICS.get(diagnostic.type);
+		if (!kind) continue;
+		// Session data: diagnostics details are untyped JSON.
+		const transformations = diagnostic.details?.transformations;
+		if (!Array.isArray(transformations)) continue;
+		const dropped = transformations.filter(
+			(transformation): transformation is Record<string, unknown> =>
+				typeof transformation === "object" &&
+				transformation !== null &&
+				(transformation as Record<string, unknown>).type === kind.droppedType,
+		);
+		if (dropped.length === 0) continue;
+		const reasons = new Set<string>();
+		for (const transformation of dropped) {
+			if (typeof transformation.reason === "string") reasons.add(transformation.reason);
+		}
+		return { diagnostic: kind, count: dropped.length, reasons: [...reasons] };
+	}
+	return undefined;
 }
 
 export class InteractiveMode {
@@ -1833,6 +1884,7 @@ export class InteractiveMode {
 		});
 		nextUi.setClearOnShrink(clearOnShrink);
 		nextUi.onDebug = onDebug;
+		nextUi.setSuspendSignalHandler(() => this.handleCtrlZ());
 		if (nextUi instanceof TuiMainScreen && this.mainScreenRenderState) {
 			nextUi.restoreRenderState(this.mainScreenRenderState);
 		}
@@ -1939,6 +1991,8 @@ export class InteractiveMode {
 		this.defaultEditor.onSubmit = (text) => this.handleStartupSubmit(text);
 		this.ui.setFocus(this.editor);
 
+		// An external SIGTSTP (kill -TSTP) restores the terminal like Ctrl+Z (#12272).
+		this.ui.setSuspendSignalHandler(() => this.handleCtrlZ());
 		// Start the UI before initializing extensions so session_start handlers can use interactive dialogs
 		this.ui.start();
 		// The TUI can paint console lines from here on: anything an extension logged while
@@ -2182,15 +2236,7 @@ export class InteractiveMode {
 			initialMessages,
 		} = this.options;
 
-		for (const diagnostic of startupDiagnostics ?? []) {
-			if (diagnostic.type === "error") {
-				this.showError(diagnostic.message);
-			} else if (diagnostic.type === "warning") {
-				this.showWarning(diagnostic.message);
-			} else {
-				this.showStatus(diagnostic.message);
-			}
-		}
+		this.showRuntimeDiagnostics(startupDiagnostics ?? []);
 
 		if (migratedProviders && migratedProviders.length > 0) {
 			this.showWarning(`Migrated credentials to auth.json: ${migratedProviders.join(", ")}`);
@@ -3160,7 +3206,9 @@ export class InteractiveMode {
 				}
 			},
 			onError: (error) => {
-				this.showExtensionError(error.extensionPath, error.error, error.stack);
+				InteractiveMode.handoverFor(this).showWhenMounted(session, () =>
+					this.showExtensionError(error.extensionPath, error.error, error.stack),
+				);
 			},
 		});
 		if (backgroundTabId) return;
@@ -3251,6 +3299,21 @@ export class InteractiveMode {
 		}
 	}
 
+	private showRuntimeDiagnostics(diagnostics: readonly AgentSessionRuntimeDiagnostic[]): void {
+		for (const diagnostic of diagnostics) {
+			if (diagnostic.type === "error") {
+				this.showError(diagnostic.message);
+			} else if (diagnostic.type === "warning") {
+				this.showWarning(diagnostic.message);
+			} else {
+				// Diagnostics are separate transcript rows, including consecutive informational entries.
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(new ThemedText(() => theme.fg("dim", diagnostic.message), 1, 0));
+				this.ui.requestRender();
+			}
+		}
+	}
+
 	private async rebindCurrentSession(options: { renderBeforeBind?: boolean } = {}): Promise<void> {
 		const session = this.session;
 
@@ -3265,15 +3328,16 @@ export class InteractiveMode {
 		}
 
 		await this.bindCurrentSessionExtensions();
-		const boundSession = this.session;
-		if (boundSession) InteractiveMode.handoverFor(this).markSessionBound(boundSession);
-		if (this.activeTabIdForUi) this.tabUi.delete(this.activeTabIdForUi);
+		if (session) InteractiveMode.handoverFor(this).markSessionBound(session);
 
 		if (this.session !== session) {
 			return;
 		}
+		if (this.activeTabIdForUi) this.tabUi.delete(this.activeTabIdForUi);
 
-		if (!options.renderBeforeBind) {
+		if (options.renderBeforeBind) {
+			this.showRuntimeDiagnostics(this.runtimeHost.takeUnreportedDiagnostics());
+		} else {
 			this.subscribeToAgent();
 		}
 
@@ -3283,27 +3347,16 @@ export class InteractiveMode {
 	}
 
 	private bindRuntimeCallbacks(runtime: AgentSessionRuntime): void {
-		bindRuntimeCallbacksImpl(
-			// The reset resolves its tab when it runs, by which time the tab is registered.
-			this.runtimeCallbackHost(() => {
-				const tabId = this.tabIdForRuntime(runtime);
-				// A runtime the manager no longer holds is the tab being closed: the close path
-				// drops that tab's own UI, and the reset must not fall back to the "every tab"
-				// branch, which disposes the dialogs the other tabs still wait on.
-				if (tabId === undefined && this.tabManager) return;
-				this.resetExtensionUI(tabId);
-			}),
-			runtime,
-		);
+		// The reset resolves its tab when it runs, by which time the tab is registered.
+		bindRuntimeCallbacksImpl(this.runtimeCallbackHost(runtime), runtime);
 	}
 
 	/**
 	 * Host callbacks shared by every runtime.
 	 *
-	 * `onResetExtensionUI` lets a runtime pin the reset to the tab it belongs to; without
-	 * it a session replacement drops every tab's pending dialogs.
+	 * A replacement rebinds only its own runtime, even after focus has moved.
 	 */
-	private runtimeCallbackHost(onResetExtensionUI?: () => void): RuntimeCallbackHost {
+	private runtimeCallbackHost(runtime: AgentSessionRuntime): RuntimeCallbackHost {
 		// Read the manager through a getter: the initial runtime is bound while the
 		// TabManager constructor is still running, before `this.tabManager` exists.
 		const host = this;
@@ -3311,10 +3364,25 @@ export class InteractiveMode {
 			get tabManager() {
 				return host.tabManager;
 			},
-			rebindCurrentSession: async (opts) => this.rebindCurrentSession(opts),
-			applyThemeFromSettings: async () => this.themeController.applyFromSettings(),
+			rebindRuntime: async () => {
+				if (runtime === this.runtimeHost) {
+					const session = runtime.session;
+					await this.rebindCurrentSession({ renderBeforeBind: true });
+					if (this.session === session && !this.homeSelection.active) {
+						await this.themeController.applyFromSettings();
+					}
+					return;
+				}
+				const tabId = this.tabIdForRuntime(runtime);
+				const tab = tabId === undefined ? undefined : this.tabManager?.get(tabId);
+				if (tab) await this.bindTabExtensions(tab);
+			},
 			persistOpenTabs: () => this.persistOpenTabs(),
-			resetExtensionUI: onResetExtensionUI ?? (() => this.resetExtensionUI()),
+			resetExtensionUI: () => {
+				const tabId = this.tabIdForRuntime(runtime);
+				// A runtime being closed has already lost its tab; its reset must leave the other tabs alone.
+				if (tabId !== undefined || !this.tabManager) this.resetExtensionUI(tabId);
+			},
 		};
 	}
 
@@ -3584,7 +3652,10 @@ export class InteractiveMode {
 			// render path that seeds the composer history does not run; seed it here.
 			this.syncEditorHistory();
 			// Home's surface left the scroll view at its start, so the tab resumes its own row.
-			if (leavingHome) InteractiveMode.handoverFor(this).restoreScroll(tab.id);
+			if (leavingHome) {
+				InteractiveMode.handoverFor(this).restoreScroll(tab.id);
+				InteractiveMode.handoverFor(this).showPendingNotices(tab.runtime.session);
+			}
 			// Its surfaces are back on screen, so a dialog parked for it returns too.
 			this.focusTabInteractions(tab.id);
 			this.ui.requestRender();
@@ -4172,8 +4243,12 @@ export class InteractiveMode {
 	}
 
 	/** Swap the mounted session through the handover's serialized surface lifecycle. */
-	private switchActiveTab(tab: AgentTab, homeBehind = false): Promise<void> {
-		return InteractiveMode.handoverFor(this).switchActiveTab(tab, homeBehind);
+	private async switchActiveTab(tab: AgentTab, homeBehind = false): Promise<void> {
+		await InteractiveMode.handoverFor(this).switchActiveTab(tab, homeBehind);
+		if (this.runtimeHost === tab.runtime) {
+			InteractiveMode.handoverFor(this).showPendingNotices(tab.runtime.session);
+			this.showRuntimeDiagnostics(tab.runtime.takeUnreportedDiagnostics());
+		}
 	}
 
 	/** Prepare a restored tab's transcript while Home owns the rendered surface. */
@@ -4802,6 +4877,7 @@ export class InteractiveMode {
 		}
 		stopThemeWatcher();
 		this.stop("transcript");
+		await flushStdout();
 		process.exit(1);
 	}
 
@@ -7179,46 +7255,32 @@ export class InteractiveMode {
 		);
 	}
 
-	private static countDroppedThinkingBlocks(message: AssistantMessage): number {
-		let count = 0;
-		for (const diagnostic of message.diagnostics ?? []) {
-			if (diagnostic.type !== "anthropic_input_transformations") continue;
-			const transformations = diagnostic.details?.transformations;
-			if (!Array.isArray(transformations)) continue;
-			count += transformations.filter(
-				(transformation) =>
-					typeof transformation === "object" &&
-					transformation !== null &&
-					(transformation as Record<string, unknown>).type === "thinking_dropped",
-			).length;
-		}
-		return count;
-	}
-
 	private maybeShowThinkingDropNotice(message: AssistantMessage): void {
 		if (!this.settingsManager.getShowCacheMissNotices()) return;
 
-		const droppedCount = InteractiveMode.countDroppedThinkingBlocks(message);
-		if (droppedCount === 0) return;
+		const dropped = getDroppedReasoning(message);
+		if (!dropped) return;
 
-		let previousDroppedCount = 0;
-		// message_end reaches the UI before the current message is persisted,
-		// so the branch's last assistant message is the previous response.
+		// Providers report a withheld block again on every later request that replays it, so only
+		// a count above the previous response's means new losses. message_end reaches the UI before
+		// the current message is persisted, so the branch's last assistant message is the previous response.
 		const branch = this.sessionManager.getBranch();
 		for (let i = branch.length - 1; i >= 0; i--) {
 			const entry = branch[i];
 			if (entry.type === "message" && entry.message.role === "assistant") {
-				previousDroppedCount = InteractiveMode.countDroppedThinkingBlocks(entry.message);
+				const previous = getDroppedReasoning(entry.message);
+				if (previous?.diagnostic === dropped.diagnostic && dropped.count <= previous.count) return;
 				break;
 			}
 		}
-		if (droppedCount <= previousDroppedCount) return;
 
-		const noun = droppedCount === 1 ? "thinking block" : "thinking blocks";
+		const { provider, noun: nouns } = dropped.diagnostic;
+		const noun = nouns[dropped.count === 1 ? 0 : 1];
+		const reasons = dropped.reasons.length > 0 ? `: ${dropped.reasons.join(", ")}` : "";
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(
 			new ThemedText(
-				() => theme.fg("warning", `Anthropic dropped ${droppedCount} ${noun} (details in session)`),
+				() => theme.fg("warning", `${provider} dropped ${dropped.count} ${noun}${reasons} (details in session)`),
 				1,
 				0,
 			),
@@ -7402,6 +7464,7 @@ export class InteractiveMode {
 			this.themeController.disableAutoSync();
 			await this.ui.terminal.drainInput(1000);
 			this.stop();
+			await flushStdout();
 			process.exit(0);
 		}
 
@@ -7420,6 +7483,7 @@ export class InteractiveMode {
 		this.sharedLayoutErrorShown.clear();
 		await this.tabs.dispose(this.runtimeHost);
 
+		await flushStdout();
 		process.exit(0);
 	}
 

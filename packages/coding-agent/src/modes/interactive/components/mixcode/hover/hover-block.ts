@@ -88,7 +88,7 @@ export class BlockHover implements Component {
 	}
 
 	/** Paint a block's freshly rendered card while the pointer is over it. */
-	paint(lines: string[], width: number): string[] {
+	paint(lines: readonly string[], width: number): readonly string[] {
 		if (!this.hovered) return lines;
 		return lines.map((line, row) => (row < this.cardFirstRow ? line : paintRowBackground(line, width)));
 	}

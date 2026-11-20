@@ -49,8 +49,7 @@ export interface TabLifecycleHost {
 
 export interface RuntimeCallbackHost {
 	readonly tabManager: TabManager | undefined;
-	rebindCurrentSession(options?: { renderBeforeBind?: boolean }): Promise<void>;
-	applyThemeFromSettings(): Promise<void>;
+	rebindRuntime(): Promise<void>;
 	persistOpenTabs(): void;
 	resetExtensionUI(): void;
 }
@@ -354,8 +353,7 @@ export function bindRuntimeCallbacks(host: RuntimeCallbackHost, runtime: AgentSe
 		// rebind() changes the tab manager's session reference; publish() afterward
 		// detects the session-ID change via the baseline and emits the correct delta.
 		host.tabManager?.rebind(runtime);
-		await host.rebindCurrentSession({ renderBeforeBind: true });
-		await host.applyThemeFromSettings();
+		await host.rebindRuntime();
 		host.persistOpenTabs();
 	});
 }

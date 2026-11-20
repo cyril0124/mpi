@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { SessionManager } from "../../../src/core/session-manager.ts";
 import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode.ts";
@@ -15,6 +16,9 @@ type ShutdownThis = {
 	isShuttingDown: boolean;
 	unregisterSignalHandlers: () => void;
 	runtimeHost: { dispose: () => Promise<void> };
+	tabs: { dispose: (runtime: ShutdownThis["runtimeHost"]) => Promise<void> };
+	persistExitLayout: () => void;
+	sharedLayoutErrorShown: Set<string>;
 	ui: { terminal: { drainInput: (ms: number) => Promise<void> } };
 	themeController: { disableAutoSync: () => void };
 	stop: () => void;
@@ -37,8 +41,8 @@ class ProcessExitError extends Error {
 
 function createSessionManager(): SessionManager {
 	return {
-		isPersisted: () => false,
-		getSessionFile: () => undefined,
+		isPersisted: () => true,
+		getSessionFile: () => fileURLToPath(new URL("../../fixtures/large-session.jsonl", import.meta.url)),
 		getSessionId: () => "test-session",
 		getSessionDir: () => "/tmp/pi-sessions",
 		usesDefaultSessionDir: () => true,
@@ -49,6 +53,9 @@ function createContext(order: string[]): ShutdownThis {
 	return {
 		isShuttingDown: false,
 		unregisterSignalHandlers: vi.fn(),
+		persistExitLayout: vi.fn(),
+		sharedLayoutErrorShown: new Set(),
+		tabs: { dispose: (runtime) => runtime.dispose() },
 		runtimeHost: {
 			dispose: vi.fn(async () => {
 				order.push("dispose");
@@ -107,6 +114,21 @@ describe("InteractiveMode.shutdown ordering (#5080)", () => {
 		expect(order).toEqual(["drainInput", "stop", "dispose"]);
 	});
 
+	test.each(["interactive", "signal"] as const)("%s shutdown omits the single-session resume hint", async (reason) => {
+		vi.spyOn(process, "exit").mockImplementation((() => {
+			throw new ProcessExitError();
+		}) as typeof process.exit);
+		const stdoutWrite = vi.spyOn(process.stdout, "write");
+		const tty = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+		Object.defineProperty(process.stdout, "isTTY", { configurable: true, value: true });
+		try {
+			await callShutdown(createContext([]), { fromSignal: reason === "signal" });
+			for (const [chunk] of stdoutWrite.mock.calls) expect(String(chunk)).not.toContain("To resume this session:");
+		} finally {
+			if (tty) Object.defineProperty(process.stdout, "isTTY", tty);
+			else Reflect.deleteProperty(process.stdout, "isTTY");
+		}
+	});
 	test("re-entrant shutdown is a no-op", async () => {
 		vi.spyOn(process, "exit").mockImplementation((() => {
 			throw new ProcessExitError();

@@ -1,4 +1,4 @@
-import { type Component, Text, type TuiAltScreen, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, Container, Text, type TuiAltScreen, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import { createChatViewport } from "../../src/modes/interactive/chat-viewport.ts";
@@ -69,9 +69,9 @@ async function bootPanel(options: {
 	if (options.above) above.set("todos", WidgetBody.lines(options.above));
 	if (options.below) below.set("fleet", WidgetBody.lines(options.below));
 
-	const chatBlocks: Component[] = [];
+	const document = new Container();
 	for (let index = 1; index <= (options.messages ?? 2); index += 1) {
-		chatBlocks.push(new Text(`message-${index}`, 0, 0));
+		document.addChild(new Text(`message-${index}`, 0, 0));
 	}
 
 	const terminal = new VirtualTerminal(columns, rows);
@@ -97,9 +97,6 @@ async function bootPanel(options: {
 		interactive: () => panelInteractive,
 		copySelection: (text) => panelCopies.push(text),
 	});
-
-	const blocks = [...chatBlocks];
-	const document = { render: (width: number) => blocks.flatMap((block) => block.render(width)) } as Component;
 
 	let viewport: ReturnType<typeof createChatViewport> | undefined;
 	Object.assign(context, {

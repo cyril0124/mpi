@@ -76,7 +76,7 @@ export class UserMessageComponent extends Container {
 	/** Which ends of the message the shell prompt zone markers belong to. */
 	private readonly marks: UserMessageZoneMarks;
 	/** Last rendered block, reused while the width and the content are unchanged. */
-	private renderedLines: string[] | undefined;
+	private renderedLines: readonly string[] | undefined;
 	private renderedWidth = -1;
 	private renderedTheme: Theme | undefined;
 	private renderedLanguageCount = -1;
@@ -168,7 +168,7 @@ export class UserMessageComponent extends Container {
 		);
 	}
 
-	override render(width: number): string[] {
+	override render(width: number): readonly string[] {
 		const currentTheme = getGlobalTheme();
 		const languageCount = getHighlightLanguageCount();
 		if (this.rebuildPending || this.renderedTheme !== currentTheme || this.renderedLanguageCount !== languageCount) {
@@ -177,19 +177,21 @@ export class UserMessageComponent extends Container {
 		if (this.renderedLines && this.renderedWidth === width) {
 			return this.renderedLines;
 		}
-		const lines = super.render(width);
-		if (lines.length === 0) {
-			return lines;
-		}
 
-		if (this.marks === "both" || this.marks === "start") lines[0] = OSC133_ZONE_START + lines[0];
-		if (this.marks === "both" || this.marks === "end") {
-			lines[lines.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + lines[lines.length - 1];
-		}
+		const lines = super.render(width);
 		this.renderedLines = lines;
+		if (lines.length > 0 && this.marks !== "none") {
+			// Container output is shared across frames. Only blocks that carry markers need a copy.
+			const zoned = [...lines];
+			if (this.marks === "both" || this.marks === "start") zoned[0] = OSC133_ZONE_START + zoned[0];
+			if (this.marks === "both" || this.marks === "end") {
+				zoned[zoned.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + zoned[zoned.length - 1];
+			}
+			this.renderedLines = zoned;
+		}
 		this.renderedWidth = width;
 		this.renderedTheme = currentTheme;
 		this.renderedLanguageCount = languageCount;
-		return lines;
+		return this.renderedLines;
 	}
 }

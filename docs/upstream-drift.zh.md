@@ -32,7 +32,7 @@
 | 运行中按 `Escape` | 第一次按下即中断运行 | 第一次按下只武装 1 秒确认窗口并提示 `<中断键> again: stop`，第二次按下才中断；本轮还没有可见输出时改为回撤：分支 leaf 回到本轮自己的用户消息之前，文本回到输入框 | 一次误按不应丢掉还没开始回答的提示，回撤出来的文本可以直接改完再发；见[按键绑定](keybindings.zh.md#escape) |
 | 退出 | `ctrl+d` 直接退出，不询问 | `ctrl+q`（Windows 与 WSL 为 `ctrl+shift+q`）先询问；`ctrl+d` 不变 | [命令面板与退出确认](command-palette.zh.md) |
 | 对话区 resize 锚点 | 改变宽度时保留数字滚动行，因此消息换行后读者可能跳到另一个对话块 | 全屏窗口化对话区在重新排版后重新锚定第一条可见消息及其块内进度 | 已经向上滚动的读者在调整终端大小时应继续阅读同一段对话 |
-| 全屏对话区渲染 | 每帧渲染全部消息组件再裁剪到视口 | 只渲染可见窗口（上下各 20 行余量），未测块按 4 行估算；行号对照首个可见块解析而不是数出来，不是滚动的帧在自己实测之后会把那个块留在原来的行，因此重绘与视口高度变化都不会滑动读者所在的行；`HStack` 不再为已有高度的拉伸子项测量其固有高度，因此侧边面板列不会把对话区整体渲染一遍 | 否则帧开销随整段对话增长，改变终端宽度时还会把每条消息重新排版，而在视口上方实测一个估算块会重排其下方的所有行 |
+| 全屏对话区渲染 | 首次布局渲染整段对话，只滚动视口时复用组件的渲染结果 | 只渲染可见窗口（上下各 20 行余量），未测块按 4 行估算；行号对照首个可见块解析而不是数出来，不是滚动的帧在自己实测之后会把那个块留在原来的行，因此重绘与视口高度变化都不会滑动读者所在的行；`HStack` 不再为已有高度的拉伸子项测量其固有高度，因此侧边面板列不会把对话区整体渲染一遍 | 否则帧开销随整段对话增长，改变终端宽度时还会把每条消息重新排版，而在视口上方实测一个估算块会重排其下方的所有行 |
 | 对话区滚动键 | 仅 `tui.altScreen.*` | 全屏模式下另有模态界面（`/vim`、`j`/`k`/`gg`/`G`、提问跳转），其 Vim 模式用 `app.vim.top`/`app.vim.bottom` 跳到对话区两端；平凡的 `home`/`end` 留给输入框，上游的 `ctrl+home`/`ctrl+end` 用于滚动对话区；vim 模式接管输入时，`pageUp`/`pageDown` 走 `app.vim.pageUp`/`pageDown` 的 10 行，而不是视口的整页 | 长对话免鼠标阅读 |
 | 提交后是否跟随末尾 | 新输出仅在视口已经在末尾时跟随末尾，滚上去后提交不会移动视口 | 用户消息会把全屏对话区滚到末尾并恢复跟随 | 刚发出的消息与下面的回答必须无需滚动即可看到；提交是用户自己的动作，而流式输出仍不能把视口从正在阅读的人手里抢走 |
 | 默认 TUI 模式 | `regular` | `fullscreen`；`settings.json` 里显式写 `tuiMode: "regular"` 仍会回到普通对话区 | 本 fork 的阅读功能（窗口化对话区、Vim、鼠标选中）只存在于备选屏幕；上游 `packages/coding-agent/docs/settings.md` 的默认值仍写作 `"regular"` |
@@ -71,13 +71,15 @@
 | 指针 hover 反馈 | 无提示：列表忽略指针移动，消息区域只响应点击，跳到底部标签只有一种样式 | 指针下的单元格获得选中背景与下划线（标签页 chip、命令面板行、坞区 meta 行的模型与 thinking 字段）；响应点击的消息块整块填充为一个矩形；全屏渲染器在指针离开后告知对应组件，捕获型浮层打开时保持其下方界面无高亮，非捕获型浮层区域外仍保持 hover，终端尺寸变化时清除所有 hover | 本 fork 的可点击界面需要一个不改变键盘选择与活动标签页的提示 |
 | 扩展模块解析 | bun 跑构建产物时保留 jiti 的 `tryNative`（原生 TS 导入），扩展的 `@earendil-works/*` 裸导入因此从环境 `node_modules` 解析 | bun 跑构建产物时改走 `virtualModules`，清单内的 specifier 一律取运行中宿主自己的那份；bun 跑 TypeScript 源码不受影响 | 第二份 `@earendil-works/pi-tui` 会让 `ToolExecutionComponent.prototype` 的补丁打在宿主从未渲染的类上，渲染扩展于是静默退回内置工具行 |
 | 新版本提示 | 启动时请求 `pi.dev/api/latest-version`，打印带 changelog 链接的 `Update Available` 块，由 `PI_SKIP_VERSION_CHECK` 关闭 | 不再提示 pi 自身的新版本：启动检查、`checkForNewPiVersion` 与 `PI_SKIP_VERSION_CHECK` 均已删除 | 本 fork 改为只在 [MixCode Home](home.zh.md) 报告过期的扩展包 |
-| 退出恢复提示 | 已持久化的会话在交互式退出时打印 `To resume this session: pi --session <id>` | 不再打印该输出；负责拼装它的 `formatResumeCommand` 辅助函数保留下来，供上游的安装变更提醒使用 | MixCode 在一个进程里保留多个会话并通过自己的标签页进入，pi 的 `--session` 命令不是恢复会话的方式 |
+| 退出恢复提示 | 交互式退出已保存的会话时，分两行打印 `To resume this session:` 和 `pi --session <id>` | 不再打印该输出；负责拼装它的 `formatResumeCommand` 辅助函数保留下来，供上游的安装变更提醒使用 | MixCode 在一个进程里保留多个会话并通过自己的标签页进入，pi 的 `--session` 命令不是恢复会话的方式 |
 | 设置覆盖 | `applyOverrides` 把值叠加到生效设置上，下一次从各作用域重新组合（`save`、`reload`、信任状态变化）时就会丢失 | 覆盖层会被保留，并在每次重新组合时重新合并；`clearOverrides` 用于释放指定字段 | 标签页的 `/context-limit` 会收窄压缩预算，否则中途一次设置写入就会在无提示的情况下恢复完整预算 |
 | Batch 自动化 | 没有 `/batch` 命令，也没有 `--batch` / `--batch-dry-run`；`--` 始终收集消息与 `@file` 参数 | `/batch <script> [-- <args...>]`、`--batch`、`--batch-dry-run` 运行 Lua 或 TypeScript 脚本以打开 agent 标签页；带 `--batch` 时 `--` 传递脚本参数而不是消息，并新增 `fengari` 作为 coding-agent 依赖 | 用脚本铺开一批 agent 标签页需要一个统一入口，且参数必须原样到达脚本；见 [Batch 脚本](batch-scripts.zh.md) |
 | 模型失败诊断 | 失败的请求只保留 provider 格式化后的 `errorMessage`，原始异常在进程结束后就没了，类型、错误码与 HTTP 状态都无迹可循 | 每个内置文本适配器接受 `StreamOptions.onProviderError`，在自己的终止 catch 里把原始异常交给它；交互模式再把观察者装到共享 `ModelRuntime` 上，向控制台历史写入一行有界的 `[provider-error]`（`provider`、`model`、`api`，以及最多五个 `{name, code, status}` 节点） | 用户能行动的是 provider 自己的那句话，而真正失败的原因以前只有挂着调试器才看得到；见[模型请求错误诊断](provider-errors.zh.md) |
 | Skill 发现 | 每个会话都会把项目根（`<workdir>/.pi/skills` 与从 workdir 到 git 根的 `.agents/skills` 目录）同用户根（`<agent dir>/skills`、`~/.agents/skills`）合并 | `MPI_PROJECT_SKILLS_ONLY` 在加载器的 `skillsOverride` 里丢弃过滤器接收时作用域为 `user` 的 skill（`<agent dir>/skills`），以及文件位于 workdir 之外的 skill，使系统提示词与 `/skill:<name>` 列表保持一致；未设置时不改动发现行为 | 共享机器、评测或每仓库一份检出时，需要能把个人 skill 挡在项目提示词之外；见 [Skill 隔离](skill-isolation.zh.md) |
 | Herdr 窗格状态 | 既没有宿主标记，也没有进程级扩展通道：想向终端复用器上报窗格状态的扩展既没东西可把守，也没东西可监听 | `main()` 把进程标记为 MixCode（`MIXCODE ??= "1"`），并把每个标签的 `EventBus` 登记起来，宿主因而能向全部实例广播 `mpi:waiting-for-input` `{count, active}`（所有已打开标签中的扩展对话框）与 `mpi:mark-done` `{reason}`（`/mark-done` 之后 5 秒） | `mpi-herdr-report` 两者都需要：看不见 `mpi` 活动的 Herdr 侧边栏会把每个窗格都显示为 `unknown`。上报器本身不由本 fork 分发；见 [Herdr 窗格上报](herdr.zh.md) |
 | 扩展缓存位置 | `jiti` 把转译后的扩展缓存到调用 `createJiti` 的那个模块旁的 `node_modules/.cache/jiti`，没有这样的 `node_modules` 时缓存到 `<os.tmpdir()>/jiti`；tmpdir 兜底目录已属于其他用户时探测失败，于是静默地不使用缓存，每次启动都重新转译全部扩展 | 扩展加载器与 batch 执行器都传 `cache: resolveJitiCacheDir()`，解析为 `<agent dir>/cache/jiti`，agent 目录存不下时返回 `false`（不落盘缓存）；从不使用共享 tmpdir，也不改 `TMPDIR`；超过 30 天未写入的条目最多每 24 小时清理一次 | `/tmp` 不是用户自己的空间，一个用户的缓存会静默地把另一个用户的缓存关掉；agent 目录已是本 fork 其他缓存的家，清理规则则避免持久缓存无限增长 |
+
+每条运行时诊断只在所属标签页显示一次。查看其他标签页或 Home 时收到的扩展错误，在切回对应会话时显示。
 
 扩展对话框复用现有的每标签页交互栈，而不是上游单一的编辑器槽位栈。关闭或中止隐藏的
 对话框不会抢走可见对话框的焦点；返回标签页时恢复其待处理对话框和阻塞状态。应用自身的
@@ -194,7 +196,7 @@
 - `packages/coding-agent/test/version-check.test.ts`、`packages/coding-agent/test/package-command-paths.test.ts`：用例中去掉已删除的检查与对应环境变量；包管理夹具与输出断言通过 `APP_NAME` 使用 fork 的可执行文件名
 - `packages/coding-agent/test/interactive-mode-startup-input.test.ts`：手工搭建的提交宿主补上输入分发前所需的 Home 挂载与 session 绑定
 - `packages/coding-agent/test/suite/regressions/4167-thinking-toggle-pending-tool-render.test.ts`：测试宿主补上对话区渲染会调用的 response-model notice 回调
-- `packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts`：随提示一并删掉恢复提示用例，保留它原本要覆盖的退出顺序
+- `packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts`：覆盖信号退出和交互式退出的清理顺序，并检查退出已保存的会话时会省略单会话恢复提示
 - `AGENTS.md`、`.gitignore`
 - `packages/ai/src/types.ts`、`packages/ai/src/api/simple-options.ts`、`packages/ai/src/api/*` 下的十个文本适配器与 `packages/ai/src/providers/faux.ts`：`onProviderError` 流选项、它在 `streamSimple` 中的转发，以及每个终止 catch 里的一行 `notifyProviderError` 调用
 

@@ -266,7 +266,7 @@ export class SettingsPanelBody implements Component {
 		return wrapTextWithAnsi(item.description, Math.max(1, width - 2)).map((line) => theme.fg("dim", `  ${line}`));
 	}
 
-	render(width: number, maxRows = this.defaultRows): string[] {
+	render(width: number, maxRows = this.defaultRows): readonly string[] {
 		if (this.submenu) {
 			this.lastRows = [];
 			return this.submenu.render(width);

@@ -26,7 +26,7 @@ export class HoverRegion extends MouseRegion {
 		this.hover = new BlockHover(this, undefined, 0, onHoverChange);
 	}
 
-	override render(width: number): string[] {
+	override render(width: number): readonly string[] {
 		return this.hover.paint(super.render(width), width);
 	}
 

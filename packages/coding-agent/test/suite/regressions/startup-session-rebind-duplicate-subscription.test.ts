@@ -3,6 +3,8 @@ import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode
 
 type RebindContext = {
 	session: object;
+	runtimeHost: { takeUnreportedDiagnostics: () => [] };
+	showRuntimeDiagnostics: (diagnostics: []) => void;
 	unsubscribe?: () => void;
 	applyRuntimeSettings: () => void;
 	programStatus: { reset(): void };
@@ -38,8 +40,11 @@ describe("overlapping startup and replacement session rebinds", () => {
 		const updateTerminalTitle = vi.fn();
 		let bindCount = 0;
 
+		const takeUnreportedDiagnostics = vi.fn((): [] => []);
 		const context: RebindContext = {
 			session: startupSession,
+			runtimeHost: { takeUnreportedDiagnostics },
+			showRuntimeDiagnostics: () => {},
 			applyRuntimeSettings: () => {},
 			programStatus: { reset: () => {} },
 			renderCurrentSessionState: () => {},
@@ -69,11 +74,13 @@ describe("overlapping startup and replacement session rebinds", () => {
 
 		expect(subscribeToAgent).toHaveBeenCalledTimes(1);
 		expect(updateTerminalTitle).not.toHaveBeenCalled();
+		expect(takeUnreportedDiagnostics).not.toHaveBeenCalled();
 
 		resolveReplacementBind();
 		await replacementRebind;
 
 		expect(subscribeToAgent).toHaveBeenCalledTimes(1);
 		expect(updateTerminalTitle).toHaveBeenCalledTimes(1);
+		expect(takeUnreportedDiagnostics).toHaveBeenCalledTimes(1);
 	});
 });

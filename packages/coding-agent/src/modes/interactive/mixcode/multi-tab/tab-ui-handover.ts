@@ -87,6 +87,7 @@ export interface TabUiHandoverPorts {
 }
 
 interface CachedTranscript {
+	readonly session: AgentSession;
 	readonly signature: string;
 	readonly chat: readonly Component[];
 	readonly loaded: readonly Component[];
@@ -98,6 +99,8 @@ export class TabUiHandover {
 	private readonly transcripts = new Map<string, CachedTranscript>();
 	/** The row each parked tab was showing, so its next visit resumes there instead of inheriting. */
 	private readonly scrollAnchors = new Map<string, ScrollAnchor>();
+	private readonly pendingNotices = new WeakMap<AgentSession, Array<() => void>>();
+	private mountingTab = false;
 	readonly boundSessions = new WeakSet<AgentSession>();
 	private readonly bindingSessions = new Map<AgentSession, Promise<void>>();
 	private readonly pendingTabBinds = new Map<AgentSession, AgentTab>();
@@ -146,11 +149,14 @@ export class TabUiHandover {
 		// Plain writes avoid invalidating every thinking block on a quiet cache restore.
 		view.hiddenThinkingLabel = controller.tabUi.get(tab.id)?.hiddenThinkingLabel;
 
-		await runtime.current.session.settingsManager.reload();
-		applySessionCopiedSettings(runtime.current.session);
-		runtime.applySettings();
-		if (!this.restoreTranscript(tab.id)) {
-			transcript.rebuild();
+		this.mountingTab = true;
+		try {
+			await runtime.current.session.settingsManager.reload();
+			applySessionCopiedSettings(runtime.current.session);
+			runtime.applySettings();
+			if (!this.restoreTranscript(tab.id)) transcript.rebuild();
+		} finally {
+			this.mountingTab = false;
 		}
 		// The transcript now holds the incoming tab's blocks, so its remembered row resolves. A tab
 		// that was never left keeps the row the reader is on: the anchor remembered for its last
@@ -184,6 +190,25 @@ export class TabUiHandover {
 		this.ensureSessionBound(tab);
 	}
 
+	/** Paint a session's notice only after its transcript is mounted. */
+	showWhenMounted(session: AgentSession, show: () => void): void {
+		if (!this.mountingTab && !this.ports.view.homeActive && this.ports.runtime.current.session === session) {
+			show();
+			return;
+		}
+		const pending = this.pendingNotices.get(session);
+		if (pending) pending.push(show);
+		else this.pendingNotices.set(session, [show]);
+	}
+
+	/** Deliver notices deferred while this session's transcript was parked. */
+	showPendingNotices(session: AgentSession): void {
+		const pending = this.pendingNotices.get(session);
+		if (!pending) return;
+		this.pendingNotices.delete(session);
+		for (const show of pending) show();
+	}
+
 	/** Signature follows the active branch and rejects partially streamed transcripts. */
 	transcriptSignature(): string {
 		const session = this.ports.runtime.current.session;
@@ -197,6 +222,7 @@ export class TabUiHandover {
 		const { transcript } = this.ports;
 		transcript.beforeCapture();
 		this.transcripts.set(tabId, {
+			session: this.ports.runtime.current.session,
 			signature: this.transcriptSignature(),
 			chat: [...transcript.chat.children],
 			loaded: [...transcript.loaded.children],
@@ -209,7 +235,9 @@ export class TabUiHandover {
 	restoreTranscript(tabId: string): boolean {
 		const session = this.ports.runtime.current.session;
 		const cached = this.transcripts.get(tabId);
-		if (session.isStreaming || !cached || cached.signature !== this.transcriptSignature()) return false;
+		if (session.isStreaming || cached?.session !== session || cached.signature !== this.transcriptSignature()) {
+			return false;
+		}
 		const { transcript } = this.ports;
 		transcript.chat.clear();
 		for (const child of cached.chat) transcript.chat.addChild(child);

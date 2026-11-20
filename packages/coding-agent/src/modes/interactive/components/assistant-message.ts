@@ -44,13 +44,14 @@ export class AssistantMessageComponent extends Container {
 	/** Per thinking run: the stamps the live/frozen duration is read from. */
 	private thinkingTailTimers = new Map<number, ThinkingTailTimer>();
 	/** Last rendered block, reused while the width and the content are unchanged. */
-	private renderedLines: string[] | undefined;
+	private renderedLines: readonly string[] | undefined;
 	private renderedWidth = -1;
 	private renderedTheme: Theme | undefined;
 	private renderedLanguageCount = -1;
 	private boxedHiddenThinking: boolean;
 	private hasLiveThinkingTail = false;
 	private markdownSlots: MarkdownSlot[] = [];
+	private zoneLines?: { source: readonly string[]; lines: readonly string[] };
 
 	constructor(
 		message?: AssistantMessage,
@@ -131,7 +132,7 @@ export class AssistantMessageComponent extends Container {
 		}
 	}
 
-	override render(width: number): string[] {
+	override render(width: number): readonly string[] {
 		const currentTheme = getGlobalTheme();
 		const languageCount = getHighlightLanguageCount();
 		const themeChanged = this.renderedTheme !== currentTheme;
@@ -147,15 +148,22 @@ export class AssistantMessageComponent extends Container {
 		this.renderedTheme = currentTheme;
 		this.renderedLanguageCount = languageCount;
 		this.renderedWidth = width;
+
 		const lines = super.render(width);
 		if (this.hasToolCalls || lines.length === 0) {
+			this.zoneLines = undefined;
 			return lines;
 		}
 
-		lines[0] = OSC133_ZONE_START + lines[0];
-		lines[lines.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + lines[lines.length - 1];
-		this.renderedLines = lines;
-		return lines;
+		// Container output is shared across frames; copy it once per change instead of mutating it.
+		if (this.zoneLines?.source !== lines) {
+			const zoned = [...lines];
+			zoned[0] = OSC133_ZONE_START + zoned[0];
+			zoned[zoned.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + zoned[zoned.length - 1];
+			this.zoneLines = { source: lines, lines: zoned };
+		}
+		this.renderedLines = this.zoneLines.lines;
+		return this.renderedLines;
 	}
 
 	updateContent(message: AssistantMessage, isStreaming = this.isStreaming): void {

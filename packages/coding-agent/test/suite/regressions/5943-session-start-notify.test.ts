@@ -40,6 +40,8 @@ type LoadedResourcesContext = {
 
 type RebindContext = {
 	unsubscribe?: () => void;
+	runtimeHost: { takeUnreportedDiagnostics: () => [] };
+	showRuntimeDiagnostics: (diagnostics: []) => void;
 	applyRuntimeSettings: () => void;
 	programStatus: { reset(): void };
 	renderCurrentSessionState: () => void;
@@ -252,6 +254,8 @@ describe("regression #5943: session_start transient UI", () => {
 
 		try {
 			const context: RebindContext = {
+				runtimeHost: { takeUnreportedDiagnostics: () => [] },
+				showRuntimeDiagnostics: () => {},
 				applyRuntimeSettings: () => events.push("apply"),
 				programStatus: { reset: () => {} },
 				renderCurrentSessionState: () => events.push("render"),
@@ -294,6 +298,8 @@ describe("regression #5943: session_start transient UI", () => {
 
 		try {
 			const context: RebindContext = {
+				runtimeHost: { takeUnreportedDiagnostics: () => [] },
+				showRuntimeDiagnostics: () => {},
 				applyRuntimeSettings: () => {},
 				programStatus: { reset: () => {} },
 				renderCurrentSessionState: () => events.push("render"),
@@ -347,6 +353,8 @@ describe("regression #5943: session_start transient UI", () => {
 
 		try {
 			const context: RebindContext = {
+				runtimeHost: { takeUnreportedDiagnostics: () => [] },
+				showRuntimeDiagnostics: () => {},
 				applyRuntimeSettings: () => {},
 				programStatus: { reset: () => {} },
 				renderCurrentSessionState: () => events.push("render"),

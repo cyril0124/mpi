@@ -6,9 +6,14 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import type { TUI } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
-import { AgentSessionRuntime, type CreateAgentSessionRuntimeFactory } from "../../src/core/agent-session-runtime.ts";
+import {
+	AgentSessionRuntime,
+	type AgentSessionRuntimeDiagnostic,
+	type CreateAgentSessionRuntimeFactory,
+} from "../../src/core/agent-session-runtime.ts";
 import type { ExtensionUIContext } from "../../src/core/extensions/types.ts";
 import * as tabState from "../../src/core/mixcode/multi-tab/mixcode-state.ts";
+import type { AgentTab } from "../../src/core/mixcode/multi-tab/tab-manager.ts";
 import { listTrash, moveToTrash } from "../../src/core/mixcode/session-trash.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
@@ -50,6 +55,8 @@ async function createStartupHost() {
 	const harnesses: Harness[] = [];
 	const bindActions = new Map<string, (ui: ExtensionUIContext, manager: SessionManager) => Promise<void>>();
 	const createGates = new Map<string, Promise<void>>();
+	const eventActions = new Map<string, (message: string) => void>();
+	const diagnostics = new Map<string, AgentSessionRuntimeDiagnostic[]>();
 	const failedIds = new Set<string>();
 	const terminal = new VirtualTerminal(110, 50);
 	const write = terminal.write.bind(terminal);
@@ -66,6 +73,10 @@ async function createStartupHost() {
 			sessionManager,
 			extensionFactories: [
 				(pi) => {
+					eventActions.set(id, (message) => pi.events.emit("tab-error", message));
+					pi.events.on("tab-error", (message) => {
+						throw new Error(String(message));
+					});
 					pi.on("session_start", async (_event, ctx) => {
 						trace.push(`bind:${id}`);
 						await bindActions.get(id)?.(ctx.ui, sessionManager);
@@ -86,7 +97,7 @@ async function createStartupHost() {
 				diagnostics: [],
 			},
 			extensionsResult: harness.session.resourceLoader.getExtensions(),
-			diagnostics: [],
+			diagnostics: diagnostics.get(id) ?? [],
 		};
 	};
 	const initial = await createRuntime({
@@ -156,6 +167,11 @@ async function createStartupHost() {
 		initialTabId,
 		bindActions,
 		createGates,
+		eventActions,
+		diagnostics,
+		activate: Reflect.get(mode, "activateTab").bind(mode) as (tab: AgentTab) => Promise<void>,
+		activateHome: Reflect.get(mode, "activateHome").bind(mode) as () => Promise<void>,
+		bind: Reflect.get(mode, "bindTabExtensions").bind(mode) as (tab: AgentTab) => Promise<void>,
 		failedIds,
 		peerStart,
 		warnings,
@@ -164,6 +180,113 @@ async function createStartupHost() {
 		dispose,
 	};
 }
+
+describe("InteractiveMode tab diagnostic ownership", () => {
+	// #11264: pi.events errors use the owning extension runner even if focus moved after binding.
+	test("an Events error waits for its owning tab and survives a same-tab return from Home", async () => {
+		const host = await createStartupHost();
+		try {
+			await host.mode.init();
+			const a = host.manager.getActive();
+			const b = await host.manager.createTab({ title: "B" });
+			await host.activate(b);
+			await host.bind(b);
+			const emitA = host.eventActions.get(host.initialId)!;
+			emitA("EVENTS-ERROR-FROM-A");
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(await host.capture()).not.toContain("EVENTS-ERROR-FROM-A");
+			await host.activate(a);
+			const error = 'Extension "<inline:1>" error: EVENTS-ERROR-FROM-A';
+			expect((await host.capture()).split(error)).toHaveLength(2);
+			await host.activateHome();
+			emitA("EVENTS-ERROR-FROM-HOME");
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(await host.capture()).not.toContain("EVENTS-ERROR-FROM-HOME");
+			await host.activate(a);
+			expect((await host.capture()).split("EVENTS-ERROR-FROM-HOME")).toHaveLength(2);
+			await host.activate(b);
+			expect(await host.capture()).not.toContain("EVENTS-ERROR-FROM-");
+			await host.activate(a);
+			expect((await host.capture()).split(error)).toHaveLength(2);
+		} finally {
+			await host.dispose();
+		}
+	});
+
+	test("new, restored, resumed and replaced runtimes report diagnostics once on their own tab", async () => {
+		const host = await createStartupHost();
+		try {
+			const restoredId = randomUUID();
+			const resumedId = randomUUID();
+			const newId = randomUUID();
+			const restored = { type: "warning", message: "DIAGNOSTIC-RESTORED" } as const;
+			const resumed = { type: "error", message: "DIAGNOSTIC-RESUMED" } as const;
+			const fresh = { type: "warning", message: "DIAGNOSTIC-NEW" } as const;
+			const freshInfo = { type: "info", message: "DIAGNOSTIC-NEW-INFO" } as const;
+			const modelInfo = { type: "info", message: "DIAGNOSTIC-NEW-MODEL" } as const;
+			host.saveSession(restoredId);
+			const resumePath = host.saveSession(resumedId);
+			host.diagnostics.set(restoredId, [restored]);
+			host.diagnostics.set(resumedId, [resumed]);
+			host.diagnostics.set(newId, [fresh, freshInfo, modelInfo]);
+			tabState.writeOpenTabs(host.workdir, [restoredId], restoredId);
+			await host.mode.init();
+			expect(await host.capture()).not.toContain(restored.message);
+			const a = host.manager.getActive();
+			await host.activate(a);
+			expect((await host.capture()).split(restored.message)).toHaveLength(2);
+
+			const b = await host.manager.createTab({ title: "B", sessionId: newId });
+			await host.activate(b);
+			await host.bind(b);
+			const freshOutput = await host.capture();
+			expect(freshOutput.split(`Warning: ${fresh.message} `)).toHaveLength(2);
+			expect(freshOutput.split(freshInfo.message)).toHaveLength(2);
+			expect(freshOutput.split(modelInfo.message)).toHaveLength(2);
+			expect(freshOutput).not.toContain(restored.message);
+
+			const c = await host.manager.openSessionTab(resumePath, { title: "C" });
+			await host.activate(c);
+			await host.bind(c);
+			expect((await host.capture()).split(resumed.message)).toHaveLength(2);
+			expect(await host.capture()).not.toContain(fresh.message);
+
+			const replacementId = randomUUID();
+			const replacementPath = host.saveSession(replacementId, replacementId, host.sessionDir, true);
+			const replacement = { type: "error", message: "DIAGNOSTIC-REPLACEMENT" } as const;
+			host.diagnostics.set(replacementId, [fresh, replacement]);
+			// Replacing B while C is mounted must keep C's transcript and its live diagnostic.
+			await b.runtime.switchSession(replacementPath);
+			const current = await host.capture();
+			expect(current).toContain(resumed.message);
+			expect(current).not.toContain(replacement.message);
+			await host.activate(b);
+			const replaced = await host.capture();
+			expect(replaced).toContain("KEEP-");
+			expect(replaced.split(replacement.message)).toHaveLength(2);
+			expect(replaced).not.toContain(fresh.message);
+			await host.activate(a);
+			expect(await host.capture()).not.toContain(replacement.message);
+			await host.activate(b);
+			expect((await host.capture()).split(replacement.message)).toHaveLength(2);
+
+			const focusedId = randomUUID();
+			const focusedPath = host.saveSession(focusedId);
+			const focused = { type: "warning", message: "DIAGNOSTIC-FOCUSED-REPLACEMENT" } as const;
+			host.diagnostics.set(focusedId, [fresh, replacement, focused]);
+			await b.runtime.switchSession(focusedPath);
+			const focusedOutput = await host.capture();
+			expect(focusedOutput.split(focused.message)).toHaveLength(2);
+			expect(focusedOutput).not.toContain(replacement.message);
+			await host.activate(c);
+			expect(await host.capture()).not.toContain(focused.message);
+			await host.activate(b);
+			expect((await host.capture()).split(focused.message)).toHaveLength(2);
+		} finally {
+			await host.dispose();
+		}
+	});
+});
 
 describe("InteractiveMode startup restore contract", () => {
 	test("Home precedes slow binds, parked binds release later tabs, and canonical ids are published once", async () => {

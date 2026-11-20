@@ -11,7 +11,7 @@ export abstract class ClickableCard extends Box {
 	/** Toggle between the card's collapsed and expanded content. */
 	protected abstract toggleExpanded(): void;
 
-	override render(width: number): string[] {
+	override render(width: number): readonly string[] {
 		return this.hover.paint(super.render(width), width);
 	}
 

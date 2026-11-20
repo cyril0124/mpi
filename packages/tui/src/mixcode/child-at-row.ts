@@ -1,4 +1,4 @@
-import type { Component } from "../tui.ts";
+import type { ChildLines, Component } from "../tui.ts";
 
 /**
  * The child painted at `row` of a parent's own line space, and the row inside that child, from the
@@ -6,14 +6,15 @@ import type { Component } from "../tui.ts";
  * the padding the caller subtracts from `row` first. Undefined for a row no child covers.
  */
 export function childAtRow(
-	children: ReadonlyArray<{ component: Component; height: number }> | undefined,
+	layout: ChildLines | undefined,
 	row: number,
 ): { component: Component; offset: number } | undefined {
-	if (!children) return undefined;
+	if (!layout) return undefined;
 	let start = 0;
-	for (const { component, height } of children) {
-		if (row >= start && row < start + height) return { component, offset: row - start };
-		start += height;
+	for (let index = 0; index < layout.children.length; index++) {
+		const end = start + layout.parts[index]!.length;
+		if (row >= start && row < end) return { component: layout.children[index]!, offset: row - start };
+		start = end;
 	}
 	return undefined;
 }

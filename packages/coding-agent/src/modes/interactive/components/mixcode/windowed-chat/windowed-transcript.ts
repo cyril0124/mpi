@@ -78,7 +78,7 @@ export class WindowedTranscript extends Container {
 	private syncedFirst: Component | undefined;
 	private syncedLast: Component | undefined;
 	/** Rendered lines for the current pass, so one pass renders a block once. */
-	private readonly passLines = new Map<Component, string[]>();
+	private readonly passLines = new Map<Component, readonly string[]>();
 	/** Set when measuring the current pass changes the virtual total. */
 	private measuredThisPass = false;
 	/** The first visible row's stable block, retained across a width reflow or a height-table reset. */
@@ -175,7 +175,9 @@ export class WindowedTranscript extends Container {
 		this.ensureWidth(safeWidth);
 		this.passLines.clear();
 		const lines: string[] = [];
-		for (const block of this.blockList()) lines.push(...this.linesOf(block, safeWidth));
+		for (const block of this.blockList()) {
+			for (const line of this.linesOf(block, safeWidth)) lines.push(line);
+		}
 		return lines;
 	}
 
@@ -603,7 +605,7 @@ export class WindowedTranscript extends Container {
 	}
 
 	/** This block's rendered lines, measured once per pass. */
-	private linesOf(block: Component, width: number): string[] {
+	private linesOf(block: Component, width: number): readonly string[] {
 		const cached = this.passLines.get(block);
 		if (cached) return cached;
 		const lines = block.render(width);

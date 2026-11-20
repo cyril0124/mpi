@@ -16,7 +16,7 @@ import { loadAllHighlightLanguages, supportsLanguage } from "../../src/utils/syn
 const THEME_DIR = new URL("../../src/modes/interactive/theme/", import.meta.url).pathname;
 
 /** Returns the SGR color sequence immediately before the inline code span in rendered lines. */
-function codeColor(lines: string[]): string {
+function codeColor(lines: readonly string[]): string {
 	const match = lines.join("\n").match(/(\u001b\[[0-9;]*m)world/);
 	expect(match).not.toBeNull();
 	return match![1]!;
@@ -69,7 +69,7 @@ describe("message block theme invalidation", () => {
 });
 
 /** Returns the SGR color sequence immediately before the deleted line of a fenced diff block. */
-function deletionColor(lines: string[]): string {
+function deletionColor(lines: readonly string[]): string {
 	const match = lines.join("\n").match(/(\u001b\[[0-9;]*m)-removed/);
 	expect(match).not.toBeNull();
 	return match![1]!;

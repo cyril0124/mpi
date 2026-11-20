@@ -80,7 +80,7 @@ export class ClockedMessageBody implements Component {
 		this.body.invalidate?.();
 	}
 
-	render(width: number): string[] {
+	render(width: number): readonly string[] {
 		if (this.clock === "") return this.body.render(width);
 		// The body keeps one column, so the clock's cells and the body's always add up to `width`.
 		const clockText = truncateToWidth(` ${this.clock}`, Math.max(0, width - 1));

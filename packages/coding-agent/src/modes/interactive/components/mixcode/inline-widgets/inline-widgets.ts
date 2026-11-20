@@ -106,7 +106,7 @@ interface InlineWidgetEntry {
 	order: number;
 	/** Recency rank; higher is more recently (re-)registered. */
 	stamp: number;
-	lines: string[];
+	lines: readonly string[];
 }
 
 interface InlineWidgetPlan {
