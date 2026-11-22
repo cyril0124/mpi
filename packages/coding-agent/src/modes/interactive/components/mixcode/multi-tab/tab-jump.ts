@@ -21,9 +21,10 @@ import { HOME_TAB_ID } from "../../../../../core/mixcode/home/home-state.ts";
 import { isWorkingStatus, type TabStatus } from "../../../../../core/mixcode/multi-tab/types.ts";
 import { theme } from "../../../theme/theme.ts";
 import { type HoverTarget, PointerHover } from "../hover/pointer-hover.ts";
-import { padLine, windowStart } from "../layout-text.ts";
+import { windowStart } from "../layout-text.ts";
 import { panel, panelContentWidth } from "../panel.ts";
 import { highlightMatches } from "../search-highlight.ts";
+import { reopenAfterReset } from "../terminal-text.ts";
 import { tabStatusGlyph, tabStatusPaint } from "./tab-glyphs.ts";
 
 /** One selectable row: a tab's identity, its title, and the status it reports. */
@@ -48,6 +49,10 @@ const TAB_JUMP_SHORT_ID_LENGTH = 8;
 
 /** Body line a row's cells start at, inside the frame; the top border is line 0. */
 const TAB_JUMP_FRAME_ROWS = 1;
+
+const DEFAULT_BACKGROUND_ANSI = "\x1b[49m";
+const INVERSE_ON = "\x1b[7m";
+const INVERSE_OFF = "\x1b[27m";
 
 /**
  * Whether the non-idle filter keeps a row: it has something to report. A tab that is
@@ -298,19 +303,17 @@ export class TabJumpComponent implements Component {
 		const contentWidth = panelContentWidth(width, 0);
 		const plan = this.plan();
 		const body: string[] = [this.renderSearchRow(plan, contentWidth), ""];
+		const selectedIndex = this.selectedEntryIndex(plan.entries.length);
+		const selectedBodyLine = plan.rows.find((row) => row.entryIndex === selectedIndex)?.bodyLine;
+		// The system theme uses the terminal's default background when no colors are reported.
+		const useInverseSelection = theme.getBgAnsi("selectedBg") === DEFAULT_BACKGROUND_ANSI;
 		if (plan.empty) {
 			body.push(theme.fg("dim", "No matching tabs"));
 		} else {
 			if (plan.showMoreAbove) body.push(theme.fg("dim", `... (${plan.startIndex} more above)`));
 			for (const row of plan.rows) {
 				const entry = plan.entries[row.entryIndex]!;
-				const selected = row.entryIndex === this.selectedEntryIndex(plan.entries.length);
-				const line = this.renderRow(entry, selected, contentWidth);
-				// The cut marker comes before the padding: a padded row always fits, so marking after it
-				// would silently drop the marker of a selected row that overruns the panel.
-				body.push(
-					selected ? theme.bg("selectedBg", padLine(this.fitLine(line, contentWidth), contentWidth)) : line,
-				);
+				body.push(this.renderRow(entry, row.bodyLine === selectedBodyLine, contentWidth));
 			}
 			if (plan.showMoreBelow) {
 				body.push(theme.fg("dim", `... (${plan.entries.length - plan.endIndex} more below)`));
@@ -320,12 +323,20 @@ export class TabJumpComponent implements Component {
 
 		const frame = panel(
 			"Tab Jump",
-			body.map((line) => this.fitLine(line, contentWidth)),
+			body.map((line, bodyLine) => {
+				if (useInverseSelection && bodyLine === selectedBodyLine) {
+					const padded = truncateToWidth(line, contentWidth, "...", true);
+					return `${reopenAfterReset(INVERSE_ON, padded)}${INVERSE_OFF}`;
+				}
+				return this.fitLine(line, contentWidth);
+			}),
 			width,
 			{
 				paddingX: 0,
 				backgroundColor: "toolPendingBg",
 				backgroundScope: "content",
+				rowBackground: (bodyLine) =>
+					!useInverseSelection && bodyLine === selectedBodyLine ? "selectedBg" : undefined,
 			},
 		);
 		// The hover cue goes on after the frame is built, so it covers the row cells

@@ -15,6 +15,8 @@ point `## [Unreleased]` at the new tag.
 
 ### Fixed
 
+- Keep the selection background across the full row in Tab Jump (`Ctrl+T`), including the space before the tab ID.
+
 ### Removed
 
 ## base pi v1.5.2 — 2026-11-14
