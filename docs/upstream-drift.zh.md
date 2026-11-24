@@ -14,7 +14,7 @@
 | 内置主题发现 | `getBuiltinThemes()` 按名字读取 `dark.json` 与 `light.json`，丢进主题目录的 JSON 不会被发现；主题选择器只列出它们与用户主题 | 主题目录下每个 `*.json` 都会被加载，并以文件内的 `name` 作为键（跳过 `theme-schema.json`）；某个文件解析或校验失败时只是被丢弃，不会带掉其余内置主题。`aurora` 即由此提供 | 一个主题一个文件，新增主题就是新增文件，无需改动加载器 |
 | `app.thinking.cycle` 默认键 | `shift+tab` | `alt+t` | `shift+tab` 改作 `app.tab.previous` |
 | Agent 标签页 | 一个终端一个会话 | 多个并发标签页，各自持有 `AgentSessionRuntime`；回复生成期间切回时，用已保存历史与当前流式消息重建对话区 | 切换标签后，正在生成的回答必须继续显示与更新；见 [Agent 标签页](tabs.zh.md) |
-| 标签页手动排序 | 无 agent 标签页 | `/move-tab-left` 和 `/move-tab-right` 移动当前标签页一格 | 手动调整的顺序随共享布局保存，见 [Agent 标签页](tabs.zh.md) |
+| 标签页手动排序 | 无 agent 标签页 | 将当前标签页移动一格，或直接移到首尾 | 共享布局保存调整后的顺序，见 [Agent 标签页](tabs.zh.md) |
 | 仓库检查范围 | Biome 和依赖、导入扫描可能遍历嵌套的临时 checkout | 这些扫描排除 `tmp/`、`.worktrees/` 和 `.sync-feature/` | 本地复现目录和 worktree 各自包含源码与配置 |
 | 历史压缩次数提示 | 加载会话历史时显示 `Session compacted N times` | 每个会话在进程内显示一次：启动、首次进入该标签页、切换分支时显示；不参与状态行的复用，后续状态不会覆盖它；离开过的标签页再次返回时不再显示 | 切换标签页不会压缩会话 |
 | 标签页标题同步 | 无 agent 标签页 | 普通标签页跟随之后的会话改名，包括扩展发起的改名；batch 锁定的标题保留指定名字 | 已有名字的标签页也必须反映成功的会话改名；见[标题](tabs.zh.md#标题) |

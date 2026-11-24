@@ -56,6 +56,8 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "tab", description: "Focus an agent tab", argumentHint: "<index|title>" },
 	{ name: "move-tab-left", description: "Move the active agent tab one position left" },
 	{ name: "move-tab-right", description: "Move the active agent tab one position right" },
+	{ name: "move-tab-head", description: "Move the active agent tab to the first position" },
+	{ name: "move-tab-tail", description: "Move the active agent tab to the last position" },
 	{ name: "color", description: "Set the active tab color", argumentHint: "<name|clear>" },
 	{ name: "group-colored-tabs", description: "Sort agent tabs by color" },
 	{ name: "mark-done", description: "Flag the active tab as finished" },

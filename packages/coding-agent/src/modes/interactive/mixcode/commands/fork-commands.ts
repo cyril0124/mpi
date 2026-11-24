@@ -250,7 +250,7 @@ export class ForkCommands {
 			this.colorActiveTab(arg);
 			return true;
 		}
-		const moveTabMatch = text.match(/^(\/move-tab-(left|right))(?:\s|$)/);
+		const moveTabMatch = text.match(/^(\/move-tab-(left|right|head|tail))(?:\s|$)/);
 		if (moveTabMatch) {
 			const [, command, direction] = moveTabMatch;
 			if (text !== command) {
@@ -263,8 +263,13 @@ export class ForkCommands {
 			if (!manager) return true;
 			// A reorder changes which tab owns the selected index.
 			const selectedTabId = manager.list()[homeSelection.selectedIndex]?.id;
-			const offset = direction === "left" ? -1 : 1;
-			if (manager.moveActiveTab(offset)) {
+			let target: -1 | 1 | "head" | "tail";
+			if (direction === "head" || direction === "tail") {
+				target = direction;
+			} else {
+				target = direction === "left" ? -1 : 1;
+			}
+			if (manager.moveActiveTab(target)) {
 				selectHomeTabById(homeSelection, manager.list(), selectedTabId);
 			}
 			return true;

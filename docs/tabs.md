@@ -41,6 +41,7 @@ start-up instructions do not name the toggle, and `/hotkeys` reports it with a n
 | `/tabs` | List the open tabs. |
 | `/tab <index\|title>` | Focus an open tab. |
 | `/move-tab-left`, `/move-tab-right` | Move the active agent tab one position in the given direction and save the new order. Focus stays on the moved tab. At either end, the order stays the same. |
+| `/move-tab-head`, `/move-tab-tail` | Move the active tab just after MixCode Home or to the far right, respectively. The new order is saved. Focus stays on the moved tab, and the other tabs keep their relative order. |
 | `/jump` | Open the Tab Jump switcher. An argument reports `Usage: /jump`. |
 | `/workdir [path]` | Move the current tab onto another working directory. With a path the move happens at once; without one a directory picker opens. See [Workdir](#workdir). |
 | `/context-limit [tokens\|reset]` | Cap the current tab at a context window of its own. Without an argument a picker offers fractions of the model's window and a free-text row. The limit lasts for the session and ends with a model switch, a session replacement or a reload; see [Input Dock](input-dock.md). |

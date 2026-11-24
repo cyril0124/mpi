@@ -210,6 +210,45 @@ describe("shared tab runtime integration", () => {
 		expect([...local.errors, ...peer.errors, ...fresh.errors]).toEqual([]);
 	});
 
+	it("moves a tab directly to either end and preserves the order of the other tabs", async () => {
+		const local = await createClient();
+		const firstPath = local.manager.getActive().runtime.session.sessionFile!;
+		expect(local.manager.moveActiveTab("head")).toBe(false);
+		expect(local.manager.moveActiveTab("tail")).toBe(false);
+		await local.manager.createTab({ title: "Research" });
+		const moving = await local.manager.createTab({ title: "Audit" });
+		await local.manager.createTab({ title: "Review" });
+		const [firstId, secondId, movingId, lastId] = ids(local.manager);
+		const peer = await createClient(firstPath);
+		await peer.shared.reconcileNow();
+		const peerFocus = peer.manager.getActive();
+		local.manager.activate(moving.id);
+		local.manager.setDraft(moving.id, "Draft for Audit");
+
+		expect(local.manager.moveActiveTab("head")).toBe(true);
+		expect(local.manager.moveActiveTab("head")).toBe(false);
+		const headOrder = [movingId, firstId, secondId, lastId];
+		expect(ids(local.manager)).toEqual(headOrder);
+		expect(storedIds()).toEqual(headOrder);
+		await peer.shared.reconcileNow();
+		expect(ids(peer.manager)).toEqual(headOrder);
+
+		expect(local.manager.moveActiveTab("tail")).toBe(true);
+		expect(local.manager.moveActiveTab("tail")).toBe(false);
+		const tailOrder = [firstId, secondId, lastId, movingId];
+		expect(ids(local.manager)).toEqual(tailOrder);
+		expect(storedIds()).toEqual(tailOrder);
+		expect(local.manager.getActive()).toBe(moving);
+		expect(moving.draftInput).toBe("Draft for Audit");
+		await peer.shared.reconcileNow();
+		expect(ids(peer.manager)).toEqual(tailOrder);
+		expect(peer.manager.getActive()).toBe(peerFocus);
+		const fresh = await createClient(firstPath);
+		await fresh.shared.reconcileNow();
+		expect(ids(fresh.manager)).toEqual(tailOrder);
+		expect([...local.errors, ...peer.errors, ...fresh.errors]).toEqual([]);
+	});
+
 	it("keeps a focused tab's cleared badge cleared when the layout is reconciled", async () => {
 		const a = await createClient();
 		const tab = a.manager.getActive();

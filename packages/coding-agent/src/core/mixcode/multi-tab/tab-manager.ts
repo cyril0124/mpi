@@ -604,15 +604,24 @@ export class TabManager {
 		this.onTabsChanged();
 	}
 
-	/** Swap the active tab with its neighbor without changing focus. Returns whether it moved. */
-	moveActiveTab(delta: -1 | 1): boolean {
+	/** Move the active tab without changing focus. Returns whether it moved. */
+	moveActiveTab(target: -1 | 1 | "head" | "tail"): boolean {
 		const index = this.tabs.findIndex((tab) => tab.id === this.activeId);
-		const neighborIndex = index + delta;
 		const tab = this.tabs[index];
-		const neighbor = this.tabs[neighborIndex];
-		if (!tab || !neighbor) return false;
-		this.tabs[index] = neighbor;
-		this.tabs[neighborIndex] = tab;
+		if (!tab) return false;
+
+		if (target === "head" || target === "tail") {
+			const destination = target === "head" ? 0 : this.tabs.length - 1;
+			if (index === destination) return false;
+			this.tabs.splice(index, 1);
+			this.tabs.splice(destination, 0, tab);
+		} else {
+			const neighborIndex = index + target;
+			const neighbor = this.tabs[neighborIndex];
+			if (!neighbor) return false;
+			this.tabs[index] = neighbor;
+			this.tabs[neighborIndex] = tab;
+		}
 		this.notifyLayoutChanged();
 		this.onTabsChanged();
 		return true;

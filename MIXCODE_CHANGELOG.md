@@ -11,6 +11,7 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- `/move-tab-head` and `/move-tab-tail` move the focused agent tab directly to the first or last position.
 - `/move-tab-left` and `/move-tab-right` move the focused agent tab one position and save the new order.
 
 ### Changed
