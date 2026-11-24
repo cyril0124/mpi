@@ -15,7 +15,10 @@ export interface ForkCommandHost {
 	};
 	routing: {
 		readonly manager:
-			| Pick<TabManager, "getActive" | "list" | "setDraft" | "rename" | "setColor" | "markDone" | "groupByColor">
+			| Pick<
+					TabManager,
+					"getActive" | "list" | "setDraft" | "rename" | "setColor" | "markDone" | "groupByColor" | "moveActiveTab"
+			  >
 			| undefined;
 		readonly activeId: string | undefined;
 		readonly mountedId: string | undefined;
@@ -245,6 +248,25 @@ export class ForkCommands {
 			const arg = text.startsWith("/color ") ? text.slice("/color ".length).trim() : "";
 			this.consumeCommandText();
 			this.colorActiveTab(arg);
+			return true;
+		}
+		const moveTabMatch = text.match(/^(\/move-tab-(left|right))(?:\s|$)/);
+		if (moveTabMatch) {
+			const [, command, direction] = moveTabMatch;
+			if (text !== command) {
+				this.host.actions.error(`Usage: ${command}`);
+				return true;
+			}
+			this.consumeCommandText();
+
+			const { manager, homeSelection } = this.host.routing;
+			if (!manager) return true;
+			// A reorder changes which tab owns the selected index.
+			const selectedTabId = manager.list()[homeSelection.selectedIndex]?.id;
+			const offset = direction === "left" ? -1 : 1;
+			if (manager.moveActiveTab(offset)) {
+				selectHomeTabById(homeSelection, manager.list(), selectedTabId);
+			}
 			return true;
 		}
 		if (text === "/group-colored-tabs") {

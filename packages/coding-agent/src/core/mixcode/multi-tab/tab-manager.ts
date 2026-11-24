@@ -604,6 +604,20 @@ export class TabManager {
 		this.onTabsChanged();
 	}
 
+	/** Swap the active tab with its neighbor without changing focus. Returns whether it moved. */
+	moveActiveTab(delta: -1 | 1): boolean {
+		const index = this.tabs.findIndex((tab) => tab.id === this.activeId);
+		const neighborIndex = index + delta;
+		const tab = this.tabs[index];
+		const neighbor = this.tabs[neighborIndex];
+		if (!tab || !neighbor) return false;
+		this.tabs[index] = neighbor;
+		this.tabs[neighborIndex] = tab;
+		this.notifyLayoutChanged();
+		this.onTabsChanged();
+		return true;
+	}
+
 	/** Reorder by color: colored tabs first in palette order, then uncolored; stable. */
 	groupByColor(): void {
 		const rank = (tab: AgentTab) => (tab.color ? TAB_COLOR_NAMES.indexOf(tab.color) : TAB_COLOR_NAMES.length);

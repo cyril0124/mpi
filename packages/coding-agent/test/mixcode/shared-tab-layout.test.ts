@@ -172,6 +172,44 @@ describe("shared tab runtime integration", () => {
 		expect(b.manager.list().map((tab) => tab.color)).toEqual(["red", "blue"]);
 	});
 
+	it("publishes adjacent moves without changing the focused tab or its draft", async () => {
+		const local = await createClient();
+		const first = local.manager.getActive();
+		const firstPath = first.runtime.session.sessionFile!;
+		expect(local.manager.moveActiveTab(-1)).toBe(false);
+		expect(local.manager.moveActiveTab(1)).toBe(false);
+		const middle = await local.manager.createTab({ title: "Research" });
+		await local.manager.createTab({ title: "Audit" });
+		const [firstId, middleId, lastId] = ids(local.manager);
+		const peer = await createClient(firstPath);
+		await peer.shared.reconcileNow();
+		const peerFocus = peer.manager.getActive();
+		local.manager.activate(middle.id);
+		local.manager.setDraft(middle.id, "Draft for Research");
+
+		expect(local.manager.moveActiveTab(-1)).toBe(true);
+		expect(ids(local.manager)).toEqual([middleId, firstId, lastId]);
+		expect(storedIds()).toEqual([middleId, firstId, lastId]);
+		expect(local.manager.moveActiveTab(-1)).toBe(false);
+		expect(local.manager.moveActiveTab(1)).toBe(true);
+		expect(ids(local.manager)).toEqual([firstId, middleId, lastId]);
+		expect(local.manager.moveActiveTab(1)).toBe(true);
+		expect(local.manager.moveActiveTab(1)).toBe(false);
+		const finalOrder = [firstId, lastId, middleId];
+		expect(ids(local.manager)).toEqual(finalOrder);
+		expect(storedIds()).toEqual(finalOrder);
+		expect(local.manager.getActive()).toBe(middle);
+		expect(middle.draftInput).toBe("Draft for Research");
+
+		await peer.shared.reconcileNow();
+		expect(ids(peer.manager)).toEqual(finalOrder);
+		expect(peer.manager.getActive()).toBe(peerFocus);
+		const fresh = await createClient(firstPath);
+		await fresh.shared.reconcileNow();
+		expect(ids(fresh.manager)).toEqual(finalOrder);
+		expect([...local.errors, ...peer.errors, ...fresh.errors]).toEqual([]);
+	});
+
 	it("keeps a focused tab's cleared badge cleared when the layout is reconciled", async () => {
 		const a = await createClient();
 		const tab = a.manager.getActive();

@@ -11,6 +11,8 @@ point `## [Unreleased]` at the new tag.
 
 ### Added
 
+- `/move-tab-left` and `/move-tab-right` move the focused agent tab one position and save the new order.
+
 ### Changed
 
 ### Fixed
