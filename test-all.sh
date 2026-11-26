@@ -11,6 +11,12 @@ vitest="$root/node_modules/vitest/dist/cli.js"
 status=0
 found=0
 
+# Lua stack traces truncate long paths, and hover tests compare truecolor backgrounds.
+if [[ -d /tmp && -w /tmp && -x /tmp ]]; then
+  export TMPDIR=/tmp
+fi
+export TERM=xterm-256color COLORTERM=truecolor
+
 run() {
   local package_dir="$1"
   shift
