@@ -23,7 +23,7 @@ describe("InteractiveMode replay message metadata", () => {
 				chatContainer,
 				pendingTools: new Map(),
 				editor,
-				settingsManager: { getShowCacheMissNotices: () => false },
+				settingsManager: { getNotices: () => ({ cacheMisses: false }) },
 				getMarkdownThemeWithSettings: getMarkdownTheme,
 				getMarkdownTransformers: () => [transform],
 				mixcodeSettings: { ui: { boxedHiddenThinking: true, showResponseModelNotices: false } },

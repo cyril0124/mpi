@@ -15,6 +15,8 @@ function makeAgentSettledContext(state: ReturnType<typeof createFollowUpQueueSta
 		followUpStates: new Map([["session", state]]),
 		tabManager: undefined,
 		followUpState: state,
+		flushPendingBashComponents: vi.fn(),
+		ui: { requestRender: vi.fn() },
 		checkShutdownRequested: vi.fn().mockResolvedValue(undefined),
 	};
 }

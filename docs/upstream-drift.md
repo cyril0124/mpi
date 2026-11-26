@@ -16,7 +16,6 @@ commit that causes it.
 | `app.thinking.cycle` default key | `shift+tab` | `alt+t` | `shift+tab` became `app.tab.previous` |
 | Agent tabs | one session per terminal | several concurrent tabs, each with its own `AgentSessionRuntime`; returning during a response rebuilds the transcript from saved history plus the current streaming message | the live answer must remain visible and continue updating after a tab switch; see [Agent Tabs](tabs.md) |
 | Manual tab order | no agent tabs | move the focused tab one position or directly to either end | the shared layout saves the order. See [Agent Tabs](tabs.md) |
-| Repository check scope | Biome and the dependency/import scanners can traverse nested scratch checkouts | `tmp/`, `.worktrees/`, and `.sync-feature/` are excluded from these scans | local reproductions and worktrees have their own source and configuration |
 | Compaction history notice | displays `Session compacted N times` when loading session history | shows it once per session per process, on startup, on a tab's first view and on branch navigation, and keeps it out of the status line's reuse chain so the next status does not overwrite it; returning to a tab that was left does not repeat it | changing tabs does not compact the session |
 | Tab title synchronization | no agent tabs | ordinary tabs follow later session renames, including extension-driven renames; batch-locked titles keep their assigned names | a successful session rename must reach its tab even after it was named; see [Titles](tabs.md#titles) |
 | Startup tab restore | n/a (one session per terminal) | a tab parked in an extension `session_start` dialog hands the queue to the next tab, reads `[input]` on its Home card, and finishes on its own once the dialog is answered | a serial restore must not wait on a human; see [Agent Tabs](tabs.md#startup-restore) |
@@ -73,7 +72,7 @@ commit that causes it.
 | Mouse drag selection | selects any cell on screen, copies the cells verbatim, paints them with reverse video, and keeps following new output during the drag | scoped to the transcript, the prompt card and the notice panel; the copied text drops a framed surface's border rows, border columns, padding column and key-hint rows; the highlight uses the theme's `selectedBg` and is dropped by a release with copy-on-select on (a release with the setting off keeps it for the copy command), and it underlines the card rows inside a block that carries the pointer cue, whose fill uses the same background; a press holds the transcript so streaming output cannot move the selected rows, and the release leaves it there when the output grew past the viewport or the user scrolled | [Mouse Selection](mouse-selection.md) |
 | Extension module resolution | bun loading the built dist keeps jiti's `tryNative` (native TS import), so an extension's bare `@earendil-works/*` imports resolve from ambient `node_modules` | bun loading the built dist resolves through `virtualModules`, so the specifiers that map lists always come from the running host; bun running the TypeScript source is unchanged | a second copy of `@earendil-works/pi-tui` puts `ToolExecutionComponent.prototype` patching on a class the host never rendered, so renderer extensions silently fell back to the built-in tool rows |
 | Hidden thinking | the full reasoning text when hiding is off; when it is on, the italic `Thinking...` label by default, or no block or spacing when the label is explicitly empty or whitespace-only | with hiding on, each block renders as a three-row tail that follows the stream: a `Thinking` header whose duration ticks live and freezes when the block stops growing, and the last three visual rows behind a left rail, `…`-marked when earlier content was dropped. A nonempty extension `setHiddenThinkingLabel` replaces the whole block; an empty, whitespace-only or unset label retains the tail fallback (or `Thinking...` when the preview is off or has no displayable text), rather than hiding the block. The `Thinking tail preview` row in `/settings` turns it off, and it defaults to on | the tail keeps the reasoning legible while it streams without giving the block the whole transcript |
-| New-version prompt | checks `pi.dev/api/latest-version` at startup and prints an `Update Available` block with a changelog link, gated by `PI_SKIP_VERSION_CHECK` | no prompt about pi's own releases: the startup check, `checkForNewPiVersion` and `PI_SKIP_VERSION_CHECK` are gone | the fork reports outdated extension packages on [MixCode Home](home.md), and only there |
+| New-version prompt | checks `pi.dev/api/latest-version` at startup and prints an `Update Available` block with a changelog link, gated by `PI_SKIP_VERSION_CHECK` | startup skips the update prompt for pi releases | the fork reports outdated extension packages on [MixCode Home](home.md), and only there |
 | Exit resume hint | prints `To resume this session:` and `pi --session <id>` on separate lines when quitting a persisted session interactively | no such line: the print is removed, while the `formatResumeCommand` helper behind it stays for upstream's install-change warning | MixCode holds several sessions in one process and reaches them through its own tabs, so pi's `--session` command is not how a session is resumed |
 | Settings overrides | `applyOverrides` layers a value onto the effective settings, and the next recomposition from the scopes (`save`, `reload`, a trust change) drops it | the override layer is kept and re-merged on every recomposition, and `clearOverrides` releases named fields | a tab's `/context-limit` narrows the compaction budgets, and a settings write in the middle of a turn would otherwise restore the full budgets without saying so |
 | Batch automation | no `/batch` command and no `--batch` / `--batch-dry-run` flags; `--` always collects messages and `@file` arguments | `/batch <script> [-- <args...>]`, `--batch`, and `--batch-dry-run` run a Lua or TypeScript script that opens agent tabs; with `--batch`, `--` carries the script's arguments instead of messages, and `fengari` becomes a coding-agent dependency | scripting a fleet of agent tabs needs one entry point, and the script's arguments must reach it unparsed; see [Batch Scripts](batch-scripts.md) |
@@ -112,8 +111,7 @@ Deliberately left unpatched:
 | `packages/coding-agent/src/cli/args.ts:303` (source copy) | the `--models` help says "patterns for Ctrl+P cycling" | `ctrl+p` opens the command palette; the cycle key is `shift+ctrl+p` (`alt+p` on Windows and WSL) |
 | `packages/coding-agent/docs/slash-commands.md:30` | `/compact [instructions]` | the fork also accepts a leading `provider/modelId` that runs only the summary on that model; a leading word that is not a known provider or model is instruction text |
 | `packages/coding-agent/docs/compaction.md:41` | "trigger manually with `/compact [instructions]`" | same: the summary model can be named before the instructions, and a path at the front stays part of the instructions |
-| `packages/coding-agent/docs/environment-variables.md:85` | `PI_SKIP_VERSION_CHECK` disables the `pi.dev` latest-version request | the variable and the startup check that read it are removed |
-| `packages/coding-agent/src/utils/version-check.ts` (source copy) | exports `checkForNewPiVersion`, the startup check that reads `PI_SKIP_VERSION_CHECK` | removed; `getLatestPiRelease` and `isNewerPackageVersion` stay for `pi update --self` |
+| `packages/coding-agent/docs/environment-variables.md:85` | `PI_SKIP_VERSION_CHECK` disables the `pi.dev` latest-version request | MixCode skips the startup query |
 | `packages/coding-agent/docs/usage.md:23` | "Press `Ctrl+T` to show or hide thinking blocks" | `ctrl+t` opens Tab Jump; `app.thinking.toggle` keeps the same default but the composer declines it behind the jump handler |
 | `packages/coding-agent/docs/keybindings.md:157` | `app.thinking.toggle` defaults to `ctrl+t` | the same key belongs to `app.tab.jump`, which the composer registers first; the toggle is reachable only after a rebind |
 | `packages/coding-agent/docs/settings.md:79` | `fullscreenExitOutput` set to `resume-hint` selects "only a session resume hint" as the exit output | the value still suppresses the transcript on exit, and nothing is printed in its place |
@@ -147,7 +145,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/src/modes/interactive/components/extension-selector.ts`: the `keyShortcuts` option and the `y`/`n` shortcut arm on extension selectors
 - `packages/coding-agent/src/core/keybindings.ts`
 - `packages/coding-agent/src/core/slash-commands.ts`
-- `packages/coding-agent/src/core/extensions/runner.ts`
+- `packages/coding-agent/src/core/extensions/runner.ts` reserves the MixCode palette and quit shortcuts.
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`: the `MIXCODE` host marker, the host pid in `MIXCODE_PID`, the per-tab `EventBus` registration, and the `--batch` invocation that reaches the interactive mode as `initialBatch` or the dry-run plan
 - `packages/coding-agent/src/core/session-manager.ts`: `getDefaultSessionDirPath` is exported
@@ -183,7 +181,7 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/tui/src/mixcode/windowed-node.ts`: the windowed layout state and the scroll line provider,
   with `renderWindow`'s `relativeDelta` argument a content-anchored relative move resolves
 - `packages/tui/src/components/settings-list.ts`: the optional `section` heading row on `SettingItem`
-- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section entries, the `Fullscreen exit output` description, and the `onSettingsChanged` hook the panel calls after a row change
+- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`: the `MixCode` section entries, the `Fullscreen exit output` description, and the `onSettingsChanged` hook the panel calls after a setting changes, including the Notices submenu
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`: the `getSettingsListTheme` section heading style
 - `packages/tui/src/layout.ts`: windowed scroll child, the line provider carried on a scroll box, the
   `honorOffset` argument a suspended scroll view passes to its windowed child, the relative-delta
@@ -226,17 +224,14 @@ Each one is a potential conflict point, so edits are kept down to the wiring tha
 - `packages/coding-agent/test/keybindings.test.ts`, `packages/coding-agent/test/interactive-mode-compaction.test.ts`: the queue bindings and the compaction paths
 - `packages/coding-agent/test/interactive-mode-status.test.ts`: the `showExtensionCustom` case gives its
   hand-built host the per-tab interaction registry the dialog methods read
-- `packages/coding-agent/src/utils/version-check.ts`: `checkForNewPiVersion` removed, since the startup prompt was its only caller
 - `scripts/build-coding-agent-bundle.mjs`: `fengari` remains external in the bundle and is allowed
   as a runtime package for Lua batch scripts
-- `scripts/profile-coding-agent-node.mjs`: `--offline` no longer sets the removed `PI_SKIP_VERSION_CHECK`
-- `packages/coding-agent/test/version-check.test.ts`, `packages/coding-agent/test/package-command-paths.test.ts`: the removed check and its env var dropped from the cases; package-command fixtures and output assertions use `APP_NAME` for the fork executable
+- `packages/coding-agent/test/package-command-paths.test.ts` uses `APP_NAME` in fixtures and output assertions for the fork executable.
 - `packages/coding-agent/test/interactive-mode-startup-input.test.ts`: the hand-built submit host
   supplies the Home attachment and session-binding gates required before input dispatch
 - `packages/coding-agent/test/suite/regressions/4167-thinking-toggle-pending-tool-render.test.ts`:
   the test host provides the response-model notice callback used by transcript rendering
 - `packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts`: covers signal and interactive shutdown order and checks that quitting a persisted session omits the single-session hint
-- `AGENTS.md`, `.gitignore`
 
 The fork also adds keys to upstream's `keybindings.ts` — the `app.workdir.*` bindings the workdir
 picker answers, the `app.queueEdit.*` ones the queued-message editor answers, and the `app.tab.jump`

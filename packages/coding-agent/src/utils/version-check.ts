@@ -93,3 +93,17 @@ export async function getLatestPiVersion(
 ): Promise<string | undefined> {
 	return (await getLatestPiRelease(currentVersion, options))?.version;
 }
+
+export async function checkForNewPiVersion(currentVersion: string): Promise<LatestPiRelease | undefined> {
+	if (process.env.PI_SKIP_VERSION_CHECK) return undefined;
+
+	try {
+		const latestRelease = await getLatestPiRelease(currentVersion);
+		if (latestRelease && isNewerPackageVersion(latestRelease.version, currentVersion)) {
+			return latestRelease;
+		}
+		return undefined;
+	} catch {
+		return undefined;
+	}
+}

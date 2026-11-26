@@ -620,14 +620,12 @@ if (process.platform !== "win32") fs.chmodSync(appPath, 0o755);
 
 	it("toggles built-in extensions in config global mode", async () => {
 		const settingsManager = SettingsManager.fromStorage(new InMemorySettingsStorage(), { projectTrusted: true });
-		const { extensions } = await new DefaultPackageManager({
+		const resolvedPaths = await new DefaultPackageManager({
 			cwd: projectDir,
 			agentDir,
 			settingsManager,
 			builtinExtensions: ["llama.cpp", "mcp"],
 		}).resolve();
-		// Keep unrelated user skill roots out of the extension-only fixture.
-		const resolvedPaths: ResolvedPaths = { extensions, skills: [], prompts: [], themes: [] };
 		const selector = new ConfigSelectorComponent(
 			{ global: resolvedPaths, project: resolvedPaths },
 			settingsManager,
@@ -654,14 +652,12 @@ if (process.platform !== "win32") fs.chmodSync(appPath, 0o755);
 		const storage = new InMemorySettingsStorage();
 		storage.withLock("global", () => JSON.stringify({ extensions: ["-builtin:mcp"] }));
 		const settingsManager = SettingsManager.fromStorage(storage, { projectTrusted: true });
-		const { extensions } = await new DefaultPackageManager({
+		const resolvedPaths = await new DefaultPackageManager({
 			cwd: projectDir,
 			agentDir,
 			settingsManager,
 			builtinExtensions: ["mcp"],
 		}).resolve();
-		// Keep unrelated user skill roots out of the extension-only fixture.
-		const resolvedPaths: ResolvedPaths = { extensions, skills: [], prompts: [], themes: [] };
 		const selector = new ConfigSelectorComponent(
 			{ global: resolvedPaths, project: resolvedPaths },
 			settingsManager,
@@ -879,6 +875,34 @@ if (process.platform !== "win32") fs.chmodSync(appPath, 0o755);
 		expect(existsSync(npmRecordPath)).toBe(false);
 		expect(errorSpy.mock.calls.map(([message]) => String(message)).join("\n")).toContain(
 			`Managed ${APP_NAME} installations do not support --force`,
+		);
+		expect(process.exitCode).toBe(1);
+	});
+
+	it.skipIf(process.platform === "win32")("rejects updating the Windows managed install from WSL", async () => {
+		// https://github.com/earendil-works/pi/issues/12172
+		const targetVersion = getNewerPatchVersion();
+		const { managedRoot, npmRecordPath } = prepareManagedInstall(targetVersion);
+		writeFileSync(
+			join(managedRoot, "managed-install.json"),
+			`${JSON.stringify({
+				kind: "pi-managed-install",
+				schemaVersion: 1,
+				layout: "releases-v1",
+				entrypoint: { type: "script", path: "C:\\Users\\user\\.pi\\agent\\bin\\pi.cmd" },
+			})}\r\n`,
+		);
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		await expect(runPackageCommandDirectly(["update", "--self"])).resolves.toBeUndefined();
+
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(existsSync(npmRecordPath)).toBe(false);
+		expect(readFileSync(join(managedRoot, "current-version"), "utf8")).toBe(`${VERSION}\n`);
+		expect(errorSpy.mock.calls.map(([message]) => String(message)).join("\n")).toContain(
+			"Running the Windows installation from WSL is unsupported",
 		);
 		expect(process.exitCode).toBe(1);
 	});

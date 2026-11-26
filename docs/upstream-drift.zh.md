@@ -15,7 +15,6 @@
 | `app.thinking.cycle` 默认键 | `shift+tab` | `alt+t` | `shift+tab` 改作 `app.tab.previous` |
 | Agent 标签页 | 一个终端一个会话 | 多个并发标签页，各自持有 `AgentSessionRuntime`；回复生成期间切回时，用已保存历史与当前流式消息重建对话区 | 切换标签后，正在生成的回答必须继续显示与更新；见 [Agent 标签页](tabs.zh.md) |
 | 标签页手动排序 | 无 agent 标签页 | 将当前标签页移动一格，或直接移到首尾 | 共享布局保存调整后的顺序，见 [Agent 标签页](tabs.zh.md) |
-| 仓库检查范围 | Biome 和依赖、导入扫描可能遍历嵌套的临时 checkout | 这些扫描排除 `tmp/`、`.worktrees/` 和 `.sync-feature/` | 本地复现目录和 worktree 各自包含源码与配置 |
 | 历史压缩次数提示 | 加载会话历史时显示 `Session compacted N times` | 每个会话在进程内显示一次：启动、首次进入该标签页、切换分支时显示；不参与状态行的复用，后续状态不会覆盖它；离开过的标签页再次返回时不再显示 | 切换标签页不会压缩会话 |
 | 标签页标题同步 | 无 agent 标签页 | 普通标签页跟随之后的会话改名，包括扩展发起的改名；batch 锁定的标题保留指定名字 | 已有名字的标签页也必须反映成功的会话改名；见[标题](tabs.zh.md#标题) |
 | 启动时恢复标签页 | 不适用（一个终端一个会话） | 停在扩展 `session_start` 对话框的标签页会把队列让给下一个标签页，在 Home 卡片上显示 `[input]`，答复后自行收尾 | 串行恢复不能等待人工输入；见 [Agent 标签页](tabs.zh.md#启动恢复) |
@@ -71,7 +70,7 @@
 | 用户消息块 | 带背景的消息文本块 | 同一块内容，但在首行右端显示发送时间（`Sep 29, 9:29 PM`：短月份、日、时、分，取终端自身区域设置），以暗色绘制，正文渲染宽度相应收窄，任何文字都不会压到时间上 | 消息块自身说明了发送时刻，长对话无需打开会话列表就能按时间阅读 |
 | 指针 hover 反馈 | 无提示：列表忽略指针移动，消息区域只响应点击，跳到底部标签只有一种样式 | 指针下的单元格获得选中背景与下划线（标签页 chip、命令面板行、坞区 meta 行的模型与 thinking 字段）；响应点击的消息块整块填充为一个矩形；全屏渲染器在指针离开后告知对应组件，捕获型浮层打开时保持其下方界面无高亮，非捕获型浮层区域外仍保持 hover，终端尺寸变化时清除所有 hover | 本 fork 的可点击界面需要一个不改变键盘选择与活动标签页的提示 |
 | 扩展模块解析 | bun 跑构建产物时保留 jiti 的 `tryNative`（原生 TS 导入），扩展的 `@earendil-works/*` 裸导入因此从环境 `node_modules` 解析 | bun 跑构建产物时改走 `virtualModules`，清单内的 specifier 一律取运行中宿主自己的那份；bun 跑 TypeScript 源码不受影响 | 第二份 `@earendil-works/pi-tui` 会让 `ToolExecutionComponent.prototype` 的补丁打在宿主从未渲染的类上，渲染扩展于是静默退回内置工具行 |
-| 新版本提示 | 启动时请求 `pi.dev/api/latest-version`，打印带 changelog 链接的 `Update Available` 块，由 `PI_SKIP_VERSION_CHECK` 关闭 | 不再提示 pi 自身的新版本：启动检查、`checkForNewPiVersion` 与 `PI_SKIP_VERSION_CHECK` 均已删除 | 本 fork 改为只在 [MixCode Home](home.zh.md) 报告过期的扩展包 |
+| 新版本提示 | 启动时请求 `pi.dev/api/latest-version`，打印带 changelog 链接的 `Update Available` 块，由 `PI_SKIP_VERSION_CHECK` 关闭 | 启动时跳过 pi 自身的新版本提示 | 本 fork 改为只在 [MixCode Home](home.zh.md) 报告过期的扩展包 |
 | 退出恢复提示 | 交互式退出已保存的会话时，分两行打印 `To resume this session:` 和 `pi --session <id>` | 不再打印该输出；负责拼装它的 `formatResumeCommand` 辅助函数保留下来，供上游的安装变更提醒使用 | MixCode 在一个进程里保留多个会话并通过自己的标签页进入，pi 的 `--session` 命令不是恢复会话的方式 |
 | 设置覆盖 | `applyOverrides` 把值叠加到生效设置上，下一次从各作用域重新组合（`save`、`reload`、信任状态变化）时就会丢失 | 覆盖层会被保留，并在每次重新组合时重新合并；`clearOverrides` 用于释放指定字段 | 标签页的 `/context-limit` 会收窄压缩预算，否则中途一次设置写入就会在无提示的情况下恢复完整预算 |
 | Batch 自动化 | 没有 `/batch` 命令，也没有 `--batch` / `--batch-dry-run`；`--` 始终收集消息与 `@file` 参数 | `/batch <script> [-- <args...>]`、`--batch`、`--batch-dry-run` 运行 Lua 或 TypeScript 脚本以打开 agent 标签页；带 `--batch` 时 `--` 传递脚本参数而不是消息，并新增 `fengari` 作为 coding-agent 依赖 | 用脚本铺开一批 agent 标签页需要一个统一入口，且参数必须原样到达脚本；见 [Batch 脚本](batch-scripts.zh.md) |
@@ -109,8 +108,7 @@
 | `packages/coding-agent/docs/custom-provider.md:102-105` | 自定义 provider 的请求仪表清单只列了 `options.onPayload`、`options.onResponse` 与 abort signal | 会捕获请求失败的 provider 还必须调用 `options.onProviderError(error, model)`；见[模型请求错误诊断](provider-errors.zh.md) |
 | `packages/coding-agent/docs/slash-commands.md:30` | `/compact [instructions]` | 本 fork 还接受前置的 `provider/modelId`，让摘要只用该模型执行；首个词不是已知 provider 或模型时按指令文本处理 |
 | `packages/coding-agent/docs/compaction.md:41` | "trigger manually with `/compact [instructions]`" | 同上：可在指令前指定摘要模型，开头的路径仍属于指令 |
-| `packages/coding-agent/docs/environment-variables.md:85` | `PI_SKIP_VERSION_CHECK` 关闭 `pi.dev` 最新版本请求 | 该变量与读取它的启动检查已删除 |
-| `packages/coding-agent/src/utils/version-check.ts`（源码文案） | 导出 `checkForNewPiVersion`，即读取 `PI_SKIP_VERSION_CHECK` 的启动检查 | 已删除；`getLatestPiRelease` 与 `isNewerPackageVersion` 保留供 `pi update --self` 使用 |
+| `packages/coding-agent/docs/environment-variables.md:85` | `PI_SKIP_VERSION_CHECK` 关闭 `pi.dev` 最新版本请求 | MixCode 跳过启动时的版本查询 |
 | `packages/coding-agent/docs/usage.md:23` | "Press `Ctrl+T` to show or hide thinking blocks" | `ctrl+t` 打开 Tab Jump；`app.thinking.toggle` 默认键不变，但 composer 在跳转处理器之后不再响应它 |
 | `packages/coding-agent/docs/keybindings.md:157` | `app.thinking.toggle` 默认 `ctrl+t` | 同一个键属于 `app.tab.jump`，composer 先注册跳转处理器；thinking 开关需重新绑定后才可用 |
 | `packages/coding-agent/docs/settings.md:79` | `fullscreenExitOutput` 取 `resume-hint` 时选择 "only a session resume hint" 作为退出输出 | 该取值仍然跳过退出时的对话记录输出，且不再打印任何内容 |
@@ -140,7 +138,7 @@
 - `packages/coding-agent/src/modes/interactive/components/extension-selector.ts`：`keyShortcuts` 选项，以及扩展选择器上的 `y`/`n` 快捷键分支
 - `packages/coding-agent/src/core/keybindings.ts`
 - `packages/coding-agent/src/core/slash-commands.ts`
-- `packages/coding-agent/src/core/extensions/runner.ts`
+- `packages/coding-agent/src/core/extensions/runner.ts` 为 MixCode 的命令面板和退出快捷键保留绑定。
 - `packages/coding-agent/src/modes/interactive/chat-viewport.ts`
 - `packages/coding-agent/src/main.ts`：`MIXCODE` 宿主标记、`MIXCODE_PID` 里的宿主进程 pid、每标签 `EventBus` 的登记，以及以 `initialBatch` 或以 dry-run 计划到达交互模式的 `--batch` 调用
 - `packages/coding-agent/src/core/session-manager.ts`：导出 `getDefaultSessionDirPath`
@@ -169,7 +167,7 @@
 - `packages/tui/src/mixcode/windowed-node.ts`：窗口化布局状态与滚动行提供者，含 `renderWindow` 的
   `relativeDelta` 参数，供内容锚定的相对滚动解析
 - `packages/tui/src/components/settings-list.ts`：`SettingItem` 的可选 `section` 标题行
-- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`：`MixCode` 分组条目，`Fullscreen exit output` 的描述，以及面板在行变化后调用的 `onSettingsChanged` 钩子
+- `packages/coding-agent/src/modes/interactive/components/settings-selector.ts`：`MixCode` 分组条目，`Fullscreen exit output` 的描述，以及设置变化后调用的 `onSettingsChanged` 钩子，含 Notices 子菜单
 - `packages/coding-agent/src/modes/interactive/theme/theme.ts`：`getSettingsListTheme` 的分组标题样式
 - `packages/tui/src/layout.ts`：窗口化滚动子组件、滚动盒携带的行提供者、被挂起的滚动视图传给窗口化子组件的 `honorOffset` 参数、交给同一子组件的相对增量传递，以及已有高度的 `HStack` 拉伸子项跳过固有高度测量
 - `packages/tui/src/mixcode/layout-queries.ts`：`getComponentBox`、滚动行提供者查询与物化整行的查询
@@ -190,15 +188,12 @@
 - `packages/coding-agent/test/settings-manager.test.ts`：TUI 模式断言改为 fork 的 fullscreen 默认值
 - `packages/coding-agent/test/keybindings.test.ts`、`packages/coding-agent/test/interactive-mode-compaction.test.ts`：队列绑定与压缩路径
 - `packages/coding-agent/test/interactive-mode-status.test.ts`：`showExtensionCustom` 用例给自建宿主补上按标签页作用域的协作者
-- `packages/coding-agent/src/utils/version-check.ts`：删除 `checkForNewPiVersion`，启动提示是它唯一的调用方
 - `scripts/build-coding-agent-bundle.mjs`：`fengari` 保持为 bundle 的外部依赖，并作为 Lua batch
   脚本所需的运行时包加入允许清单
-- `scripts/profile-coding-agent-node.mjs`：`--offline` 不再设置已删除的 `PI_SKIP_VERSION_CHECK`
-- `packages/coding-agent/test/version-check.test.ts`、`packages/coding-agent/test/package-command-paths.test.ts`：用例中去掉已删除的检查与对应环境变量；包管理夹具与输出断言通过 `APP_NAME` 使用 fork 的可执行文件名
+- `packages/coding-agent/test/package-command-paths.test.ts` 通过 `APP_NAME` 在包管理夹具和输出断言中使用 fork 的可执行文件名。
 - `packages/coding-agent/test/interactive-mode-startup-input.test.ts`：手工搭建的提交宿主补上输入分发前所需的 Home 挂载与 session 绑定
 - `packages/coding-agent/test/suite/regressions/4167-thinking-toggle-pending-tool-render.test.ts`：测试宿主补上对话区渲染会调用的 response-model notice 回调
 - `packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts`：覆盖信号退出和交互式退出的清理顺序，并检查退出已保存的会话时会省略单会话恢复提示
-- `AGENTS.md`、`.gitignore`
 - `packages/ai/src/types.ts`、`packages/ai/src/api/simple-options.ts`、`packages/ai/src/api/*` 下的十个文本适配器与 `packages/ai/src/providers/faux.ts`：`onProviderError` 流选项、它在 `streamSimple` 中的转发，以及每个终止 catch 里的一行 `notifyProviderError` 调用
 
 本 fork 还给 `keybindings.ts` 加了键位绑定 —— 工作目录选择器响应的 `app.workdir.*`、排队消息编辑响应的 `app.queueEdit.*`，以及 Tab Jump 浮层响应的 `app.tab.jump` / `app.tabJump.toggleNonIdle`；`core/mixcode/multi-tab/tab-manager.ts` 与 `tab-state.ts` 是 fork 自有文件。

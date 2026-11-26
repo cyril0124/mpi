@@ -71,6 +71,33 @@ describe("re-reading a settings change across every open tab", () => {
 		expect(background.syncCacheWarmingMode).toHaveBeenCalledTimes(1);
 	});
 
+	it("syncs individual notice edits across tabs with a migrated project override", async () => {
+		const agentDir = tempDir();
+		const settingsFile = join(agentDir, "settings.json");
+		writeFileSync(settingsFile, JSON.stringify({ showCacheMissNotices: true }));
+		const projectDir = tempDir();
+		mkdirSync(join(projectDir, ".pi"));
+		writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ notices: { cacheMisses: true } }));
+		const first = SettingsManager.create(tempDir(), agentDir, { projectTrusted: true });
+		const second = SettingsManager.create(tempDir(), agentDir, { projectTrusted: true });
+		const pinned = SettingsManager.create(projectDir, agentDir, { projectTrusted: true });
+		const tabs = [tab(first).tab, tab(second).tab, tab(pinned).tab];
+
+		first.setNotice("cacheMisses", false);
+		await reloadSettingsAcrossTabs(first, tabs);
+		expect(second.getNotices().cacheMisses).toBe(false);
+		expect(pinned.getNotices().cacheMisses).toBe(true);
+
+		second.setNotice("cacheWarming", false);
+		await reloadSettingsAcrossTabs(second, tabs);
+
+		const inherited = { cacheMisses: false, cacheWarming: false, compactionCosts: true, reasoningDrops: true };
+		expect(first.getNotices()).toEqual(inherited);
+		expect(second.getNotices()).toEqual(inherited);
+		expect(pinned.getNotices()).toEqual({ ...inherited, cacheMisses: true });
+		expect(JSON.parse(readFileSync(settingsFile, "utf8"))).toEqual({ notices: inherited });
+	});
+
 	it("keeps a tab whose project settings pin the value", async () => {
 		const agentDir = join(tempDir(), "agent");
 		const overriddenCwd = tempDir();

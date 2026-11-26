@@ -17,14 +17,18 @@ type DialogContext = {
 		showOverlay: (component: Component) => { hide: () => void; setHidden: (hidden: boolean) => void };
 	};
 	overlays: Component[];
-	nextBlockingOverlayId: number;
-	extensionOverlays: Map<unknown, () => void>;
+	readonly tabInteractions?: ReadonlyMap<string, readonly unknown[]>;
 	programStatus: { setBlocked: ReturnType<typeof vi.fn> };
 	disposeActiveSelector: () => void;
 	toggleToolOutputExpansion: () => void;
 };
 
 type DialogMethods = {
+	showExtensionSelector(
+		title: string,
+		options: string[],
+		opts?: { blockedKind?: "permission" | "question" | "auth" },
+	): Promise<string | undefined>;
 	showExtensionConfirm(title: string, message: string, opts?: { signal?: AbortSignal }): Promise<boolean>;
 	showExtensionCustom<T>(
 		factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: T) => void) => Component,
@@ -72,8 +76,6 @@ function createContext(): DialogContext & DialogMethods {
 			},
 		},
 		overlays: [],
-		nextBlockingOverlayId: 0,
-		extensionOverlays: new Map(),
 		programStatus: { setBlocked: vi.fn() },
 		disposeActiveSelector: vi.fn(),
 		toggleToolOutputExpansion: vi.fn(),
@@ -112,6 +114,33 @@ describe("InteractiveMode extension dialogs", () => {
 		await expect(first).resolves.toBe(true);
 		expect(context.focused).toBe(context.editor);
 		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", undefined);
+	});
+
+	// Regression for #12439: the project trust prompt reported its folder and explanation lines as the message.
+	it("reports the first line of a multi-line selector title as the blocked message", async () => {
+		const context = createContext();
+		const choice = context.showExtensionSelector("Trust project folder?\n/work/project\n\nDetails", ["Trust"]);
+		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", {
+			kind: "question",
+			message: "Trust project folder?",
+		});
+
+		context.focused?.handleInput?.("\r");
+		await expect(choice).resolves.toBe("Trust");
+	});
+
+	it("reports the kind passed with blockedKind", async () => {
+		const context = createContext();
+		const choice = context.showExtensionSelector("Deploy to production?", ["Deploy", "Cancel"], {
+			blockedKind: "permission",
+		});
+		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", {
+			kind: "permission",
+			message: "Deploy to production?",
+		});
+
+		context.focused?.handleInput?.("\r");
+		await expect(choice).resolves.toBe("Deploy");
 	});
 
 	it("removes a hidden dialog when its signal aborts", async () => {
@@ -233,49 +262,51 @@ describe("InteractiveMode extension dialogs", () => {
 
 		const first = open("first", { kind: "question", message: "First?" });
 		await vi.waitFor(() => expect(context.overlays).toHaveLength(1));
-		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-overlay:0", {
+		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", {
 			kind: "question",
 			message: "First?",
 		});
 
 		const second = open("second", { kind: "question", message: "Second?" });
 		await vi.waitFor(() => expect(context.overlays).toHaveLength(2));
-		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-overlay:1", {
+		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", {
 			kind: "question",
 			message: "Second?",
 		});
 
 		const loader = open("loading");
 		await vi.waitFor(() => expect(context.overlays).toHaveLength(3));
+		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", {
+			kind: "question",
+			message: "Second?",
+		});
 		dones[2]("loaded");
 		await expect(loader).resolves.toBe("loaded");
 
 		handles[0].setHidden(true);
 		dones[1]("two");
 		await expect(second).resolves.toBe("two");
-		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-overlay:1", undefined);
+		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", {
+			kind: "question",
+			message: "First?",
+		});
 
 		dones[0]("one");
 		await expect(first).resolves.toBe("one");
-		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-overlay:0", undefined);
-		expect(context.programStatus.setBlocked).toHaveBeenCalledTimes(4);
+		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", undefined);
 	});
 
 	// Regression for #11816: /reload and session switches drop overlays without calling done().
 	it("clears overlay blocked status when the extension UI is reset", async () => {
 		const context = createContext();
 		Object.assign(context, {
-			clearExtensionTerminalInputListeners: vi.fn(),
-			setExtensionFooter: vi.fn(),
-			setExtensionHeader: vi.fn(),
-			clearExtensionWidgets: vi.fn(),
+			footerContainer: new Container(),
 			footerDataProvider: { clearExtensionStatuses: vi.fn() },
-			footer: { invalidate: vi.fn() },
-			setCustomEditorComponent: vi.fn(),
+			footer: new Text("footer"),
 			setupAutocompleteProvider: vi.fn(),
-			defaultEditor: {},
 			updateTerminalTitle: vi.fn(),
 			setWorkingIndicator: vi.fn(),
+			resetWorkingMessage: vi.fn(),
 			setHiddenThinkingLabel: vi.fn(),
 		});
 		void context.showExtensionCustom<string>(() => new Text("question"), {
@@ -283,14 +314,14 @@ describe("InteractiveMode extension dialogs", () => {
 			blocked: { kind: "question", message: "Question?" },
 		});
 		await vi.waitFor(() => expect(context.overlays).toHaveLength(1));
-		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-overlay:0", {
+		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", {
 			kind: "question",
 			message: "Question?",
 		});
 
 		context.resetExtensionUI();
-		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-overlay:0", undefined);
-		expect(context.extensionOverlays.size).toBe(0);
+		expect(context.programStatus.setBlocked).toHaveBeenLastCalledWith("extension-dialog", undefined);
+		expect(context.tabInteractions?.size).toBe(0);
 		expect(context.overlays).toHaveLength(0);
 	});
 

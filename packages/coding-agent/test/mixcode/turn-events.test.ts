@@ -99,6 +99,7 @@ function createEventHost(prototype = false) {
 				`status-clear:${kind}:${host.runStartLeafId}:${state.followUpRunFailed}:${host.compactionClaimed}:${host.compactionModelRefs.size}`,
 			),
 		programStatus: { setBlocked() {}, handleEvent() {} },
+		flushPendingBashComponents: vi.fn(),
 		checkShutdownRequested: vi.fn(async () => {
 			trace.push(`shutdown:${state.followUpsPaused}`);
 		}),

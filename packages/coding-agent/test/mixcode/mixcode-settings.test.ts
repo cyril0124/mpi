@@ -195,7 +195,7 @@ function mixcodeRowConfig(): SettingsConfig {
 		httpIdleTimeoutMs: 300_000,
 		mermaidRenderingMode: "off",
 		quietStartup: false,
-		showCacheMissNotices: true,
+		notices: { cacheMisses: true },
 		steeringMode: "all",
 		thinkingLevel: "medium",
 		transport: "auto",

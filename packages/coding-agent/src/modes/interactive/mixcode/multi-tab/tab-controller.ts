@@ -27,6 +27,7 @@ export interface TabControllerOptions {
 	readonly onTabsChanged: () => void;
 	readonly onLayoutChanged: () => void;
 	readonly onTabClosed: (tabId: string, removedIndex: number) => void;
+	readonly onTabSettled: (tabId: string) => void;
 	readonly onBackgroundCompletion: () => void;
 	/** Called when a tab the user is not looking at ends a failed turn. */
 	readonly onBackgroundRunFailed?: (tabId: string) => void;
@@ -59,6 +60,7 @@ export class TabController {
 			onTabsChanged: options.onTabsChanged,
 			onLayoutChanged: options.onLayoutChanged,
 			onTabClosed: options.onTabClosed,
+			onTabSettled: options.onTabSettled,
 			onBackgroundCompletion: options.onBackgroundCompletion,
 			onBackgroundRunFailed: options.onBackgroundRunFailed,
 			onCompactionEnd: options.onCompactionEnd,

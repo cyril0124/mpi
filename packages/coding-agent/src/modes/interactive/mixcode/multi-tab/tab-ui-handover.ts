@@ -63,6 +63,7 @@ export interface TabUiViewPort {
 	readonly ui: TUI;
 	readonly homeActive: boolean;
 	hiddenThinkingLabel: string | undefined;
+	toolOutputExpanded: boolean;
 	leaveHome(): void;
 	showWorking(): void;
 	showCompaction(reason: "manual" | "threshold" | "overflow"): void;
@@ -154,6 +155,8 @@ export class TabUiHandover {
 			await runtime.current.session.settingsManager.reload();
 			applySessionCopiedSettings(runtime.current.session);
 			runtime.applySettings();
+			// Replay reads this field before extension chrome mounts. Cached blocks keep their own state.
+			if (surfaceSwapped) view.toolOutputExpanded = controller.tabUi.get(tab.id)?.toolsExpanded ?? false;
 			if (!this.restoreTranscript(tab.id)) transcript.rebuild();
 		} finally {
 			this.mountingTab = false;
@@ -252,17 +255,28 @@ export class TabUiHandover {
 		return true;
 	}
 
-	/** Warm parked blocks only on Home; failed builds stay cold and always restore live identity. */
+	/** Warm a background tab while Home covers the mounted transcript. */
 	warmTabTranscript(tab: AgentTab): void {
 		const { runtime, transcript, extensions, view } = this.ports;
 		if (!view.homeActive) return;
+		const controller = extensions.controller;
+		const previousId = controller.activeTabIdForUi;
+		if (previousId === tab.id) return;
 		const previousRuntime = runtime.current;
-		const previousId = extensions.controller.activeTabIdForUi;
 		const previousLabel = view.hiddenThinkingLabel;
+		const previousExpansion = view.toolOutputExpanded;
+		const previousChat = transcript.chat.children;
+		const previousLoaded = transcript.loaded.children;
+		const previousPendingTools = [...transcript.pendingTools];
 		try {
+			// While Home is visible, these blocks still belong to the mounted tab.
+			transcript.chat.clear();
+			transcript.loaded.clear();
 			runtime.current = tab.runtime;
-			extensions.controller.activeTabIdForUi = tab.id;
-			view.hiddenThinkingLabel = extensions.controller.tabUi.get(tab.id)?.hiddenThinkingLabel;
+			controller.activeTabIdForUi = tab.id;
+			const target = controller.tabUi.get(tab.id);
+			view.hiddenThinkingLabel = target?.hiddenThinkingLabel;
+			view.toolOutputExpanded = target?.toolsExpanded ?? false;
 			const manager = runtime.current.session.sessionManager;
 			transcript.renderEntries(chronologicalTranscriptEntries(manager.buildContextEntries(), manager.getBranch()), {
 				updateFooter: false,
@@ -274,8 +288,13 @@ export class TabUiHandover {
 			// Warming is best effort; focus rebuilds a transcript that could not be prepared.
 		} finally {
 			runtime.current = previousRuntime;
-			extensions.controller.activeTabIdForUi = previousId;
+			controller.activeTabIdForUi = previousId;
 			view.hiddenThinkingLabel = previousLabel;
+			view.toolOutputExpanded = previousExpansion;
+			transcript.chat.children = previousChat;
+			transcript.loaded.children = previousLoaded;
+			transcript.pendingTools.clear();
+			for (const [id, tool] of previousPendingTools) transcript.pendingTools.set(id, tool);
 		}
 	}
 

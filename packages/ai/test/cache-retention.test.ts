@@ -5,7 +5,6 @@ import { stream as streamOpenAIResponses } from "../src/api/openai-responses.ts"
 import { getModel, normalizeContext, stream } from "../src/compat.ts";
 import { MODELS } from "../src/models.generated.ts";
 import type { Model } from "../src/types.ts";
-import { opencodeGoKimiK26 } from "./helpers/legacy-models.ts";
 
 class PayloadCaptured extends Error {
 	constructor() {
@@ -515,10 +514,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 		it.each([
 			MODELS.opencode["deepseek-v4.1-flash"],
 			MODELS.opencode["deepseek-v4-pro"],
-			MODELS.opencode["kimi-k2.5"],
-			MODELS.opencode["kimi-k2.6"],
 			MODELS.opencode["minimax-m2.7"],
-			opencodeGoKimiK26,
 		] as const)("should omit long cache retention for $provider/$id", async (metadata) => {
 			const model = metadata as Model<"openai-completions">;
 			let capturedPayload: OpenAICompletionsCachePayload | undefined;

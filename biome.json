@@ -38,9 +38,6 @@
 			"!**/*.models.ts",
 			"!packages/mom/data/**/*",
 			"!!**/node_modules",
-			"!!tmp",
-			"!!.worktrees",
-			"!!.sync-feature",
 			"!!apps"
 		]
 	},

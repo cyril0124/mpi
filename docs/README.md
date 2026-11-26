@@ -53,5 +53,6 @@ merge. Every place where this fork's behavior and upstream's documentation disag
 
 ## Fork Mechanics
 
+- [Fork rules](../MIXCODE.md) describe upstream sync, code layout, and validation.
 - **[Upstream Drift](upstream-drift.md)**: what this fork changes against upstream, which
   upstream pages are stale because of it, and which files exist only here.

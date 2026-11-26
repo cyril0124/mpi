@@ -27,4 +27,5 @@
 
 ## Fork 机制
 
+- [Fork 规则](../MIXCODE.md) 说明上游同步、代码布局和验证方式。
 - **[上游漂移](upstream-drift.zh.md)**：本 fork 相对上游改了什么、哪些上游页面因此过期、哪些路径只存在于本 fork。

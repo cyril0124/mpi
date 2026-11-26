@@ -26,6 +26,7 @@ import { ExtensionInputComponent } from "../../components/extension-input.ts";
 import { ExtensionSelectorComponent, type ExtensionSelectorOptions } from "../../components/extension-selector.ts";
 import type { FooterComponent } from "../../components/footer.ts";
 import type { MixcodePromptEditor } from "../../components/mixcode/input-dock/prompt-editor.ts";
+import { type BlockedStatus, dialogBlockedStatus } from "../../program-status-reporter.ts";
 import { getAvailableThemesWithPaths, getEditorTheme, getThemeByName, Theme, theme } from "../../theme/theme.ts";
 import type { InteractiveThemeController } from "../../theme/theme-controller.ts";
 
@@ -63,7 +64,7 @@ export interface TabExtensionUi {
  */
 export interface TabInteraction {
 	/** Status reported while this interaction waits for an answer. */
-	blocked?: { kind: "question" | "permission" | "auth"; message: string };
+	blocked?: BlockedStatus;
 	/** Which surface the interaction took, which decides how it is parked. */
 	kind: "selector" | "input" | "editor" | "custom" | "overlay";
 	/** The tab that owns it, so a close can hand the slot back to what it parked. */
@@ -799,16 +800,20 @@ export class ExtensionUiController {
 	/**
 	 * Extension UI context of the live surfaces.
 	 *
-	 * `ownerTabId` pins the dialogs it opens to one tab. Without it the context
-	 * belongs to whatever tab the user is looking at when a dialog is requested,
-	 * which is right for a context made on the spot (a shortcut handler) and wrong
-	 * for one a session keeps, so a session bind passes its own tab, as a getter:
-	 * a bind runs before its tab is registered, and the tab a later dialog belongs
-	 * to is only known when the dialog is requested.
+	 * `ownerTabId` pins the dialogs and composer access to one tab. Without it the context
+	 * follows the tab the user is looking at, which suits a shortcut handler. A session
+	 * bind passes its own tab as a getter because the runtime may not be registered yet.
 	 */
 	createExtensionUIContext(ownerTabId?: string | (() => string | undefined)): ExtensionUIContext {
 		const ownerTab = () => (typeof ownerTabId === "function" ? ownerTabId() : ownerTabId);
 		const dialogTabId = () => ownerTab() ?? this.host.shownTabId();
+		const editorForOwner = (): EditorComponent | undefined => {
+			if (this.host.isHomeActive()) return undefined;
+			// An unresolved runtime can be unregistered or closed. Never give it another tab's draft.
+			const tabId = ownerTab();
+			if (ownerTabId !== undefined && (tabId === undefined || tabId !== this.host.shownTabId())) return undefined;
+			return this.host.editor;
+		};
 		return {
 			select: (title, options, opts) => this.showExtensionSelector(title, options, opts, dialogTabId()),
 			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts, dialogTabId()),
@@ -825,9 +830,22 @@ export class ExtensionUiController {
 			setHeader: (factory) => this.setExtensionHeader(factory),
 			setTitle: (title) => this.host.ui.terminal.setTitle(title),
 			custom: (factory, options) => this.showExtensionCustom(factory, options, dialogTabId()),
-			pasteToEditor: (text) => this.host.editor.handleInput(`\x1b[200~${text}\x1b[201~`),
-			setEditorText: (text) => this.host.editor.setText(text),
-			getEditorText: () => this.host.editor.getExpandedText?.() ?? this.host.editor.getText(),
+			pasteToEditor: (text) => {
+				const editor = editorForOwner();
+				if (!editor) return;
+				editor.handleInput(`\x1b[200~${text}\x1b[201~`);
+				this.host.ui.requestRender();
+			},
+			setEditorText: (text) => {
+				const editor = editorForOwner();
+				if (!editor) return;
+				editor.setText(text);
+				this.host.ui.requestRender();
+			},
+			getEditorText: () => {
+				const editor = editorForOwner();
+				return editor?.getExpandedText?.() ?? editor?.getText() ?? "";
+			},
 			editor: (title, prefill) => this.showExtensionEditor(title, prefill, dialogTabId()),
 			addAutocompleteProvider: (factory) => {
 				this.autocompleteProviderWrappers.push(factory);
@@ -896,10 +914,15 @@ export class ExtensionUiController {
 		this.syncDialogBlocked();
 	}
 
-	/** Report the newest pending dialog without duplicating the per-tab interaction stacks. */
+	/** Report the latest pending dialog, preferring the visible tab. */
 	private syncDialogBlocked(): void {
-		const visible = this.host.isHomeActive() ? undefined : this.tabInteractionsFor(this.host.shownTabId()).at(-1);
-		const pending = visible ?? [...this.tabInteractions.values()].flat().at(-1);
+		// A non-blocking overlay can sit above a dialog that still needs an answer.
+		const reportsStatus = (interaction: TabInteraction) =>
+			interaction.kind !== "overlay" || interaction.blocked !== undefined;
+		const visible = this.host.isHomeActive()
+			? undefined
+			: this.tabInteractionsFor(this.host.shownTabId()).findLast(reportsStatus);
+		const pending = visible ?? [...this.tabInteractions.values()].flat().findLast(reportsStatus);
 		this.host.setDialogBlocked?.(pending?.blocked);
 	}
 
@@ -1035,10 +1058,13 @@ export class ExtensionUiController {
 		options: string[],
 		opts?: ExtensionUIDialogOptions & ExtensionSelectorOptions,
 		tabId?: string,
-		blocked: TabInteraction["blocked"] = { kind: "question", message: title },
 	): Promise<string | undefined> {
 		tabId ??= this.host.shownTabId();
-		const interaction: TabInteraction = { kind: "selector", mounted: false, blocked };
+		const interaction: TabInteraction = {
+			kind: "selector",
+			mounted: false,
+			blocked: dialogBlockedStatus(opts?.blockedKind ?? "question", title),
+		};
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
 				resolve(undefined);
@@ -1081,10 +1107,10 @@ export class ExtensionUiController {
 			["Yes", "No"],
 			{
 				...opts,
+				blockedKind: opts?.blockedKind ?? "permission",
 				keyShortcuts: { y: "Yes", n: "No" },
 			},
 			tabId,
-			{ kind: "permission", message: title },
 		);
 		return result === "Yes";
 	}
@@ -1099,7 +1125,7 @@ export class ExtensionUiController {
 		const interaction: TabInteraction = {
 			kind: "input",
 			mounted: false,
-			blocked: { kind: "question", message: title },
+			blocked: dialogBlockedStatus(opts?.blockedKind ?? "question", title),
 		};
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
@@ -1132,7 +1158,7 @@ export class ExtensionUiController {
 		const interaction: TabInteraction = {
 			kind: "editor",
 			mounted: false,
-			blocked: { kind: "question", message: title },
+			blocked: dialogBlockedStatus("question", title),
 		};
 		return new Promise((resolve) => {
 			interaction.component = new ExtensionEditorComponent(
@@ -1276,7 +1302,7 @@ export class ExtensionUiController {
 		const interaction: TabInteraction = {
 			kind: isOverlay ? "overlay" : "custom",
 			mounted: false,
-			blocked: isOverlay ? undefined : options?.blocked,
+			blocked: options?.blocked,
 		};
 		this.trackTabInteraction(tabId, interaction);
 

@@ -19,6 +19,17 @@ afterEach(() => {
 });
 
 describe("Fireworks models", () => {
+	it("registers non-GLM, non-Kimi-K3 models via Anthropic-compatible Messages API", () => {
+		const model = getModel("fireworks", "accounts/fireworks/models/deepseek-v4p1-flash");
+
+		expect(model).toBeDefined();
+		expect(model.api).toBe("anthropic-messages");
+		expect(model.provider).toBe("fireworks");
+		expect(model.baseUrl).toBe("https://api.fireworks.ai/inference");
+		expect(model.reasoning).toBe(true);
+		expect(model.input).toEqual(["text", "image"]);
+	});
+
 	it("aligns GLM 5.3 Fast with GLM 5.3's OpenAI-compatible config", () => {
 		const base = getModel("fireworks", "accounts/fireworks/models/glm-5p3");
 		const fast = getModel("fireworks", "accounts/fireworks/routers/glm-5p3-fast");
@@ -146,35 +157,6 @@ describe("Fireworks models", () => {
 	] as const)("exposes distinct native effort levels for %s", (modelId, levels) => {
 		expect(getSupportedThinkingLevels(getModel("fireworks", modelId))).toEqual(levels);
 	});
-
-	// Regression for #9323: historical GLM 5.2 aliases must not appear as distinct native efforts.
-	it.each(["accounts/fireworks/models/glm-5p2", "accounts/fireworks/routers/glm-5p2-fast"] as const)(
-		"exposes distinct native effort levels for historical %s",
-		(modelId) => {
-			const model: Model<"openai-completions"> = {
-				id: modelId,
-				name: "Historical GLM 5.2",
-				api: "openai-completions",
-				provider: "fireworks",
-				baseUrl: "https://api.fireworks.ai/inference/v1",
-				reasoning: true,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 262144,
-				maxTokens: 262144,
-				thinkingLevelMap: {
-					off: "none",
-					minimal: null,
-					low: null,
-					medium: null,
-					high: "high",
-					xhigh: null,
-					max: "max",
-				},
-			};
-			expect(getSupportedThinkingLevels(model)).toEqual(["off", "high", "max"]);
-		},
-	);
 
 	it("keeps non-adaptive Messages models on budget-based thinking", async () => {
 		// Use a fixed fixture: the live catalog no longer lists toggle-only Messages models.

@@ -15,8 +15,7 @@ import type { AgentTab } from "./multi-tab/tab-manager.ts";
  *
  * The write is queued on the toggling tab, so its queue is flushed first: every
  * reload below then reads the value that was just persisted instead of racing it.
- * A reload keeps the override layer (context limits, cache-miss notices), so an
- * override stays in effect across it.
+ * A reload keeps session overrides such as a tab's context limit.
  */
 export async function reloadSettingsAcrossTabs(
 	togglingSettings: SettingsManager,

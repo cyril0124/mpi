@@ -140,6 +140,8 @@ export interface TabManagerOptions {
 	onLayoutChanged?: () => void;
 	/** Attach host callbacks (rebind/invalidate) to each newly attached runtime. */
 	configureRuntime: (runtime: AgentSessionRuntime) => void;
+	/** Called after a tab has recorded its deferred output, even when its transcript is parked. */
+	onTabSettled?: (tabId: string) => void;
 	/** Called when a tab the user is not looking at finishes a turn. */
 	onBackgroundCompletion?: () => void;
 	/** Called when a tab the user is not looking at ends a failed turn, so its own queued rounds can be paused. */
@@ -156,6 +158,7 @@ export class TabManager {
 	private readonly onTabsChanged: () => void;
 	private readonly onLayoutChanged: (() => void) | undefined;
 	private readonly configureRuntime: (runtime: AgentSessionRuntime) => void;
+	private readonly onTabSettled: ((tabId: string) => void) | undefined;
 	private readonly onBackgroundCompletion: (() => void) | undefined;
 	private readonly onBackgroundRunFailed: ((tabId: string) => void) | undefined;
 	private readonly onCompactionEnd: ((tabId: string, willRetry: boolean) => void) | undefined;
@@ -178,6 +181,7 @@ export class TabManager {
 		this.onTabsChanged = options.onTabsChanged;
 		this.onLayoutChanged = options.onLayoutChanged;
 		this.configureRuntime = options.configureRuntime;
+		this.onTabSettled = options.onTabSettled;
 		this.onBackgroundCompletion = options.onBackgroundCompletion;
 		this.onBackgroundRunFailed = options.onBackgroundRunFailed;
 		this.onCompactionEnd = options.onCompactionEnd;
@@ -863,6 +867,7 @@ export class TabManager {
 				if (event.message.stopReason === "error") setTabStatus(tab, "error");
 				break;
 			case "agent_settled": {
+				this.onTabSettled?.(tab.id);
 				// Home covers every tab, so a run settling behind it is a completion nobody watched.
 				const isWatched = !this.homeInFront && tab.id === this.activeId;
 				const runFailed = this.tabsWithFailedRun.delete(tab.id);

@@ -102,7 +102,6 @@ import { FooterDataProvider } from "../../core/footer-data-provider.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.ts";
-import { applyCacheMissNoticeSetting } from "../../core/mixcode/cache-miss-notice-setting.ts";
 import { splitCompactArguments } from "../../core/mixcode/compact-arguments.ts";
 import {
 	getConsoleHistory,
@@ -352,6 +351,7 @@ import {
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import {
 	type AuthSelectorProvider,
+	type AuthSelectorStatus,
 	formatAuthSelectorProviderStatus,
 	OAuthSelectorComponent,
 } from "./components/oauth-selector.ts";
@@ -1074,6 +1074,12 @@ export class InteractiveMode {
 				set hiddenThinkingLabel(value) {
 					mode.hiddenThinkingLabel = value;
 				},
+				get toolOutputExpanded() {
+					return mode.toolOutputExpanded;
+				},
+				set toolOutputExpanded(value) {
+					mode.toolOutputExpanded = value;
+				},
 				leaveHome: () => mode.leaveHome(),
 				showWorking: () => mode.showWorkingStatusIndicator(),
 				showCompaction: (reason) => mode.showCompactionStatusIndicator(reason),
@@ -1546,6 +1552,10 @@ export class InteractiveMode {
 				this.pendingBashComponents.delete(tabId);
 				this.compactionQueues.delete(tabId);
 				this.promptHistory.delete(tabId);
+			},
+			onTabSettled: (tabId) => {
+				// The mounted subscription moves these blocks to chat. A parked tab will replay the recorded output.
+				if (this.activeTabIdForUi !== tabId || !this.unsubscribe) this.pendingBashComponents.delete(tabId);
 			},
 			// Ring the bell when a tab the user is not looking at finishes.
 			onBackgroundCompletion: () => this.ui.terminal.write("\x07"),
@@ -3145,7 +3155,7 @@ export class InteractiveMode {
 		const backgroundTabId = options.backgroundTabId;
 		const uiContext = backgroundTabId
 			? this.createTabScopedExtensionUIContext(backgroundTabId)
-			: this.createExtensionUIContext(() => this.tabIdForRuntime(runtime));
+			: this.createExtensionUIContext(this.tabManager ? () => this.tabIdForRuntime(runtime) : SINGLE_SESSION_TAB_ID);
 		await session.bindExtensions({
 			uiContext,
 			mode: "tui",
@@ -5634,9 +5644,8 @@ export class InteractiveMode {
 		options: string[],
 		opts?: ExtensionUIDialogOptions,
 		tabId?: string,
-		blocked?: TabInteraction["blocked"],
 	): Promise<string | undefined> {
-		return InteractiveMode.extensionUiFor(this).showExtensionSelector(title, options, opts, tabId, blocked);
+		return InteractiveMode.extensionUiFor(this).showExtensionSelector(title, options, opts, tabId);
 	}
 
 	/**
@@ -6773,6 +6782,9 @@ export class InteractiveMode {
 				break;
 
 			case "agent_settled":
+				// The session records deferred user bash results at settle.
+				this.flushPendingBashComponents();
+				this.ui.requestRender();
 				await InteractiveMode.turnFor(this).onAgentSettled();
 				break;
 
@@ -6984,7 +6996,9 @@ export class InteractiveMode {
 					message.cancelled,
 					message.truncated ? ({ truncated: true } as TruncationResult) : undefined,
 					message.fullOutputPath,
+					message.fullOutputError,
 				);
+				component.setExpanded(this.toolOutputExpanded);
 				this.chatContainer.addChild(component);
 				break;
 			}
@@ -7099,7 +7113,7 @@ export class InteractiveMode {
 		const renderedPendingTools = new Map<string, ToolExecutionComponent>();
 		// Cache misses are not persisted, unlike successful cache-warming usage.
 		// Re-derive them and inject them after the assistant messages that paid for them.
-		const cacheMisses = this.settingsManager.getShowCacheMissNotices()
+		const cacheMisses = this.settingsManager.getNotices().cacheMisses
 			? collectCacheMisses(this.sessionManager.getEntries(), this.session.modelRuntime)
 			: new Map<AssistantMessage, CacheMiss>();
 
@@ -7223,7 +7237,7 @@ export class InteractiveMode {
 	}
 
 	private addCacheWarmingUsage(entry: UsageEntry): void {
-		if (!this.settingsManager.getShowCacheMissNotices()) return;
+		if (!this.settingsManager.getNotices().cacheWarming) return;
 		// Back-to-back warms collapse into one line with the cumulative cost.
 		const previous = this.cacheWarmingNotice;
 		if (previous && this.chatContainer.children.at(-1) === previous.component && previous.note === entry.note) {
@@ -7243,7 +7257,7 @@ export class InteractiveMode {
 	 * from persisted summary usage and is not stored as a separate session entry.
 	 */
 	private addCompactionCostNotice(notice: CompactionCostNotice): void {
-		if (!this.settingsManager.getShowCacheMissNotices()) return;
+		if (!this.settingsManager.getNotices().compactionCosts) return;
 
 		const { usage } = notice;
 		const tokens = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
@@ -7256,7 +7270,7 @@ export class InteractiveMode {
 	}
 
 	private maybeShowThinkingDropNotice(message: AssistantMessage): void {
-		if (!this.settingsManager.getShowCacheMissNotices()) return;
+		if (!this.settingsManager.getNotices().reasoningDrops) return;
 
 		const dropped = getDroppedReasoning(message);
 		if (!dropped) return;
@@ -7304,7 +7318,7 @@ export class InteractiveMode {
 	 * a model switch, or an idle gap past the cache TTL.
 	 */
 	private maybeShowCacheMissNotice(message: AssistantMessage): void {
-		if (!this.settingsManager.getShowCacheMissNotices()) return;
+		if (!this.settingsManager.getNotices().cacheMisses) return;
 
 		// Entries don't contain `message` yet: message_end fires before persistence.
 		const miss = detectCacheMiss(this.sessionManager.getEntries(), message, this.session.modelRuntime);
@@ -7465,6 +7479,7 @@ export class InteractiveMode {
 			await this.ui.terminal.drainInput(1000);
 			this.stop();
 			await flushStdout();
+			killTrackedDetachedChildren();
 			process.exit(0);
 		}
 
@@ -7484,6 +7499,9 @@ export class InteractiveMode {
 		await this.tabs.dispose(this.runtimeHost);
 
 		await flushStdout();
+		// dispose() only starts killing a running `!` command, which on Windows loses the race with
+		// exit. After the last await, so it also catches a shell spawned after the abort.
+		killTrackedDetachedChildren();
 		process.exit(0);
 	}
 
@@ -7560,10 +7578,7 @@ export class InteractiveMode {
 	private registerSignalHandlers(): void {
 		this.unregisterSignalHandlers();
 
-		const signals: NodeJS.Signals[] = ["SIGTERM"];
-		if (process.platform !== "win32") {
-			signals.push("SIGHUP");
-		}
+		const signals: NodeJS.Signals[] = ["SIGTERM", "SIGHUP"];
 
 		for (const signal of signals) {
 			const handler = () => {
@@ -8444,6 +8459,9 @@ export class InteractiveMode {
 
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
+		for (const component of this.pendingBashComponents.get(this.pendingBashKey()) ?? []) {
+			this.pendingMessagesContainer.addChild(component);
+		}
 		const steerCount = this.followUpState.pendingSteer.length;
 		const followUpCount = this.followUpState.pendingFollowUps.length;
 		if (steerCount === 0 && followUpCount === 0 && this.compactionQueuedMessages.length === 0) {
@@ -8923,7 +8941,6 @@ export class InteractiveMode {
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 					treeFilterMode: this.settingsManager.getTreeFilterMode(),
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
-					showCacheMissNotices: this.settingsManager.getShowCacheMissNotices(),
 					defaultProjectTrust: this.settingsManager.getDefaultProjectTrust(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					outputPad: this.settingsManager.getOutputPad(),
@@ -8937,6 +8954,7 @@ export class InteractiveMode {
 					fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
 					fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
 					warnings: this.settingsManager.getWarnings(),
+					notices: this.settingsManager.getNotices(),
 					inlineWidgets: this.mixcodeSettings.ui.inlineWidgets,
 					boxedHiddenThinking: this.mixcodeSettings.ui.boxedHiddenThinking,
 					iconMode: this.mixcodeSettings.ui.icons.mode,
@@ -9033,12 +9051,6 @@ export class InteractiveMode {
 						this.chatContainer.invalidate();
 						this.windowedTranscript?.resetMeasurements();
 						this.ui.requestRender();
-					},
-					onShowCacheMissNoticesChange: (shown) => {
-						applyCacheMissNoticeSetting(this.settingsManager, this.tabManager?.list() ?? [], shown);
-						// Parked transcripts were built under the old setting.
-						InteractiveMode.handoverFor(this).clearTranscripts();
-						this.rebuildChatFromMessages();
 					},
 					onCollapseChangelogChange: (collapsed) => {
 						this.settingsManager.setCollapseChangelog(collapsed);
@@ -9140,6 +9152,11 @@ export class InteractiveMode {
 					},
 					onShowResponseModelNoticesChange: (enabled) => {
 						this.setShowResponseModelNoticesGlobal(enabled);
+					},
+					onNoticeChange: (key, shown) => {
+						this.settingsManager.setNotice(key, shown);
+						// Cache miss, cache warming and compaction notices are derived when the transcript renders.
+						this.rebuildChatFromMessages();
 					},
 					onCancel: () => {
 						done();
@@ -10100,12 +10117,13 @@ export class InteractiveMode {
 		const options: AuthSelectorProvider[] = [];
 		for (const provider of this.session.modelRuntime.getProviders()) {
 			const authStatus = this.session.modelRuntime.getProviderAuthStatus(provider.id);
-			const status = authStatus.configured
-				? {
-						type: this.session.modelRuntime.isUsingOAuth(provider.id) ? ("oauth" as const) : ("api_key" as const),
-						source: authStatus.label ?? authStatus.source,
-					}
-				: undefined;
+			let status: AuthSelectorStatus | undefined;
+			if (authStatus.configured) {
+				const type = this.session.modelRuntime.isUsingOAuth(provider.id) ? "oauth" : "api_key";
+				status = { kind: "configured", type, source: authStatus.label ?? authStatus.source };
+			} else if (authStatus.source === "stored") {
+				status = { kind: "unresolved" };
+			}
 			const subscription = provider.auth.oauth?.isSubscription === true;
 			if ((!authType || authType === "oauth") && provider.auth.oauth) {
 				options.push({
@@ -10134,13 +10152,13 @@ export class InteractiveMode {
 
 	private async getLogoutProviderOptions(): Promise<AuthSelectorProvider[]> {
 		return (await this.session.modelRuntime.listCredentials({ signal: AbortSignal.timeout(15_000) }))
-			.map(({ providerId, type }) => {
+			.map(({ providerId, type }): AuthSelectorProvider => {
 				const provider = this.session.modelRuntime.getProvider(providerId);
 				return {
 					id: providerId,
 					name: provider?.name ?? providerId,
 					authType: type,
-					status: { type, source: "stored credential" },
+					status: { kind: "configured", type, source: "stored credential" },
 					subscription: provider?.auth.oauth?.isSubscription === true,
 				};
 			})
@@ -11416,6 +11434,7 @@ export class InteractiveMode {
 		const component = ownsSurface
 			? new BashExecutionComponent(command, this.ui, excludeFromContext, this.outputPad)
 			: undefined;
+		component?.setExpanded(this.toolOutputExpanded);
 		// Park the block above the composer while the owning tab is streaming, else put it in chat.
 		const attachComponent = (): void => {
 			if (!component) return;
@@ -11438,6 +11457,7 @@ export class InteractiveMode {
 					result.cancelled,
 					result.truncated ? ({ truncated: true, content: result.output } as TruncationResult) : undefined,
 					result.fullOutputPath,
+					result.fullOutputError,
 				);
 			}
 
@@ -11467,6 +11487,7 @@ export class InteractiveMode {
 				result.cancelled,
 				result.truncated ? ({ truncated: true, content: result.output } as TruncationResult) : undefined,
 				result.fullOutputPath,
+				result.fullOutputError,
 			);
 		} catch (error) {
 			component?.setComplete(undefined, false);

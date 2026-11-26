@@ -10,6 +10,7 @@ import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import { getSettingsPath } from "../../src/config.ts";
 import { KeybindingsManager } from "../../src/core/keybindings.ts";
 import { mixcodeSettingsFilePath } from "../../src/core/mixcode/mixcode-settings.ts";
+import type { NoticeSettings } from "../../src/core/settings-manager.ts";
 import { shortenPath } from "../../src/core/tools/render-utils.ts";
 import {
 	SETTINGS_PANEL_HEIGHT_PERCENT,
@@ -87,7 +88,7 @@ function settingsConfig(overrides: Partial<SettingsConfig> = {}): SettingsConfig
 		availableThemes: ["dark", "light"],
 		hideThinkingBlock: true,
 		mermaidRenderingMode: "off",
-		showCacheMissNotices: true,
+		notices: { cacheMisses: true },
 		collapseChangelog: false,
 		enableInstallTelemetry: false,
 		doubleEscapeAction: "tree",
@@ -222,6 +223,31 @@ describe("/settings panel", () => {
 		list.selectItem("inline-widgets");
 		list.handleInput("\r");
 		expect(onSettingsChanged).toHaveBeenCalledTimes(1);
+	});
+
+	it("publishes each Notices submenu edit to the tab sync callback", () => {
+		const changes: string[] = [];
+		const list = new SettingsSelectorComponent(settingsConfig(), {
+			onNoticeChange: (key: keyof NoticeSettings, shown: boolean) => {
+				changes.push(`${key}=${shown}`);
+			},
+			onSettingsChanged: () => {
+				changes.push("sync tabs");
+			},
+		} as unknown as SettingsCallbacks).getSettingsList();
+
+		list.selectItem("notices");
+		list.handleInput("\r");
+		list.handleInput("\r");
+		list.handleInput("\x1b[B");
+		list.handleInput("\r");
+		list.handleInput("\x1b");
+		list.handleInput("\r");
+
+		const reopened = plain(list.render(80));
+		expect(reopened).toMatch(/Cache misses[^\n]*Off/);
+		expect(reopened).toMatch(/Cache warming[^\n]*On/);
+		expect(changes).toEqual(["cacheMisses=false", "sync tabs", "cacheWarming=true", "sync tabs"]);
 	});
 
 	it("types to filter, counts the matches, and clears the filter before closing", () => {

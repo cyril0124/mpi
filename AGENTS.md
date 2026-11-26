@@ -17,6 +17,7 @@
 - Read files in full before wide-ranging changes, before editing files you have not fully inspected, and when asked to investigate or audit. Do not rely on search snippets for broad changes.
 - Before recommending a fix design, check how sibling implementations (other adapters, providers, commands) handle the same concern, and follow that pattern. If you deviate, say why.
 - No `any` unless absolutely necessary.
+- Never tell the members of a typed union apart with `in` (`"report" in entry`): make it a tagged union (a `kind` field) and switch on the tag. `in` is only for values of unknown type at a trust boundary (wire input, files, Node errors), for feature detection, and for stored or frozen wire formats that a version bump would have to change (say so in a comment).
 - No runtime checks of values whose types TypeScript already guarantees (no `typeof`/`instanceof`/`Array.isArray`/shape guards on typed parameters, typed callback results or typed declarations). Validate only at decided trust boundaries (wire input, schema-checked arguments and params).
 - Inline single-line helpers that have only one call site.
 - Check node_modules for external API types; don't guess.
@@ -43,11 +44,9 @@ Binding for Chord v2 (`packages/chord/src/`) and its tests, when writing and whe
 - Deferred work: anything left to a later slice goes into the section "Carry-over" of `packages/chord/docs/slices.md` under that slice, in the same change; a slice's spec and build include every entry of its section.
 - Before reporting: re-read every changed file top to bottom as a stranger would; each file must be understandable without jumping around. Then `npm run check` and the layer's tests.
 
-## Synced Features
+## Reviews
 
-- Code synced from mixcode lives in a `mixcode/` folder inside the package and area it affects, e.g. `packages/coding-agent/src/core/mixcode/<feature>/` and `packages/coding-agent/src/modes/interactive/components/mixcode/<feature>/`, keeping mixcode's file names.
-- A helper the synced code shares with existing code stays one level up under `mixcode/`, e.g. `packages/coding-agent/src/core/mixcode/session-delete.ts`.
-- Tests for a `mixcode/` feature live in that package's `test/mixcode/` folder, one file per module under test, never in an upstream-owned test file such as `test/interactive-mode-*.test.ts`. `packages/tui` is the exception: its runner globs only `test/*.test.ts`, so fork tests there are flat `test/mixcode-<module>.test.ts` files.
+- When reviewers (subagents or other sessions) report while others are still reviewing, do not summarize or relay their findings piecemeal. Wait until every report is in, then give one report that covers all of them.
 
 ## Commands
 
@@ -64,12 +63,6 @@ Binding for Chord v2 (`packages/chord/src/`) and its tests, when writing and whe
 - For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
 - Never commit unless the user asks.
 
-## Test Writing
-
-- Skip tests when the behavior is certain: no test file, no separate verification run, and say so instead of adding a test that only restates the change.
-- Do not add trivial tests. A test that restates a getter, a passthrough, or the simplest happy path proves nothing and still costs maintenance.
-- Prefer end-to-end tests: verify the feature works, not that individual functions return expected values. Reach for a unit test only for logic that cannot be exercised end to end.
-
 ## Dependency and Install Security
 
 - Treat npm dep and lockfile changes as reviewed code. Direct registry deps, including internal workspace deps, stay pinned to exact versions.
@@ -78,14 +71,6 @@ Binding for Chord v2 (`packages/chord/src/`) and its tests, when writing and whe
 - If dep metadata changes, refresh `package-lock.json` with `npm install --package-lock-only --ignore-scripts`.
 - If `packages/coding-agent/install-lock/` needs regen, run `node scripts/generate-coding-agent-install-lock.mjs` (verify with `--check` or `npm run check`). New deps with lifecycle scripts require review and an explicit allowlist entry in that script; never add one silently.
 - Pre-commit blocks lockfile commits unless `PI_ALLOW_LOCKFILE_CHANGE=1`. Don't bypass unless the user wants the lockfile change committed.
-
-## Upstream Fork
-
-Design every fork change to be merge-friendly: prefer new fork-owned files and narrow
-integration points, and avoid reformatting or unrelated edits in upstream-owned files so
-future official pi release merges touch as few overlapping lines as possible.
-
-This checkout is a fork of pi, not an upstream working tree. Fork-local rules live in [MIXCODE.md](MIXCODE.md) and fork documentation in [docs/](docs/README.md) — no upstream page under `packages/` is edited for fork behavior. Read `MIXCODE.md` before any fork work.
 
 ## Git
 
@@ -153,15 +138,13 @@ For testing pi's interactive mode, load and follow [.pi/skills/interactive-testi
 
 Location: `packages/*/CHANGELOG.md` (one per package).
 
-Changes this fork makes go to `MIXCODE_CHANGELOG.md` at the repo root instead of `packages/*/CHANGELOG.md`, and land in the same commit as the change. Group entries under the upstream tag they sit on (e.g. `## Unreleased — base pi v0.87.1`), newest entry first, with the same `### Added` / `### Changed` / `### Fixed` / `### Removed` sections.
-
 Sections under `## [Unreleased]`: `### Breaking Changes` (API changes requiring migration), `### Added`, `### Changed`, `### Fixed`, `### Removed`.
 
 Rules:
 
 - All new entries go under `## [Unreleased]`. Read the full section first and append to existing subsections; never duplicate them.
 - Released version sections (e.g. `## [0.12.2]`) are immutable; never modify them.
-- Do not create `packages/*/CHANGELOG.md` entries when working on a branch other than `main` or pull request.
+- Do not create changelog entries when the work targets a branch other than `main`
 
 Attribution:
 

@@ -1,57 +1,6 @@
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { getModel } from "../src/compat.ts";
 import { findEnvKeys, getEnvApiKey } from "../src/env-api-keys.ts";
-import type { Model } from "../src/types.ts";
-import { writeUpstreamMock } from "./catalog-generation-utils.ts";
-
-// Generate the historical mapping from a fixed catalog so its effort regression survives delisting.
-function generateDeepSeekV4Model(): Model<"openai-completions"> {
-	const root = mkdtempSync(join(tmpdir(), "pi-together-generation-"));
-	try {
-		const preloadPath = join(root, "catalog.mjs");
-		const outputPath = join(root, "output");
-		const modelId = "deepseek-ai/DeepSeek-V4-Pro-0813";
-		writeUpstreamMock(preloadPath, {
-			togetherai: {
-				models: {
-					[modelId]: {
-						id: modelId,
-						type: "chat",
-						name: modelId,
-						modalities: { input: ["text"], output: ["text"] },
-						capabilities: { tools: { supported: true }, reasoning: { supported: true } },
-						api: {},
-					},
-				},
-			},
-		});
-		const result = spawnSync(
-			process.execPath,
-			[
-				"--import",
-				pathToFileURL(preloadPath).href,
-				"catalog/generate.ts",
-				"--json-only",
-				"--json-output",
-				outputPath,
-			],
-			{ cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8", timeout: 10000 },
-		);
-		expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-		expect(result.stderr).toBe("");
-		const models: Record<string, Model<"openai-completions">> = JSON.parse(
-			readFileSync(join(outputPath, "providers/together.json"), "utf8"),
-		);
-		return models[modelId];
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-}
 
 const originalTogetherApiKey = process.env.TOGETHER_API_KEY;
 
@@ -108,9 +57,7 @@ describe("Together models", () => {
 			thinkingFormat: "openai",
 		});
 
-		// Together renamed the model to deepseek-ai/DeepSeek-V4-Pro-0813; the baseline
-		// catalog keeps the rename out of the fixture while the effort mapping stays tested.
-		const deepSeekV4 = generateDeepSeekV4Model();
+		const deepSeekV4 = getModel("together", "deepseek-ai/DeepSeek-V4-Pro-0813");
 		expect(deepSeekV4.thinkingLevelMap).toEqual({
 			minimal: null,
 			low: null,

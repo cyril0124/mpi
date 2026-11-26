@@ -31,6 +31,8 @@ function makeModeContext(session: AgentSession, tabId: string, state: FollowUpQu
 		chatContainer: new Container(),
 		loadedResourcesContainer: new Container(),
 		pendingMessagesContainer: new Container(),
+		pendingBashComponents: new Map(),
+		pendingBashKey: () => tabId,
 		pendingTools: new Map(),
 		streamingComponent: undefined,
 		streamingMessage: undefined,

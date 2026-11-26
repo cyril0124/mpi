@@ -970,8 +970,8 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider (devstral-medium-latest)", () => {
-		const llm = getModel("mistral", "devstral-medium-latest");
+	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider (mistral-medium-latest)", () => {
+		const llm = getModel("mistral", "mistral-medium-latest");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm);
@@ -996,8 +996,8 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider (pixtral-12b with image support)", () => {
-		const llm = getModel("mistral", "pixtral-12b");
+	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider (ministral-14b-latest with image support)", () => {
+		const llm = getModel("mistral", "ministral-14b-latest");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm);
@@ -1092,7 +1092,7 @@ describe("Generate E2E Tests", () => {
 	});
 
 	describe.skipIf(!process.env.XIAOMI_API_KEY)(
-		"Xiaomi MiMo (API billing) Provider (Xiaomi MiMo-V2.6-Pro via Anthropic Messages)",
+		"Xiaomi MiMo (API billing) Provider (Xiaomi MiMo-V2.5-Pro via Anthropic Messages)",
 		() => {
 			const llm = getModel("xiaomi", "mimo-v2.6-pro");
 			const thinkingOptions = {
@@ -1123,7 +1123,7 @@ describe("Generate E2E Tests", () => {
 	);
 
 	describe.skipIf(!process.env.XIAOMI_TOKEN_PLAN_CN_API_KEY)(
-		"Xiaomi MiMo Token Plan Provider (Xiaomi MiMo-V2.6-Pro via Anthropic Messages, CN region)",
+		"Xiaomi MiMo Token Plan Provider (Xiaomi MiMo-V2.5-Pro via Anthropic Messages, CN region)",
 		() => {
 			const llm = getModel("xiaomi-token-plan-cn", "mimo-v2.6-pro");
 			const thinkingOptions = {
@@ -1154,7 +1154,7 @@ describe("Generate E2E Tests", () => {
 	);
 
 	describe.skipIf(!process.env.XIAOMI_TOKEN_PLAN_AMS_API_KEY)(
-		"Xiaomi MiMo Token Plan Provider (Xiaomi MiMo-V2.6-Pro via Anthropic Messages, AMS region)",
+		"Xiaomi MiMo Token Plan Provider (Xiaomi MiMo-V2.5-Pro via Anthropic Messages, AMS region)",
 		() => {
 			const llm = getModel("xiaomi-token-plan-ams", "mimo-v2.6-pro");
 			const thinkingOptions = {
@@ -1185,7 +1185,7 @@ describe("Generate E2E Tests", () => {
 	);
 
 	describe.skipIf(!process.env.XIAOMI_TOKEN_PLAN_SGP_API_KEY)(
-		"Xiaomi MiMo Token Plan Provider (Xiaomi MiMo-V2.6-Pro via Anthropic Messages, SGP region)",
+		"Xiaomi MiMo Token Plan Provider (Xiaomi MiMo-V2.5-Pro via Anthropic Messages, SGP region)",
 		() => {
 			const llm = getModel("xiaomi-token-plan-sgp", "mimo-v2.6-pro");
 			const thinkingOptions = {

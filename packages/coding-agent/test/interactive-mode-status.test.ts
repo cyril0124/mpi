@@ -5,7 +5,9 @@ import { beforeAll, describe, expect, test, vi } from "vitest";
 import { type Component, Container, type Focusable, type OverlayHandle, type TUI } from "../../tui/src/tui.ts";
 import { TuiMainScreen } from "../../tui/src/tui-main-screen.ts";
 import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
-import type { AutocompleteProviderFactory } from "../src/core/extensions/types.ts";
+import type { AgentSessionEvent } from "../src/core/agent-session.ts";
+import type { AutocompleteProviderFactory, ExtensionUIContext } from "../src/core/extensions/types.ts";
+import { createFollowUpQueueState } from "../src/core/mixcode/follow-up/runtime-follow-up-queue.ts";
 import type { QuietStartup } from "../src/core/settings-manager.ts";
 import type { SourceInfo } from "../src/core/source-info.ts";
 import type { AuthSelectorProvider } from "../src/modes/interactive/components/oauth-selector.ts";
@@ -169,41 +171,49 @@ describe("InteractiveMode.setToolsExpanded", () => {
 	});
 });
 
+// Exercise the private mode entry points on hosts that supply just the required state.
+const modePrototype = InteractiveMode.prototype as unknown as {
+	setToolsExpanded(expanded: boolean): void;
+	updatePendingMessagesDisplay(): void;
+	handleEvent(event: AgentSessionEvent): Promise<void>;
+	showExtensionCustom: ExtensionUIContext["custom"];
+	resetExtensionUI(): void;
+};
+
 // Regression tests for https://github.com/earendil-works/pi/issues/11875
 describe("InteractiveMode pending user bash output", () => {
 	function createPendingBashComponent() {
 		return { render: () => [], invalidate: () => {}, setExpanded: vi.fn() };
 	}
 
-	function createContext(pendingBashComponents: ReturnType<typeof createPendingBashComponent>[]) {
+	function createContext(
+		pendingBashComponents: ReturnType<typeof createPendingBashComponent>[],
+		pendingSteer: string[] = [],
+	) {
 		const pendingMessagesContainer = new Container();
 		for (const component of pendingBashComponents) pendingMessagesContainer.addChild(component);
-		const fakeThis: any = {
-			isInitialized: true,
-			toolOutputExpanded: false,
-			loadedResourcesContainer: new Container(),
-			chatContainer: new Container(),
-			pendingMessagesContainer,
-			pendingBashComponents,
-			compactionQueuedMessages: [],
-			session: { getSteeringMessages: () => ["steer"], getFollowUpMessages: () => [] },
-			footer: { invalidate: vi.fn() },
-			programStatus: { handleEvent: vi.fn() },
-			ui: { requestRender: vi.fn() },
-			showStatus: vi.fn(),
-			checkShutdownRequested: vi.fn(async () => {}),
-			getAppKeyDisplay: () => "alt+up",
-		};
-		for (const name of [
-			"setToolsExpanded",
-			"updatePendingMessagesDisplay",
-			"getAllQueuedMessages",
-			"flushPendingBashComponents",
-			"handleEvent",
-		]) {
-			fakeThis[name] = (InteractiveMode as any).prototype[name].bind(fakeThis);
-		}
-		return fakeThis;
+		const followUpState = createFollowUpQueueState();
+		followUpState.pendingSteer = pendingSteer;
+		return Object.setPrototypeOf(
+			{
+				isInitialized: true,
+				toolOutputExpanded: false,
+				loadedResourcesContainer: new Container(),
+				chatContainer: new Container(),
+				pendingMessagesContainer,
+				pendingBashComponents: new Map([["session", pendingBashComponents]]),
+				followUpStates: new Map([["session", followUpState]]),
+				compactionQueues: new Map([["session", []]]),
+				runtimeHost: { session: { isCompacting: false } },
+				footer: { invalidate: vi.fn() },
+				programStatus: { handleEvent: vi.fn() },
+				ui: { requestRender: vi.fn() },
+				showStatus: vi.fn(),
+				checkShutdownRequested: vi.fn(async () => {}),
+				getAppKeyDisplay: () => "alt+up",
+			},
+			InteractiveMode.prototype,
+		);
 	}
 
 	beforeAll(() => {
@@ -214,20 +224,20 @@ describe("InteractiveMode pending user bash output", () => {
 		const component = createPendingBashComponent();
 		const fakeThis = createContext([component]);
 
-		fakeThis.setToolsExpanded(true);
+		modePrototype.setToolsExpanded.call(fakeThis, true);
 
 		expect(component.setExpanded).toHaveBeenCalledWith(true);
 	});
 
 	test("queued message updates keep user bash output in the pending area", () => {
 		const component = createPendingBashComponent();
-		const fakeThis = createContext([component]);
+		const fakeThis = createContext([component], ["steer"]);
 
-		fakeThis.updatePendingMessagesDisplay();
-		fakeThis.setToolsExpanded(true);
+		modePrototype.updatePendingMessagesDisplay.call(fakeThis);
+		modePrototype.setToolsExpanded.call(fakeThis, true);
 
 		expect(fakeThis.pendingMessagesContainer.children).toContain(component);
-		expect(renderAll(fakeThis.pendingMessagesContainer)).toContain("Steering: steer");
+		expect(renderAll(fakeThis.pendingMessagesContainer)).toContain("↳ steer");
 		expect(component.setExpanded).toHaveBeenCalledWith(true);
 	});
 
@@ -235,11 +245,43 @@ describe("InteractiveMode pending user bash output", () => {
 		const component = createPendingBashComponent();
 		const fakeThis = createContext([component]);
 
-		await fakeThis.handleEvent({ type: "agent_settled", aborted: false });
+		await modePrototype.handleEvent.call(fakeThis, { type: "agent_settled", aborted: false });
 
 		expect(fakeThis.pendingMessagesContainer.children).not.toContain(component);
 		expect(fakeThis.chatContainer.children).toEqual([component]);
-		expect(fakeThis.pendingBashComponents).toEqual([]);
+		expect(fakeThis.pendingBashComponents.has("session")).toBe(false);
+	});
+});
+
+// Regression test for https://github.com/earendil-works/pi/issues/12426
+describe("InteractiveMode rebuilt user bash output", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	test.each([true, false])("follows ctrl+o state %s when rebuilt from the session", (expanded) => {
+		const fakeThis: any = {
+			toolOutputExpanded: expanded,
+			chatContainer: new Container(),
+			ui: { requestRender: vi.fn() },
+			outputPad: 1,
+		};
+		const output = Array.from({ length: 40 }, (_, i) => `line-${i + 1}`).join("\n");
+
+		(InteractiveMode as any).prototype.addMessageToChat.call(fakeThis, {
+			role: "bashExecution",
+			command: "seq 1 40",
+			output,
+			exitCode: 0,
+			cancelled: false,
+			truncated: false,
+			timestamp: Date.now(),
+		});
+
+		const rendered = normalizeRenderedOutput(fakeThis.chatContainer);
+		expect(rendered).toContain("line-40");
+		expect(rendered.includes("line-1\n")).toBe(expanded);
+		expect(rendered.includes("to expand")).toBe(!expanded);
 	});
 });
 
@@ -307,16 +349,6 @@ describe("InteractiveMode.createExtensionUIContext setTheme", () => {
 describe("InteractiveMode.showExtensionCustom", () => {
 	beforeAll(() => {
 		initTheme("dark");
-	});
-
-	// Inline custom components go through the extension dialog stack.
-	const extensionDialogState = () => ({
-		extensionDialogs: [],
-		extensionOverlays: new Map(),
-		programStatus: { setBlocked: vi.fn() },
-		pushExtensionDialog: (InteractiveMode as any).prototype.pushExtensionDialog,
-		removeExtensionDialog: (InteractiveMode as any).prototype.removeExtensionDialog,
-		showTopExtensionDialog: (InteractiveMode as any).prototype.showTopExtensionDialog,
 	});
 
 	test("overlay custom UI reclaims input after non-overlay custom UI closes", async () => {
@@ -412,13 +444,9 @@ describe("InteractiveMode.showExtensionCustom", () => {
 				keybindings: {},
 				ui,
 				disposeActiveSelector: vi.fn(),
-				...extensionDialogState(),
+				homeSelection: { active: false },
 			});
-			const showExtensionCustom = <T>(
-				factory: (tui: TUI, theme: unknown, keybindings: unknown, done: (result: T) => void) => Component,
-				options?: { overlay?: boolean; overlayOptions?: { nonCapturing?: boolean } },
-			): Promise<T> =>
-				(InteractiveMode as any).prototype.showExtensionCustom.call(fakeThis, factory, options) as Promise<T>;
+			const showExtensionCustom = modePrototype.showExtensionCustom.bind(fakeThis);
 
 			editorContainer.addChild(editor);
 			ui.addChild(editorContainer);
@@ -476,32 +504,32 @@ describe("InteractiveMode.showExtensionCustom", () => {
 		const lower = Object.assign(new TestFocusableComponent("LOWER"), { dispose: vi.fn() });
 		const hidden = Object.assign(new TestFocusableComponent("HIDDEN"), { dispose: vi.fn() });
 		const upper = Object.assign(new TestFocusableComponent("UPPER"), { dispose: vi.fn() });
-		const fakeThis = {
+		const fakeThis = Object.assign(Object.create(InteractiveMode.prototype), {
 			editor,
 			editorContainer,
 			keybindings: {},
 			ui,
 			disposeActiveSelector: vi.fn(),
-			...extensionDialogState(),
-			// The rest of resetExtensionUI is not under test here.
-			clearExtensionTerminalInputListeners: vi.fn(),
-			setExtensionFooter: vi.fn(),
-			setExtensionHeader: vi.fn(),
-			clearExtensionWidgets: vi.fn(),
+			homeSelection: { active: false },
+			footerContainer: new Container(),
 			footerDataProvider: { clearExtensionStatuses: vi.fn() },
-			footer: { invalidate: vi.fn() },
-			setCustomEditorComponent: vi.fn(),
+			footer: { render: () => [], invalidate: vi.fn() },
+			programStatus: { setBlocked: vi.fn() },
+			requestWidgetRender: vi.fn(),
 			setupAutocompleteProvider: vi.fn(),
-			defaultEditor: {},
+			defaultEditor: editor,
+			syncEditorHistory: vi.fn(),
+			refreshEditorStatus: vi.fn(),
 			updateTerminalTitle: vi.fn(),
 			setWorkingIndicator: vi.fn(),
+			resetWorkingMessage: vi.fn(),
 			setHiddenThinkingLabel: vi.fn(),
-		};
+		});
 		const showOverlay = (component: Component, onHandle?: (handle: OverlayHandle) => void): Promise<unknown> =>
-			(InteractiveMode as any).prototype.showExtensionCustom.call(fakeThis, () => component, {
+			modePrototype.showExtensionCustom.call(fakeThis, () => component, {
 				overlay: true,
 				onHandle,
-			}) as Promise<unknown>;
+			});
 
 		editorContainer.addChild(editor);
 		ui.addChild(editorContainer);
@@ -516,7 +544,7 @@ describe("InteractiveMode.showExtensionCustom", () => {
 			await flushTui(ui, terminal);
 			expect(upper.focused).toBe(true);
 
-			(InteractiveMode as any).prototype.resetExtensionUI.call(fakeThis);
+			modePrototype.resetExtensionUI.call(fakeThis);
 			await flushTui(ui, terminal);
 
 			const viewport = terminal.getViewport().join("\n");

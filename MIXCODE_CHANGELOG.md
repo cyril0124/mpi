@@ -7,7 +7,25 @@ Entries say what changed and why; the why is the part git does not keep. When me
 upstream tag, insert a boundary heading `## base pi vX.Y.Z — <date>` above the previous one and
 point `## [Unreleased]` at the new tag.
 
-## Unreleased — base pi v1.6.0
+## Unreleased — base pi v1.6.1
+
+### Added
+
+### Changed
+
+- Aligned non-MixCode files with pi v1.6.1, including general model tests and repository checks.
+
+### Fixed
+
+- Apply upstream notice changes across open tabs, keeping project-level settings in effect.
+- Report extension dialog kinds, keep hidden blocking overlays pending, and repaint the visible
+  editor when an extension updates its draft.
+- Keep pending shell output visible during queue updates and move it into the transcript when
+  the run settles. Replay and Home previews use the owning tab's tool expansion state.
+
+### Removed
+
+## base pi v1.6.0 — 2026-11-20
 
 ### Added
 

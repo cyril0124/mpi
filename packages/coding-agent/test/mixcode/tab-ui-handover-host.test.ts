@@ -24,7 +24,7 @@ function deferred(): { promise: Promise<void>; resolve(): void } {
 }
 
 /** Mount a constructed InteractiveMode with real sessions, extensions and a virtual terminal. */
-async function fixture() {
+async function fixture(expandedTab?: number) {
 	initTheme("dark");
 	const trace: string[] = [];
 	const gates = new Map<string, ReturnType<typeof deferred>>();
@@ -36,12 +36,16 @@ async function fixture() {
 			createHarness({
 				extensionFactories: [
 					(pi) => {
+						pi.on("user_bash", ({ command }) => ({
+							result: { output: `BASH-OUTPUT-${command}`, exitCode: 0, cancelled: false, truncated: false },
+						}));
 						pi.on("session_start", async (_event, ctx) => {
 							trace.push(`bind:${index}`);
 							started.get(String(index))?.resolve();
 							await gates.get(String(index))?.promise;
 							ctx.ui.setWidget("owner", [`WIDGET-${index}`]);
 							ctx.ui.setHiddenThinkingLabel(`LABEL-${index}`);
+							if (index === expandedTab) ctx.ui.setToolsExpanded(true);
 						});
 					},
 				],
@@ -171,6 +175,17 @@ async function fixture() {
 		started,
 		failNextBind,
 	};
+}
+
+function recordLongBashOutput(session: Harness["session"], label: string): void {
+	session.recordBashResult("show build log", {
+		output: Array.from({ length: 34 }, (_, index) => `${label}-LINE-${String(index + 1).padStart(2, "0")}`).join(
+			"\n",
+		),
+		exitCode: 0,
+		cancelled: false,
+		truncated: false,
+	});
 }
 
 describe("InteractiveMode tab handover integration", () => {
@@ -334,6 +349,89 @@ describe("InteractiveMode tab handover integration", () => {
 		}
 	});
 
+	test("cold bash replay uses the returning tab's expansion and keeps the rebuilt blocks on a cache hit", async () => {
+		const host = await fixture();
+		try {
+			const a = host.manager.getActive();
+			await host.rebind();
+			recordLongBashOutput(a.runtime.session, "A-BASH");
+			host.mode.renderInitialMessages();
+			const b = await host.manager.createTab({ title: "B" });
+			await host.bind(b);
+			recordLongBashOutput(b.runtime.session, "B-BASH");
+			await host.activate(b);
+			const collapsed = await host.capture();
+			expect(collapsed).toContain("B-BASH-LINE-34");
+			expect(collapsed).not.toContain("B-BASH-LINE-01");
+			Reflect.get(host.mode, "toggleToolOutputExpansion").call(host.mode);
+			expect(await host.capture()).toContain("B-BASH-LINE-01");
+			const parked = host.chat.children[0];
+			await host.activate(a);
+			b.runtime.session.sessionManager.appendMessage({ role: "user", content: "B-BACKGROUND-ENTRY", timestamp: 99 });
+			await host.activate(b);
+			const rebuilt = host.chat.children[0];
+			expect(rebuilt).not.toBe(parked);
+			const expanded = await host.capture();
+			expect(expanded).toContain("B-BACKGROUND-ENTRY");
+			expect(expanded).toContain("B-BASH-LINE-01");
+			expect(expanded).not.toContain("A-BASH-LINE-34");
+
+			await host.activate(a);
+			const returned = await host.capture();
+			expect(returned).toContain("A-BASH-LINE-34");
+			expect(returned).not.toContain("A-BASH-LINE-01");
+			await host.activate(b);
+			expect(host.chat.children[0]).toBe(rebuilt);
+			expect(await host.capture()).toContain("B-BASH-LINE-01");
+		} finally {
+			await host.dispose();
+		}
+	});
+
+	test("shows deferred shell output once when a run settles behind another tab", async () => {
+		const host = await fixture();
+		const responseStarted = deferred();
+		const releaseResponse = deferred();
+		let run: Promise<void> | undefined;
+		try {
+			const a = host.manager.getActive();
+			await host.rebind();
+			const b = await host.manager.createTab({ title: "B" });
+			const { session, sessionManager, setResponses } = host.harnesses[0];
+			setResponses([
+				async () => {
+					responseStarted.resolve();
+					await releaseResponse.promise;
+					return fauxAssistantMessage("RESPONSE-AFTER-SHELL");
+				},
+			]);
+			run = session.prompt("Run in tab A");
+			await responseStarted.promise;
+			const handleBashCommand = Reflect.get(host.mode, "handleBashCommand") as (command: string) => Promise<void>;
+			await handleBashCommand.call(host.mode, "deferred");
+			expect(session.hasPendingBashMessages).toBe(true);
+			expect(stripAnsi(host.pending.render(100).join("\n"))).toContain("BASH-OUTPUT-deferred");
+
+			await host.activate(b);
+			expect(await host.capture()).not.toContain("BASH-OUTPUT-deferred");
+			releaseResponse.resolve();
+			await run;
+			const shellEntries = sessionManager
+				.getBranch()
+				.filter((entry) => entry.type === "message" && entry.message.role === "bashExecution");
+			expect(shellEntries).toHaveLength(1);
+
+			await host.activate(a);
+			const chat = stripAnsi(host.chat.render(100).join("\n"));
+			expect(chat.match(/BASH-OUTPUT-deferred/g)).toHaveLength(1);
+			expect(stripAnsi(host.pending.render(100).join("\n"))).not.toContain("BASH-OUTPUT-deferred");
+		} finally {
+			releaseResponse.resolve();
+			await run?.catch(() => {});
+			await host.dispose();
+		}
+	});
+
 	test("paints before binding, defers background resources, and preserves the same-tab Home fastpath", async () => {
 		const host = await fixture();
 		const gate = deferred();
@@ -372,11 +470,16 @@ describe("InteractiveMode tab handover integration", () => {
 		}
 	});
 
-	test("startup loader binds and warms persisted order on Home, then first focus reuses the prepared blocks", async () => {
-		const host = await fixture();
+	test("startup loader warms bash with its tab's expansion and first focus reuses the prepared blocks", async () => {
+		const host = await fixture(1);
 		try {
 			await host.rebind();
 			const a = host.manager.getActive();
+			recordLongBashOutput(a.runtime.session, "A-BASH");
+			host.mode.renderInitialMessages();
+			const originalChat = host.chat.children;
+			const originalLoaded = host.loaded.children;
+			recordLongBashOutput(host.harnesses[1].session, "B-BASH");
 			await host.home();
 			const warmed = new Map<string, Component>();
 			const renderEntries: (entries: SessionEntry[], options?: { updateFooter?: boolean }) => void = Reflect.get(
@@ -418,13 +521,19 @@ describe("InteractiveMode tab handover integration", () => {
 			expect(Reflect.get(host.mode, "runtimeHost")).toBe(a.runtime);
 			expect(host.extensions.activeTabIdForUi).toBe(a.id);
 			expect(host.manager.getActive().id).toBe(ids[1]);
+			expect(Reflect.get(host.mode, "toolOutputExpanded")).toBe(false);
+			expect(host.chat.children).toBe(originalChat);
+			expect(host.loaded.children).toBe(originalLoaded);
 			expect(await host.capture()).toContain("MixCode / HOME");
 			const b = host.manager.get(ids[0]);
 			if (!b) throw new Error("The restored tab must exist");
 			expect(warmed.get(b.id)).toBeDefined();
 			await host.activate(b);
 			expect(host.chat.children[0]).toBe(warmed.get(b.id));
-			expect(await host.capture()).toContain("SESSION-1-MESSAGE-7");
+			const focused = await host.capture();
+			expect(focused).toContain("SESSION-1-MESSAGE-7");
+			expect(focused).toContain("B-BASH-LINE-01");
+			expect(host.chat.render(100).map(stripAnsi).join("\n")).not.toContain("A-BASH-LINE-34");
 			expect(host.trace.filter((step) => step === "bind:1")).toHaveLength(1);
 		} finally {
 			await host.dispose();
