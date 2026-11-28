@@ -78,6 +78,7 @@ function settingsConfig(overrides: Partial<SettingsConfig> = {}): SettingsConfig
 		steeringMode: "one-at-a-time",
 		followUpMode: "all",
 		transport: "auto",
+		sessionShareDestination: "auto",
 		httpIdleTimeoutMs: 300_000,
 		cacheWarmingMode: "off",
 		thinkingLevel: "medium",
@@ -90,7 +91,6 @@ function settingsConfig(overrides: Partial<SettingsConfig> = {}): SettingsConfig
 		mermaidRenderingMode: "off",
 		notices: { cacheMisses: true },
 		collapseChangelog: false,
-		enableInstallTelemetry: false,
 		doubleEscapeAction: "tree",
 		treeFilterMode: "default",
 		showHardwareCursor: false,
@@ -105,10 +105,14 @@ function settingsConfig(overrides: Partial<SettingsConfig> = {}): SettingsConfig
 		fullscreenExitOutput: "transcript",
 		fullscreenScrollbar: "auto",
 		fullscreenCopyOnSelect: true,
+		fullscreenWheelScrollLines: "auto",
 		warnings: {},
 		inlineWidgets: true,
+		boxedHiddenThinking: true,
+		iconMode: "nerd",
+		showResponseModelNotices: true,
 		...overrides,
-	} as SettingsConfig;
+	};
 }
 
 function plain(lines: readonly string[]): string {
@@ -170,7 +174,7 @@ describe("/settings panel", () => {
 		expect(rows[0]).toContain("Settings");
 		expect(rows[rows.length - 1]!.startsWith("└")).toBe(true);
 		expect(/filter: type to filter {2}\d+\/\d+/.test(text)).toBe(true);
-		expect(text).toContain("  ↑↓ select  ⏎ edit/toggle  type to filter  esc close");
+		expect(text).toContain("  up/down select  enter/space change  escape/ctrl+c close  type to filter");
 		// One header and one path row per settings file; each list is opened by a row
 		// of its own section, since only one section fits the window at a time.
 		expect(text).toContain("Pi");
@@ -326,7 +330,7 @@ describe("/settings panel", () => {
 			expect(lines[lines.length - 1]!.startsWith("└")).toBe(true);
 			expect(text).toContain("filter: type to filter");
 			expect(text).toContain("› Item 0");
-			expect(text).toContain("↑↓ select");
+			expect(text).toContain("up/down select");
 		}
 	});
 
@@ -342,7 +346,7 @@ describe("/settings panel", () => {
 
 			expect(lines.length).toBeLessThanOrEqual(budget);
 			expect(text).toContain("No matching settings");
-			expect(text).toContain("↑↓ select");
+			expect(text).toContain("up/down select");
 			expect(lines[lines.length - 1]!.startsWith("└")).toBe(true);
 		}
 	});
@@ -358,7 +362,7 @@ describe("/settings panel", () => {
 		const short = plain(panel.render(80)).split("\n");
 		expect(short.length).toBeLessThan(tall);
 		expect(short.length).toBeLessThanOrEqual(Math.floor(12 * 0.8));
-		expect(short.join("\n")).toContain("↑↓ select");
+		expect(short.join("\n")).toContain("up/down select");
 		expect(short[short.length - 1]!.startsWith("└")).toBe(true);
 	});
 
@@ -372,7 +376,7 @@ describe("/settings panel", () => {
 
 			expect(lines.length).toBeLessThanOrEqual(Math.floor(50 * 0.8));
 			expect(lines.length).toBeGreaterThan(Math.floor(TERMINAL_ROWS * 0.8) - 1);
-			expect(lines.join("\n")).toContain("↑↓ select");
+			expect(lines.join("\n")).toContain("up/down select");
 		} finally {
 			if (originalLines === undefined) delete process.env.LINES;
 			else process.env.LINES = originalLines;
@@ -386,7 +390,7 @@ describe("/settings panel", () => {
 		list.handleInput("\r");
 		const submenu = list.render(80);
 		expect(plain(submenu)).toContain("Settings");
-		expect(plain(submenu)).toContain("Automatic");
+		expect(bodyRows(submenu).some((row) => /^\s+automatic(?:\s|$)/.test(row))).toBe(true);
 		expect(plain(submenu)).not.toContain("filter: type to filter");
 
 		list.handleInput("\x1b");
@@ -425,20 +429,34 @@ describe("/settings panel", () => {
 		expect(onInlineWidgetsChange.mock.calls.flat()).toEqual([false]);
 	});
 
-	it("keeps a submenu's own list free of the filter line", () => {
+	it("uses remapped keys in the main panel and the automatic theme submenu", () => {
+		setKeybindings(
+			new KeybindingsManager({
+				"tui.select.up": "ctrl+k",
+				"tui.select.down": "ctrl+j",
+				"tui.select.confirm": "ctrl+y",
+				"tui.select.cancel": "ctrl+q",
+			}),
+		);
 		const list = new SettingsSelectorComponent(settingsConfig(), {} as SettingsCallbacks).getSettingsList();
 
 		list.selectItem("theme");
-		list.handleInput("\r");
-		// The single-theme list preselects the configured theme; stepping up lands on Automatic.
-		list.handleInput("\x1b[A");
-		list.handleInput("\r");
+		expect(plain(list.render(100))).toContain(
+			"ctrl+k/ctrl+j select  ctrl+y/space change  ctrl+q close  type to filter",
+		);
+		list.handleInput("\x19"); // Ctrl+Y opens the theme picker.
+		list.handleInput("\x0b"); // Ctrl+K moves from dark to automatic.
+		list.handleInput("\x19");
 
-		const text = plain(list.render(80));
+		const text = plain(list.render(100));
 		expect(text).toContain("Automatic Theme");
 		expect(text).toContain("Light theme");
+		expect(text).toContain("Dark theme");
 		expect(text).not.toContain("filter:");
-		expect(text).toContain("⏎ edit/toggle  esc back");
+		expect(text).toContain("ctrl+k/ctrl+j select  ctrl+y/space change  ctrl+q back");
+
+		list.handleInput("\x11"); // Ctrl+Q returns to the main panel.
+		expect(selectedRow(list.render(100))).toContain("Theme");
 	});
 
 	it("shows a live update written through updateValue", () => {

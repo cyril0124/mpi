@@ -35,7 +35,6 @@
 | 全屏对话区渲染 | 首次布局渲染整段对话，只滚动视口时复用组件的渲染结果 | 只渲染可见窗口（上下各 20 行余量），未测块按 4 行估算；行号对照首个可见块解析而不是数出来，不是滚动的帧在自己实测之后会把那个块留在原来的行，因此重绘与视口高度变化都不会滑动读者所在的行；`HStack` 不再为已有高度的拉伸子项测量其固有高度，因此侧边面板列不会把对话区整体渲染一遍 | 否则帧开销随整段对话增长，改变终端宽度时还会把每条消息重新排版，而在视口上方实测一个估算块会重排其下方的所有行 |
 | 对话区滚动键 | 仅 `tui.altScreen.*` | 全屏模式下另有模态界面（`/vim`、`j`/`k`/`gg`/`G`、提问跳转），其 Vim 模式用 `app.vim.top`/`app.vim.bottom` 跳到对话区两端；平凡的 `home`/`end` 留给输入框，上游的 `ctrl+home`/`ctrl+end` 用于滚动对话区；vim 模式接管输入时，`pageUp`/`pageDown` 走 `app.vim.pageUp`/`pageDown` 的 10 行，而不是视口的整页 | 长对话免鼠标阅读 |
 | 提交后是否跟随末尾 | 新输出仅在视口已经在末尾时跟随末尾，滚上去后提交不会移动视口 | 用户消息会把全屏对话区滚到末尾并恢复跟随 | 刚发出的消息与下面的回答必须无需滚动即可看到；提交是用户自己的动作，而流式输出仍不能把视口从正在阅读的人手里抢走 |
-| 默认 TUI 模式 | `regular` | `fullscreen`；`settings.json` 里显式写 `tuiMode: "regular"` 仍会回到普通对话区 | 本 fork 的阅读功能（窗口化对话区、Vim、鼠标选中）只存在于备选屏幕；上游 `packages/coding-agent/docs/settings.md` 的默认值仍写作 `"regular"` |
 | 模态下的输入框边框 | thinking/bash 边框色 | 强调色边框，不画光标，输入与提交被锁定 | Vim 模式独占输入 |
 | Zen 专注模式 | 无此模式；上游没有可隐藏的标签栏 | `/toggle-zen-mode` 去掉标签块，只留分隔线继续显示其他 agent 的状态圆点；agent 标签页处于 zen 时 `tab`/`shift+tab` 不再切换标签页 | 标签块占用的那一行要让给对话区，而标签栏仍需汇报其他 agent 的动向；见 [Zen 专注模式](zen-mode.zh.md) |
 | 扩展组件 | 固定在编辑器上/下方的坞区 | 默认放在对话流末尾，带行预算与 `/widgets`，因为 [`ui.inlineWidgets`](inline-widgets.zh.md) 默认开启 | 过高的组件否则会占用整个编辑器坞区的行 |
@@ -71,7 +70,7 @@
 | 指针 hover 反馈 | 无提示：列表忽略指针移动，消息区域只响应点击，跳到底部标签只有一种样式 | 指针下的单元格获得选中背景与下划线（标签页 chip、命令面板行、坞区 meta 行的模型与 thinking 字段）；响应点击的消息块整块填充为一个矩形；全屏渲染器在指针离开后告知对应组件，捕获型浮层打开时保持其下方界面无高亮，非捕获型浮层区域外仍保持 hover，终端尺寸变化时清除所有 hover | 本 fork 的可点击界面需要一个不改变键盘选择与活动标签页的提示 |
 | 扩展模块解析 | bun 跑构建产物时保留 jiti 的 `tryNative`（原生 TS 导入），扩展的 `@earendil-works/*` 裸导入因此从环境 `node_modules` 解析 | bun 跑构建产物时改走 `virtualModules`，清单内的 specifier 一律取运行中宿主自己的那份；bun 跑 TypeScript 源码不受影响 | 第二份 `@earendil-works/pi-tui` 会让 `ToolExecutionComponent.prototype` 的补丁打在宿主从未渲染的类上，渲染扩展于是静默退回内置工具行 |
 | 新版本提示 | 启动时请求 `pi.dev/api/latest-version`，打印带 changelog 链接的 `Update Available` 块，由 `PI_SKIP_VERSION_CHECK` 关闭 | 启动时跳过 pi 自身的新版本提示 | 本 fork 改为只在 [MixCode Home](home.zh.md) 报告过期的扩展包 |
-| 退出恢复提示 | 交互式退出已保存的会话时，分两行打印 `To resume this session:` 和 `pi --session <id>` | 不再打印该输出；负责拼装它的 `formatResumeCommand` 辅助函数保留下来，供上游的安装变更提醒使用 | MixCode 在一个进程里保留多个会话并通过自己的标签页进入，pi 的 `--session` 命令不是恢复会话的方式 |
+| 会话恢复 | 通过 OSC 7577 向兼容终端报告当前会话。交互式退出时打印恢复提示。 | OSC 7577 跟随当前聚焦且已保存的 agent 标签页。进入 Home 或切到无法安全恢复的标签页时清除记录。启用 `MPI_PROJECT_SKILLS_ONLY` 时关闭报告，因为终端恢复时不会继承此环境变量。交互式退出会清除记录，也不打印提示。 | 每个终端进程只能报告一个会话。后台标签页和 Home 不会替用户选定恢复目标。 |
 | 设置覆盖 | `applyOverrides` 把值叠加到生效设置上，下一次从各作用域重新组合（`save`、`reload`、信任状态变化）时就会丢失 | 覆盖层会被保留，并在每次重新组合时重新合并；`clearOverrides` 用于释放指定字段 | 标签页的 `/context-limit` 会收窄压缩预算，否则中途一次设置写入就会在无提示的情况下恢复完整预算 |
 | Batch 自动化 | 没有 `/batch` 命令，也没有 `--batch` / `--batch-dry-run`；`--` 始终收集消息与 `@file` 参数 | `/batch <script> [-- <args...>]`、`--batch`、`--batch-dry-run` 运行 Lua 或 TypeScript 脚本以打开 agent 标签页；带 `--batch` 时 `--` 传递脚本参数而不是消息，并新增 `fengari` 作为 coding-agent 依赖 | 用脚本铺开一批 agent 标签页需要一个统一入口，且参数必须原样到达脚本；见 [Batch 脚本](batch-scripts.zh.md) |
 | 模型失败诊断 | 失败的请求只保留 provider 格式化后的 `errorMessage`，原始异常在进程结束后就没了，类型、错误码与 HTTP 状态都无迹可循 | 每个内置文本适配器接受 `StreamOptions.onProviderError`，在自己的终止 catch 里把原始异常交给它；交互模式再把观察者装到共享 `ModelRuntime` 上，向控制台历史写入一行有界的 `[provider-error]`（`provider`、`model`、`api`，以及最多五个 `{name, code, status}` 节点） | 用户能行动的是 provider 自己的那句话，而真正失败的原因以前只有挂着调试器才看得到；见[模型请求错误诊断](provider-errors.zh.md) |
@@ -144,7 +143,7 @@
 - `packages/coding-agent/src/core/session-manager.ts`：导出 `getDefaultSessionDirPath`
 - `packages/coding-agent/src/index.ts`：为嵌入方再导出 `getDefaultSessionDirPath`
 - `packages/coding-agent/src/core/agent-session.ts`：手动压缩请求独立指定模型，在 abort 当前轮次前就标记压缩已激活的 claim，steering 与 follow-up 队列的摘除，`/reset` 用的 `resetLeafToRoot()`，以及 `syncCacheWarmingMode()`（不写设置文件的 warming 重调）
-- `packages/coding-agent/src/core/settings-manager.ts`：fork 的 fullscreen `tuiMode` 默认值，以及保留的覆盖层（`applyOverrides` 的覆盖在每次重新组合时都会保留，`clearOverrides` 释放指定字段）
+- `packages/coding-agent/src/core/settings-manager.ts`：重新合并各作用域的设置时，保留 `applyOverrides` 写入的覆盖值。`clearOverrides` 可按字段移除覆盖值。
 - `packages/coding-agent/src/core/extensions/loader.ts`：让 bun 发行版的扩展导入走 `virtualModules`，并把 fork 自有的 `resolveJitiCacheDir()` 作为 jiti 的 `cache` 选项传进去
 - `packages/coding-agent/src/modes/interactive/tui-renderer.ts`：把宿主的复制回调与选中选项转发给备用屏幕，并把区分 vim 页键的谓词传给备用屏幕，让 `pageUp`/`pageDown` 留在 vim 自己的 10 行滚动里
 - fork 面板使用上游的 `toolPendingBg` 背景色；主题 token 与生成的主题 schema
@@ -184,8 +183,7 @@
   `shouldDeferPageKeys` 谓词说明模态界面已接管输入，此时 `pageUp`/`pageDown` 交给焦点组件，让 vim 的翻页动作滚 10 行而不是整页
 - `packages/tui/src/mixcode/text-metrics.ts`：`countGraphemes`，让 coding-agent 的 toast 能用同一单位报告复制长度
 - `packages/tui/src/index.ts`：导出窗口化节点、鼠标派发、grapheme 计数器与图片行判定，以及选中选项
-- `packages/coding-agent/src/cli/args.ts`：`--tui-mode` 帮助行写出 fork 的默认值
-- `packages/coding-agent/test/settings-manager.test.ts`：TUI 模式断言改为 fork 的 fullscreen 默认值
+- `packages/coding-agent/src/cli/args.ts`：`--batch` 参数分隔规则和 MixCode 命令帮助
 - `packages/coding-agent/test/keybindings.test.ts`、`packages/coding-agent/test/interactive-mode-compaction.test.ts`：队列绑定与压缩路径
 - `packages/coding-agent/test/interactive-mode-status.test.ts`：`showExtensionCustom` 用例给自建宿主补上按标签页作用域的协作者
 - `scripts/build-coding-agent-bundle.mjs`：`fengari` 保持为 bundle 的外部依赖，并作为 Lua batch

@@ -7,8 +7,9 @@
 
 import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@earendil-works/pi-ai";
-import { setCapabilityOverrides } from "@earendil-works/pi-tui";
+import { setCapabilityOverrides, takeProgramResumeToken } from "@earendil-works/pi-tui";
 import chalk from "chalk";
+import { applyAgentDirArg } from "./cli/agent-dir-arg.ts";
 import { type Args, type Mode, normalizeSessionName, parseArgs, printHelp } from "./cli/args.ts";
 import {
 	type AuthCheckResult,
@@ -620,8 +621,18 @@ export interface MainOptions {
 	extensionFactories?: InlineExtension[];
 }
 
-export async function main(args: string[], options?: MainOptions) {
+export async function main(cliArgs: string[], options?: MainOptions) {
 	resetTimings();
+	// Taken in every mode before anything starts a child process. Only this process should report its resume command.
+	const programResumeToken = takeProgramResumeToken();
+	// Apply the profile before reading it or recognizing subcommands. Modules have already loaded, so they must
+	// not cache getAgentDir() at module load.
+	const agentDirArg = applyAgentDirArg(cliArgs);
+	if (agentDirArg.kind === "error") {
+		console.error(chalk.red(`Error: ${agentDirArg.message}`));
+		process.exit(1);
+	}
+	const args = agentDirArg.args;
 	// MixCode-gated extensions activate only in this host, never in an upstream
 	// pi process that loads the same packages. `??=` keeps an explicit value.
 	process.env.MIXCODE ??= "1";
@@ -629,7 +640,9 @@ export async function main(args: string[], options?: MainOptions) {
 	// Commands and startup selectors can load user-authored themes before runtime creation.
 	setThemeJsonValidator(validateThemeJson);
 	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
-	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
+	const optionEnd = args.indexOf("--");
+	const optionArgs = optionEnd === -1 ? args : args.slice(0, optionEnd);
+	const offlineMode = optionArgs.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
 	if (offlineMode) {
 		process.env.PI_OFFLINE = "1";
 	}
@@ -1036,6 +1049,7 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (parsed.batchScript && parsed.batchDryRun) {
+		writeDiagnosticsToStderr(startupDiagnostics);
 		const request = {
 			workdir: sessionManager.getCwd(),
 			scriptPath: parsed.batchScript,
@@ -1133,6 +1147,8 @@ export async function main(args: string[], options?: MainOptions) {
 			tuiMode: parsed.tuiMode,
 			initialThemeSetting: parsed.useTheme,
 			createRuntime,
+			programResumeToken,
+			programResumeFlags: parsed.resumeFlags,
 		});
 		if (startupBenchmark) {
 			await interactiveMode.init();

@@ -28,12 +28,7 @@ import {
 } from "../../../core/settings-manager.ts";
 import { parseAutoThemeSetting, SYSTEM_THEME_NAME, type TerminalTheme, theme } from "../theme/theme.ts";
 import { keyDisplayText } from "./keybinding-hints.ts";
-import {
-	SettingsPanel,
-	SettingsPanelBody,
-	SUBMENU_HINT,
-	settingsBodyRowBudget,
-} from "./mixcode/settings/settings-panel.ts";
+import { SettingsPanel, SettingsPanelBody, settingsBodyRowBudget } from "./mixcode/settings/settings-panel.ts";
 import { SelectSubmenu, SteppedSubmenu, type SteppedSubmenuStep } from "./settings-submenu.ts";
 
 const MODEL_PICKER_LAYOUT = { minPrimaryColumnWidth: 12, maxPrimaryColumnWidth: 46 };
@@ -83,7 +78,6 @@ export interface SettingsConfig {
 	hideThinkingBlock: boolean;
 	mermaidRenderingMode: MermaidRenderingMode;
 	collapseChangelog: boolean;
-	enableInstallTelemetry: boolean;
 	doubleEscapeAction: "fork" | "tree" | "none";
 	treeFilterMode: "default" | "no-tools" | "user-only" | "labeled-only" | "all";
 	showHardwareCursor: boolean;
@@ -127,7 +121,6 @@ export interface SettingsCallbacks {
 	onHideThinkingBlockChange: (hidden: boolean) => void;
 	onMermaidRenderingModeChange: (mode: MermaidRenderingMode) => void;
 	onCollapseChangelogChange: (collapsed: boolean) => void;
-	onEnableInstallTelemetryChange: (enabled: boolean) => void;
 	onDoubleEscapeActionChange: (action: "fork" | "tree" | "none") => void;
 	onTreeFilterModeChange: (mode: "default" | "no-tools" | "user-only" | "labeled-only" | "all") => void;
 	onShowHardwareCursorChange: (enabled: boolean) => void;
@@ -220,7 +213,7 @@ class ToggleSettingsSubmenu<K extends string> extends Container {
 			// Item ids are the toggle keys.
 			(id, newValue) => onChange(id as K, newValue === "true"),
 			onCancel,
-			{ hint: SUBMENU_HINT, filter: false },
+			{ filter: false, cancelLabel: "back" },
 		);
 
 		this.addChild(this.settingsList);
@@ -270,7 +263,7 @@ function singleModeThemeItems(availableThemes: string[], currentTheme: string): 
 		...system,
 		{
 			value: AUTOMATIC_THEME_VALUE,
-			label: "  Automatic",
+			label: "  automatic",
 			description: "Use separate themes for light and dark terminal appearance",
 		},
 		...items,
@@ -454,7 +447,7 @@ class ThemeSubmenu extends Container {
 				}
 			},
 			() => this.cancel(),
-			{ hint: SUBMENU_HINT, filter: false },
+			{ filter: false, cancelLabel: "back" },
 		);
 		content.addChild(settingsList);
 		this.setContent(content, settingsList);
@@ -605,13 +598,6 @@ export class SettingsSelectorComponent extends Container {
 				description: "Disable verbose printing at startup (header: keep only the startup header)",
 				currentValue: String(config.quietStartup),
 				values: ["true", "header", "false"],
-			},
-			{
-				id: "install-telemetry",
-				label: "Install telemetry",
-				description: "Send an anonymous version/update ping after changelog-detected updates",
-				currentValue: config.enableInstallTelemetry ? "true" : "false",
-				values: ["true", "false"],
 			},
 			{
 				id: "default-project-trust",
@@ -776,7 +762,7 @@ export class SettingsSelectorComponent extends Container {
 				label: "TUI mode",
 				description: "Interface layout; regular mode uses the terminal's normal scrollback",
 				currentValue: config.tuiMode,
-				values: ["fullscreen", "regular"],
+				values: ["regular", "fullscreen"],
 			},
 			{
 				id: "fullscreen-exit-output",
@@ -795,7 +781,7 @@ export class SettingsSelectorComponent extends Container {
 			{
 				id: "fullscreen-copy-on-select",
 				label: "Fullscreen copy on select",
-				description: "Automatically copy selected text in fullscreen mode; disable to copy selections with Ctrl+X",
+				description: `Automatically copy selected text in fullscreen mode; disable to copy selections with ${keyDisplayText("app.message.copy")}`,
 				currentValue: config.fullscreenCopyOnSelect ? "true" : "false",
 				values: ["true", "false"],
 			},
@@ -1020,9 +1006,6 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "quiet-startup":
 						callbacks.onQuietStartupChange(newValue === "header" ? "header" : newValue === "true");
-						break;
-					case "install-telemetry":
-						callbacks.onEnableInstallTelemetryChange(newValue === "true");
 						break;
 					case "default-project-trust": {
 						const defaultProjectTrust = DEFAULT_PROJECT_TRUST_BY_LABEL.get(newValue);

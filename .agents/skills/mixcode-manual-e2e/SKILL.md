@@ -97,7 +97,6 @@ env -i \
   LANG="${LANG:-C.UTF-8}" \
   PI_DEV=1 \
   PI_OFFLINE=1 \
-  PI_TELEMETRY=0 \
   PI_CODING_AGENT_DIR="$agent_dir" \
   MIXCODE_EVIDENCE_DIR="$evidence_dir" \
   VISUAL=/bin/true \

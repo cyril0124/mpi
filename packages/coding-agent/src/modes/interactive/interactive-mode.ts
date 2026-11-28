@@ -27,6 +27,7 @@ import type {
 	MarkdownTheme,
 	OverlayHandle,
 	OverlayOptions,
+	ProgramResumeCommand,
 	TuiMainScreenRenderState,
 	TuiSelectionOptions,
 } from "@earendil-works/pi-tui";
@@ -63,6 +64,7 @@ import {
 	getAuthPath,
 	getDebugLogPath,
 	getDocsPath,
+	usesDefaultAgentDir,
 	VERSION,
 } from "../../config.ts";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
@@ -180,6 +182,7 @@ import {
 	type TabColorName,
 	type TabLoadingPhase,
 } from "../../core/mixcode/multi-tab/types.ts";
+import { isProjectSkillsOnlyEnabled } from "../../core/mixcode/project-skills-only.ts";
 import { sessionFileHasConversation } from "../../core/mixcode/session-file-conversation.ts";
 import { listTrash, moveToTrash, restoreFromTrash, trashDir } from "../../core/mixcode/session-trash.ts";
 import { persistSessionCwd, writeSessionFile } from "../../core/mixcode/session-workdir.ts";
@@ -244,7 +247,6 @@ import {
 import type { FullscreenExitOutput, TuiMode } from "../../core/settings-manager.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import { getSourcePackageKey, type SourceInfo } from "../../core/source-info.ts";
-import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import { withBuiltInRenderers } from "../../core/tools/renderers/index.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
@@ -256,8 +258,7 @@ import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipb
 import { flushStdout } from "../../utils/flush-stdout.ts";
 import { parseGitUrl } from "../../utils/git.ts";
 import { ensurePngTranscoder } from "../../utils/image-convert.ts";
-import { getCwdRelativePath, resolvePath, shortenHomePath } from "../../utils/paths.ts";
-import { getPiUserAgent } from "../../utils/pi-user-agent.ts";
+import { getCwdRelativePath, pathsEqual, resolvePath, shortenHomePath } from "../../utils/paths.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { loadAllHighlightLanguages } from "../../utils/syntax-highlight.ts";
 import { stripBom } from "../../utils/text.ts";
@@ -406,6 +407,7 @@ import { TabUiHandover, type TabUiHandoverPorts } from "./mixcode/multi-tab/tab-
 import { chronologicalTranscriptEntries } from "./mixcode/multi-tab/transcript-entries.ts";
 import { createMouseSelectionOptions } from "./mixcode/selection/selection-surface.ts";
 import { refreshModelCatalogs } from "./model-catalog-refresh.ts";
+import { ProgramResumeReporter } from "./program-resume-reporter.ts";
 import { type BlockedStatus, ProgramStatusReporter } from "./program-status-reporter.ts";
 import { shareSession } from "./session-share.ts";
 import {
@@ -467,28 +469,6 @@ function hasCursor(editor: EditorComponent): editor is CursorEditor {
 
 function isExpandable(obj: unknown): obj is Expandable {
 	return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
-}
-
-function quoteIfNeeded(value: string): string {
-	if (value.length > 0 && !/[^a-zA-Z0-9_\-./~:@]/.test(value)) {
-		return value;
-	}
-	return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-export function formatResumeCommand(sessionManager: SessionManager): string | undefined {
-	if (!process.stdout.isTTY) return undefined;
-	if (!sessionManager.isPersisted()) return undefined;
-
-	const sessionFile = sessionManager.getSessionFile();
-	if (!sessionFile || !fs.existsSync(sessionFile)) return undefined;
-
-	const args = [APP_NAME];
-	if (!sessionManager.usesDefaultSessionDir()) {
-		args.push("--session-dir", quoteIfNeeded(sessionManager.getSessionDir()));
-	}
-	args.push("--session", sessionManager.getSessionId());
-	return args.join(" ");
 }
 
 class ExpandableText extends ThemedText implements Expandable {
@@ -588,6 +568,58 @@ function isUnknownModel(model: Model<any> | undefined): boolean {
 	return !!model && model.provider === "unknown" && model.id === "unknown" && model.api === "unknown";
 }
 
+function quoteIfNeeded(value: string): string {
+	if (value.length > 0 && !/[^a-zA-Z0-9_\-./~:@]/.test(value)) {
+		return value;
+	}
+	return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function isConversationMessage(message: AgentMessage): boolean {
+	return message.role === "user" || message.role === "assistant" || message.role === "toolResult";
+}
+
+/** Arguments that open the session in a new process, or undefined while the session has no file to open. */
+function getResumeArgs(sessionManager: SessionManager): string[] | undefined {
+	if (!sessionManager.isPersisted()) return undefined;
+
+	const sessionFile = sessionManager.getSessionFile();
+	if (!sessionFile || !fs.existsSync(sessionFile)) return undefined;
+
+	const args = [APP_NAME];
+	if (!usesDefaultAgentDir()) {
+		args.push("--agent-dir", resolvePath(getAgentDir()));
+	}
+	if (!sessionManager.usesDefaultSessionDir()) {
+		args.push("--session-dir", sessionManager.getSessionDir());
+	}
+	args.push("--session", sessionManager.getSessionId());
+	return args;
+}
+
+/** The resume command as shell text for the user to copy. */
+export function formatResumeCommand(sessionManager: SessionManager): string | undefined {
+	if (!process.stdout.isTTY) return undefined;
+	return getResumeArgs(sessionManager)?.map(quoteIfNeeded).join(" ");
+}
+
+/**
+ * The command a terminal runs to bring this session back (OSC 7577), including the restriction and resource
+ * flags from startup. The protocol carries argv and cwd but cannot restore an environment-only skill filter.
+ */
+export function getProgramResumeCommand(
+	sessionManager: SessionManager,
+	resumeFlags: readonly string[],
+): ProgramResumeCommand | undefined {
+	if (isProjectSkillsOnlyEnabled()) return undefined;
+	const argv = getResumeArgs(sessionManager);
+	if (!argv) return undefined;
+	const cwd = sessionManager.getCwd();
+	// The process stays in the launch directory. Relative flag arguments would change meaning in another cwd.
+	if (resumeFlags.length > 0 && !pathsEqual(cwd, process.cwd())) return undefined;
+	return { argv: [...argv, ...resumeFlags], cwd };
+}
+
 function hasDefaultModelProvider(providerId: string): providerId is keyof typeof defaultModelPerProvider {
 	return providerId in defaultModelPerProvider;
 }
@@ -628,6 +660,13 @@ export interface InteractiveModeOptions {
 	initialThemeSetting?: string;
 	/** Terminal implementation. Defaults to the current process terminal. */
 	terminal?: Terminal;
+	/**
+	 * Token the terminal set in `OSC7577_TOKEN`, taken out of the environment before any child process starts.
+	 * When set, mpi tells the terminal how to resume the session after the terminal restarts.
+	 */
+	programResumeToken?: string;
+	/** Restriction and resource flags as typed (`Args.resumeFlags`), repeated in the OSC 7577 resume command. */
+	programResumeFlags?: readonly string[];
 	/**
 	 * Factory used to create additional agent runtimes for multi-tab sessions.
 	 * When omitted the instance stays single-session (one tab, no tab bar).
@@ -696,6 +735,10 @@ const SINGLE_SESSION_TAB_ID = "session";
 
 /** How long the s/f queue-edit choice stays armed after the dequeue key. */
 const QUEUE_EDIT_ARM_WINDOW_MS = 1000;
+
+function bashAlreadyRunningWarning(): string {
+	return `A bash command is already running. Press ${keyText("app.interrupt")} to cancel it first.`;
+}
 
 /** Prompt for the armed interrupt confirm, naming the key the binding currently carries. */
 function interruptArmMessage(): string {
@@ -1359,6 +1402,13 @@ export class InteractiveMode {
 		() => this.sessionManager.getSessionName(),
 	);
 
+	/** Reports how to resume the session to terminals that support OSC 7577. Undefined without a token. */
+	private programResume: ProgramResumeReporter | undefined;
+	/** Undefined until startup chooses its surface, null on Home or after close, otherwise the committed tab. */
+	private programResumeTabId: string | null | undefined;
+	/** A /workdir rebind adopts its cwd before the saved header can be rewritten. */
+	private readonly pendingResumeWorkdirs = new WeakMap<AgentSessionRuntime, { file: string; cwd: string }>();
+
 	/** The `/bug` hint is shown at most once per session so error output stays readable. */
 	private bugReportHintShown = false;
 	private installChangeWarningShown = false;
@@ -1529,6 +1579,23 @@ export class InteractiveMode {
 		const tuiMode = options.tuiMode ?? this.settingsManager.getTuiMode();
 		this.options = { ...options, tuiMode };
 		this.autoTrustOnReloadCwd = options.autoTrustOnReloadCwd;
+		if (options.programResumeToken && !isProjectSkillsOnlyEnabled()) {
+			const flags = options.programResumeFlags ?? [];
+			this.programResume = new ProgramResumeReporter(
+				options.programResumeToken,
+				() => this.ui.terminal,
+				() => {
+					const runtime = this.tabManager
+						? this.tabManager.get(this.programResumeTabId ?? "")?.runtime
+						: this.runtimeHost;
+					if (!runtime) return undefined;
+					const manager = runtime.session.sessionManager;
+					const move = this.pendingResumeWorkdirs.get(runtime);
+					if (move && move.file === manager.getSessionFile() && move.cwd === manager.getCwd()) return undefined;
+					return getProgramResumeCommand(manager, flags);
+				},
+			);
+		}
 		// Key the persisted tab layout on the startup workdir, so the same value
 		// is used for both writing and restoring regardless of the active tab.
 		this.tabsWorkdir = runtimeHost.cwd;
@@ -1545,6 +1612,10 @@ export class InteractiveMode {
 			},
 			onLayoutChanged: () => this.persistOpenTabs(),
 			onTabClosed: (tabId, removedIndex) => {
+				if (this.programResumeTabId === tabId) {
+					this.programResumeTabId = null;
+					this.programResume?.report();
+				}
 				adjustHomeSelectionAfterClose(this.homeSelection, this.homeRoster(), removedIndex);
 				this.homeMessageCache.delete(tabId);
 				clearHomeTabCache(tabId);
@@ -2010,7 +2081,13 @@ export class InteractiveMode {
 		// the raw tty.
 		wireConsoleSink((line) => this.showConsoleNotice(line));
 		this.isInitialized = true;
+		const startupTabId = this.activeTabIdForUi;
+		// Existing conversations skip layout restore, so they can be resumed even while startup waits on a dialog.
+		if (this.programResume && startupTabId && this.session.state.messages.some(isConversationMessage)) {
+			this.programResumeTabId = startupTabId;
+		}
 		this.programStatus.report();
+		this.programResume?.report();
 		// The tab bar only exists alongside a tab manager; without one there is no
 		// chip to shimmer, so no repaint loop is started. Home carries no wave, and
 		// nothing wears the wave while it is the rendered surface.
@@ -2162,8 +2239,10 @@ export class InteractiveMode {
 		// Initialize available provider count for footer display
 		await this.updateAvailableProviderCount();
 
-		// Reopen the previous run's tabs when this is a fresh session at startup.
+		// A fresh startup tab can give way to Home. An explicit selection made during restore also takes precedence.
 		await this.restoreOpenTabsOnStartup();
+		if (this.programResumeTabId === undefined) this.programResumeTabId = startupTabId;
+		this.programResume?.report();
 
 		// SharedTabLayout.start() seeds the union snapshot and begins peer polling.
 		// It runs once the startup restore has settled, so the first published baseline
@@ -2250,11 +2329,6 @@ export class InteractiveMode {
 
 		if (migratedProviders && migratedProviders.length > 0) {
 			this.showWarning(`Migrated credentials to auth.json: ${migratedProviders.join(", ")}`);
-		}
-
-		const modelsJsonError = this.session.modelRuntime.getError();
-		if (modelsJsonError) {
-			this.showError(`models.json error: ${modelsJsonError}`);
 		}
 
 		if (modelFallbackMessage) {
@@ -2397,9 +2471,8 @@ export class InteractiveMode {
 		const entries = parseChangelog(changelogPath);
 
 		if (!lastVersion) {
-			// Fresh install - record the version, send telemetry, don't show changelog
+			// Fresh install - record the version, don't show changelog
 			this.settingsManager.setLastChangelogVersion(VERSION);
-			this.reportInstallTelemetry(VERSION);
 			return undefined;
 		}
 
@@ -2411,7 +2484,6 @@ export class InteractiveMode {
 		}
 		if (newEntries.length > 0) {
 			this.settingsManager.setLastChangelogVersion(VERSION);
-			this.reportInstallTelemetry(VERSION);
 			return newEntries.map((e) => normalizeChangelogLinks(e.content, e)).join("\n\n");
 		}
 
@@ -2483,25 +2555,6 @@ export class InteractiveMode {
 		} catch {
 			return undefined;
 		}
-	}
-
-	private reportInstallTelemetry(version: string): void {
-		if (process.env.PI_OFFLINE) {
-			return;
-		}
-
-		if (!isInstallTelemetryEnabled(this.settingsManager)) {
-			return;
-		}
-
-		void fetch(`https://pi.dev/api/report-install?version=${encodeURIComponent(version)}`, {
-			headers: {
-				"User-Agent": getPiUserAgent(version),
-			},
-			signal: AbortSignal.timeout(5000),
-		})
-			.then(() => undefined)
-			.catch(() => undefined);
 	}
 
 	private getMarkdownThemeWithSettings(): MarkdownTheme {
@@ -3330,6 +3383,7 @@ export class InteractiveMode {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
 		this.programStatus.reset();
+		this.programResume?.report();
 		this.applyRuntimeSettings();
 
 		if (options.renderBeforeBind) {
@@ -3465,9 +3519,10 @@ export class InteractiveMode {
 
 	private getTabBarModel(): TabBarModel {
 		const manager = this.tabManager;
-		if (!manager) return { tabs: [], activeId: "" };
-		const zenAgent = this.zenHidesTabBar() ? manager.activeTab() : undefined;
-		const activeId = this.homeSelection.active ? HOME_TAB_ID : manager.getActive().id;
+		const activeTab = manager?.activeTab();
+		if (!manager || !activeTab) return { tabs: [], activeId: "" };
+		const zenAgent = this.zenHidesTabBar() ? activeTab : undefined;
+		const activeId = this.homeSelection.active ? HOME_TAB_ID : activeTab.id;
 		const tabs =
 			this.restoringTabs.length > 0
 				? this.restoringTabBarItems(activeId)
@@ -3665,6 +3720,8 @@ export class InteractiveMode {
 			if (leavingHome) {
 				InteractiveMode.handoverFor(this).restoreScroll(tab.id);
 				InteractiveMode.handoverFor(this).showPendingNotices(tab.runtime.session);
+				this.programResumeTabId = tab.id;
+				this.programResume?.report();
 			}
 			// Its surfaces are back on screen, so a dialog parked for it returns too.
 			this.focusTabInteractions(tab.id);
@@ -3710,6 +3767,8 @@ export class InteractiveMode {
 				this.detachExtensionTerminalInputListeners(this.activeTabIdForUi);
 			}
 			this.homeSelection.active = true;
+			this.programResumeTabId = null;
+			this.programResume?.report();
 			// Home covers every tab: the tab behind it is not the one being watched, so a run that
 			// finishes here becomes the unread completion the roster and the chip can report.
 			manager.setHomeInFront(true);
@@ -4256,6 +4315,8 @@ export class InteractiveMode {
 	private async switchActiveTab(tab: AgentTab, homeBehind = false): Promise<void> {
 		await InteractiveMode.handoverFor(this).switchActiveTab(tab, homeBehind);
 		if (this.runtimeHost === tab.runtime) {
+			this.programResumeTabId = tab.id;
+			this.programResume?.report();
 			InteractiveMode.handoverFor(this).showPendingNotices(tab.runtime.session);
 			this.showRuntimeDiagnostics(tab.runtime.takeUnreportedDiagnostics());
 		}
@@ -4430,23 +4491,29 @@ export class InteractiveMode {
 	 * transcript is kept. A failure or a refused switch is reported and leaves the tab where it was.
 	 */
 	private async reopenActiveSession(resolved: string): Promise<void> {
+		const runtime = this.runtimeHost;
 		const sessionFile = this.sessionManager.getSessionFile();
 		try {
 			// The new directory may hold its own project resources, so it gets the same trust
 			// decision a resume into another cwd does.
 			const trustContext = { projectTrustContextFactory: (cwd: string) => this.createProjectTrustContext(cwd) };
 			if (sessionFile) {
-				const result = await this.runtimeHost.switchSession(sessionFile, {
+				const move = { file: sessionFile, cwd: resolved };
+				if (this.programResume) this.pendingResumeWorkdirs.set(runtime, move);
+				const result = await runtime.switchSession(sessionFile, {
 					cwdOverride: resolved,
 					...trustContext,
 				});
 				// An extension can refuse the switch through `session_before_switch`. The tab then keeps its
 				// session in the old directory, so the header has to keep that directory too.
-				if (result.cancelled) {
-					this.showStatus("Workdir change cancelled");
-					return;
+				if (result.cancelled) this.showStatus("Workdir change cancelled");
+				else await persistSessionCwd(sessionFile, resolved);
+				// A failed header rewrite keeps this destination unavailable. Another tab's committed
+				// command still wins if focus moved while the write or an extension was running.
+				if (this.programResume && this.pendingResumeWorkdirs.get(runtime) === move) {
+					this.pendingResumeWorkdirs.delete(runtime);
+					this.programResume.report();
 				}
-				await persistSessionCwd(sessionFile, resolved);
 				return;
 			}
 			// A session started without a file (`--no-session`) has nothing to reopen: write what
@@ -4455,11 +4522,11 @@ export class InteractiveMode {
 			// running without a file, and an ephemeral conversation must not reach the disk.
 			const movedFile = await writeSessionFile({
 				cwd: resolved,
-				agentDir: this.runtimeHost.services.agentDir,
+				agentDir: runtime.services.agentDir,
 				header: this.sessionManager.getHeader(),
 				entries: this.sessionManager.getBranch(),
 			});
-			const result = await this.runtimeHost.switchSession(movedFile, { cwdOverride: resolved, ...trustContext });
+			const result = await runtime.switchSession(movedFile, { cwdOverride: resolved, ...trustContext });
 			// `switchSession` returns before adopting the file when it cancels, so this call is the only
 			// writer of that path and the copy can go: the tab stays ephemeral, and the refusal reports
 			// the same notice the persisted branch reports.
@@ -4508,12 +4575,7 @@ export class InteractiveMode {
 			if (!session.sessionManager.isPersisted()) return;
 			// A fresh session may still hold a startup `custom` entry, so look for
 			// actual conversation turns to distinguish it from a resumed session.
-			const hasConversation = session.sessionManager
-				.buildSessionContext()
-				.messages.some(
-					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
-				);
-			if (hasConversation) return;
+			if (session.sessionManager.buildSessionContext().messages.some(isConversationMessage)) return;
 
 			// Shared state: open_tabs.json holds the ordered session ids, and
 			// mixcode_state.json holds titles, colors, and workdirs.
@@ -4930,7 +4992,8 @@ export class InteractiveMode {
 		this.bugReportHintShown = true;
 		this.chatContainer.addChild(
 			new ThemedText(
-				() => theme.fg("muted", `If this looks like a ${APP_NAME} bug, /bug sends a report to the developers.`),
+				() =>
+					theme.fg("muted", `If this looks like a ${APP_NAME} bug, use /bug to send a report to the developers.`),
 				this.outputPad,
 				0,
 			),
@@ -5897,9 +5960,9 @@ export class InteractiveMode {
 	// Vim mode (modal transcript navigation)
 	// =========================================================================
 
-	/** Per-tab vim state; falls back to a local state without a tab manager. */
+	/** Per-tab vim state, or local state while no tab is available, including during shutdown. */
 	private vimTabState(): VimTabState {
-		const activeTab = this.tabManager?.getActive();
+		const activeTab = this.tabManager?.activeTab();
 		if (activeTab) return activeTab.vim;
 		this.fallbackVimState ??= createVimTabState();
 		return this.fallbackVimState;
@@ -6437,7 +6500,7 @@ export class InteractiveMode {
 				const command = isExcluded ? text.slice(2).trim() : text.slice(1).trim();
 				if (command) {
 					if (this.session.isBashRunning) {
-						this.showWarning("A bash command is already running. Press Esc to cancel it first.");
+						this.showWarning(bashAlreadyRunningWarning());
 						this.editor.setText(text);
 						return;
 					}
@@ -6530,6 +6593,12 @@ export class InteractiveMode {
 
 		this.footer.invalidate();
 		this.programStatus.handleEvent(event);
+		// The first user message is written immediately after message_end listeners return. Report even if
+		// the provider stalls before starting its reply. The reporter resolves the current focus at send time.
+		if (this.programResume && event.type === "message_end" && event.message.role === "user") {
+			queueMicrotask(() => this.programResume?.reportIfNone());
+		}
+		if (event.type === "message_start" || event.type === "agent_settled") this.programResume?.reportIfNone();
 
 		switch (event.type) {
 			case "agent_start":
@@ -7460,12 +7529,15 @@ export class InteractiveMode {
 	private async shutdown(options?: { fromSignal?: boolean }): Promise<void> {
 		if (this.isShuttingDown) return;
 		this.isShuttingDown = true;
+		// Extension disposal can settle a turn or finish a pending handover. Freeze the last report on exit.
+		const programResume = this.programResume;
+		this.programResume = undefined;
 		// Keep signal handlers registered until terminal cleanup has completed.
 		// `signal-exit` checks the listener list during the same SIGTERM/SIGHUP
 		// dispatch and re-sends the signal if only its own listeners remain.
 
 		if (options?.fromSignal) {
-			// Signal-triggered shutdown (SIGTERM/SIGHUP). Emit extension cleanup
+			// Signal-triggered shutdown (SIGTERM/SIGHUP, SIGBREAK on Windows). Emit extension cleanup
 			// (session_shutdown) BEFORE touching the terminal. Extension teardown
 			// such as removing sockets does not write to the tty, so it must not be
 			// skipped if a later terminal-restore write fails on a dead or stalled
@@ -7490,6 +7562,8 @@ export class InteractiveMode {
 		// This prevents escape sequences from leaking to the parent shell over slow SSH.
 		this.themeController.disableAutoSync();
 		await this.ui.terminal.drainInput(1000);
+		// The user ended pi, so the terminal must not bring it back. Signal shutdowns above keep the command.
+		programResume?.clear();
 
 		// Record the tab the user left on. Focus changes do not write the layout, so
 		// the exit path is what keeps the restored focus current.
@@ -7579,6 +7653,11 @@ export class InteractiveMode {
 		this.unregisterSignalHandlers();
 
 		const signals: NodeJS.Signals[] = ["SIGTERM", "SIGHUP"];
+		// Without a listener, a console Ctrl+Break ends the process without running any JavaScript,
+		// leaving the alternate screen, mouse reporting and keyboard modes on (#12133). Raw mode does
+		// not block it, and a console child calling GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT) on a
+		// process that is not a group leader sends it to every process in the console.
+		if (process.platform === "win32") signals.push("SIGBREAK");
 
 		for (const signal of signals) {
 			const handler = () => {
@@ -7643,6 +7722,7 @@ export class InteractiveMode {
 			clearInterval(suspendKeepAlive);
 			process.removeListener("SIGINT", ignoreSigint);
 			this.ui.start();
+			this.programResume?.reportAgain();
 			this.ui.requestRender(true);
 		});
 
@@ -8937,7 +9017,6 @@ export class InteractiveMode {
 					hideThinkingBlock: this.hideThinkingBlock,
 					mermaidRenderingMode: this.settingsManager.getMermaidRenderingMode(),
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
-					enableInstallTelemetry: this.settingsManager.getEnableInstallTelemetry(),
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 					treeFilterMode: this.settingsManager.getTreeFilterMode(),
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
@@ -9054,9 +9133,6 @@ export class InteractiveMode {
 					},
 					onCollapseChangelogChange: (collapsed) => {
 						this.settingsManager.setCollapseChangelog(collapsed);
-					},
-					onEnableInstallTelemetryChange: (enabled) => {
-						this.settingsManager.setEnableInstallTelemetry(enabled);
 					},
 					onQuietStartupChange: (quiet) => {
 						this.settingsManager.setQuietStartup(quiet);
@@ -10815,7 +10891,7 @@ export class InteractiveMode {
 			const savedImplicitProjectTrust = this.maybeSaveImplicitProjectTrustAfterReload();
 			const modelsJsonError = this.session.modelRuntime.getError();
 			if (modelsJsonError) {
-				this.showError(`models.json error: ${modelsJsonError}`);
+				this.showWarning(`models.json error: ${modelsJsonError}`);
 			}
 			this.showStatus(
 				savedImplicitProjectTrust
@@ -11151,6 +11227,7 @@ export class InteractiveMode {
 		const yankPop = this.getEditorKeyDisplay("tui.editor.yankPop");
 		const undo = this.getEditorKeyDisplay("tui.editor.undo");
 		const tab = this.getEditorKeyDisplay("tui.input.tab");
+		const cancelAutocomplete = this.getEditorKeyDisplay("tui.select.cancel");
 
 		// App keybindings
 		const interrupt = this.getAppKeyDisplay("app.interrupt");
@@ -11201,7 +11278,8 @@ export class InteractiveMode {
 | Key | Action |
 |-----|--------|
 | \`${tab}\` | Path completion / accept autocomplete |
-| \`${interrupt}\` | Cancel autocomplete / abort streaming |
+| \`${cancelAutocomplete}\` | Cancel autocomplete |
+| \`${interrupt}\` | Abort streaming or running bash command |
 | \`${clear}\` | Clear editor (first) / exit (second) |
 | \`${exit}\` | Exit (when editor is empty) |
 | \`${quit}\` | Quit (asks first) |
@@ -11218,7 +11296,7 @@ export class InteractiveMode {
 | \`${copyMessage}\` | Copy selection or last assistant message |
 | \`${followUp}\` | Queue follow-up message (rounds merge while the agent runs) |
 | \`${dequeue}\` | Edit queued messages: steer / follow-up pick when both are queued (\`${dequeue},S\` / \`${dequeue},F\`) |
-| \`Esc\` | Abort / send queued steer messages now |
+| \`${interrupt}\` | Abort / send queued steer messages now |
 | \`${pasteImage}\` | Paste files on macOS, images, or text from clipboard |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
@@ -11257,7 +11335,7 @@ export class InteractiveMode {
 	private async handleClearCommand(): Promise<void> {
 		// Bash is checked first: a running bash command also reports streaming.
 		if (this.session.isBashRunning) {
-			this.showWarning("A bash command is already running. Press Esc to cancel it first.");
+			this.showWarning(bashAlreadyRunningWarning());
 			return;
 		}
 		if (this.session.isStreaming) {
@@ -11310,7 +11388,7 @@ export class InteractiveMode {
 	 */
 	private async handleResetCommand(): Promise<void> {
 		if (this.session.isBashRunning) {
-			this.showWarning("A bash command is already running. Press Esc to cancel it first.");
+			this.showWarning(bashAlreadyRunningWarning());
 			return;
 		}
 		// `/reset` awaits the `session_tree` handlers while keys keep arriving, so the mounted tab can

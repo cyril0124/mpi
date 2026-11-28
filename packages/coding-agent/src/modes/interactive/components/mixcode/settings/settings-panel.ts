@@ -24,6 +24,7 @@ import { getSettingsPath } from "../../../../../config.ts";
 import { mixcodeSettingsFilePath } from "../../../../../core/mixcode/mixcode-settings.ts";
 import { shortenPath } from "../../../../../core/tools/render-utils.ts";
 import { theme } from "../../../theme/theme.ts";
+import { keyText } from "../../keybinding-hints.ts";
 import { padLine, windowStart } from "../layout-text.ts";
 import { paintBackground, panel, panelContentWidth } from "../panel.ts";
 
@@ -67,9 +68,6 @@ const PI_SECTION_TITLE = "Pi";
 
 const FILTER_PROMPT = "filter: type to filter";
 const NO_MATCHES = "  No matching settings";
-const FOOTER_HINT = "  ↑↓ select  ⏎ edit/toggle  type to filter  esc close";
-/** Footer for a list the keyboard does not search, such as a submenu's. */
-export const SUBMENU_HINT = "  ↑↓ select  ⏎ edit/toggle  esc back";
 
 /**
  * What a row of the panel is, so a short terminal can drop the cheap rows first:
@@ -81,8 +79,8 @@ type RowKind = "filter" | "blank" | "header" | "path" | "clip" | "item" | "descr
 const DROP_ORDER: RowKind[] = ["blank", "path", "clip", "description", "item"];
 
 export interface SettingsPanelBodyOptions {
-	/** Footer key hints; the main list's default names the filter. */
-	hint?: string;
+	/** Label for the cancel action in the footer. */
+	cancelLabel?: "close" | "back";
 	/** Type-to-filter on this list; off for lists the keyboard only navigates. */
 	filter?: boolean;
 }
@@ -180,7 +178,7 @@ export class SettingsPanelBody implements Component {
 	private readonly items: SettingItem[];
 	private readonly onChange: (id: string, newValue: string) => void;
 	private readonly onCancel: () => void;
-	private readonly hint: string;
+	private readonly cancelLabel: "close" | "back";
 	private readonly filterEnabled: boolean;
 	/** Body rows a bare caller gets; the framed panel passes its own budget per render. */
 	private readonly defaultRows: number;
@@ -203,7 +201,7 @@ export class SettingsPanelBody implements Component {
 		this.defaultRows = Math.max(1, maxRows);
 		this.onChange = onChange;
 		this.onCancel = onCancel;
-		this.hint = options.hint ?? FOOTER_HINT;
+		this.cancelLabel = options.cancelLabel ?? "close";
 		this.filterEnabled = options.filter ?? true;
 	}
 
@@ -280,6 +278,17 @@ export class SettingsPanelBody implements Component {
 		const lines: string[] = [];
 		const kinds: RowKind[] = [];
 		const rowMap: Array<number | null> = [];
+		const navigation = [keyText("tui.select.up"), keyText("tui.select.down")].filter(Boolean).join("/");
+		const confirm = keyText("tui.select.confirm");
+		const activation = this.filterQuery.length === 0 ? [confirm, "space"].filter(Boolean).join("/") : confirm;
+		const cancel = keyText("tui.select.cancel");
+		const hints = [
+			navigation && `${navigation} select`,
+			activation && `${activation} change`,
+			cancel && `${cancel} ${this.cancelLabel}`,
+			this.filterEnabled && "type to filter",
+		];
+		const hintLine = theme.fg("dim", truncateToWidth(`  ${hints.filter(Boolean).join("  ")}`, width));
 		const push = (line: string, kind: RowKind, itemIndex: number | null = null): void => {
 			lines.push(line);
 			kinds.push(kind);
@@ -293,7 +302,7 @@ export class SettingsPanelBody implements Component {
 			}
 			push(theme.fg("dim", NO_MATCHES), "message");
 			push("", "blank");
-			push(theme.fg("dim", this.hint), "hint");
+			push(hintLine, "hint");
 			this.trimToBudget(lines, kinds, rowMap, maxRows, -1);
 			this.lastRows = rowMap;
 			return lines;
@@ -340,7 +349,7 @@ export class SettingsPanelBody implements Component {
 			for (const line of description) push(line, "description");
 		}
 		push("", "blank");
-		push(theme.fg("dim", this.hint), "hint");
+		push(hintLine, "hint");
 
 		// A short terminal gives up decoration before it gives up the filter line, the
 		// selected row or the key hints.
@@ -480,7 +489,7 @@ export class SettingsPanel implements Component {
 	constructor(items: SettingItem[], options: SettingsPanelOptions) {
 		this.title = options.title ?? "Settings";
 		this.body = new SettingsPanelBody(items, this.bodyRows(), options.onChange, options.onCancel, {
-			hint: options.hint,
+			cancelLabel: options.cancelLabel,
 			filter: options.filter,
 		});
 	}

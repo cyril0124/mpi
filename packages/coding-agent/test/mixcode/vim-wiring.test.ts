@@ -29,7 +29,7 @@ type VimWiringContext = {
 	renderer: ReturnType<typeof createInteractiveTui>;
 	transcriptScrollView: ScrollView;
 	windowedTranscript: WindowedTranscript;
-	tabManager: { getActive: () => { vim: VimTabState } };
+	tabManager: { activeTab: () => { vim: VimTabState } | undefined };
 	fallbackVimState: VimTabState;
 	/** The surface flag the vim entry points consult; Home covers the tab transcript. */
 	homeSelection: { active: boolean };
@@ -100,7 +100,7 @@ function makeWiringContext(options: {
 		renderer: options.renderer,
 		transcriptScrollView: options.transcript,
 		windowedTranscript: options.windowedTranscript,
-		tabManager: { getActive: () => options.tab },
+		tabManager: { activeTab: () => options.tab },
 		fallbackVimState: createVimTabState(),
 		homeSelection: { active: options.homeActive ?? false },
 		keybindings: new KeybindingsManager(),

@@ -235,6 +235,8 @@ export class CustomEditor extends Editor {
 		// key, so the editor below still sees it.
 		for (const [action, handler] of this.actionHandlers) {
 			if (action !== "app.interrupt" && action !== "app.exit" && this.keybindings.matches(data, action)) {
+				// A file or argument completion fills the draft. A slash command name can be queued.
+				if (action === "app.message.followUp" && this.confirmAutocomplete() === "applied") return;
 				if (handler(data) === false) continue;
 				return;
 			}
